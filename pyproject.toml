@@ -8,15 +8,29 @@ license = { file = "LICENSE" }
 authors = [{ name = "Rafal Kwiecien", email = "dev@rafalkwiecien.com" }]
 keywords = ["llm", "multilingual", "evaluation", "structured-outputs", "openai", "vllm"]
 
-dependencies = []
+dependencies = [
+    "openai",
+    "pydantic>=2.7",
+    "polars",
+    "pyarrow",
+    "pyyaml",
+    "typer",
+    "python-dotenv",
+    "huggingface_hub",
+    "lingua-language-detector",
+]
 
 [project.optional-dependencies]
+# GPU-only backend, not installed on Windows.
+#   uv sync --extra gpu
+gpu = ["vllm"]
 # Developer tooling.
 #   uv sync --extra dev
 dev = [
     "ruff>=0.6",
     "pyright>=1.1.375",
     "pytest>=8.0",
+    "types-PyYAML",
 ]
 
 [build-system]
