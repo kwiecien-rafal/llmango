@@ -1,0 +1,8 @@
+question_id: favorite_fruit
+schema: FruitChoice
+model: gpt-5.6-luna
+languages:
+  - en
+  - pl
+sampling:
+  temperature: 1.0
