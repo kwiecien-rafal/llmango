@@ -17,7 +17,7 @@ class ExperimentSpec:
 
     question_id: str
     response_model: type[BaseModel]
-    to_row: Callable[[BaseModel], dict[str, object]] | None = None
+    to_row: Callable[[BaseModel | None], dict[str, object]] | None = None
     normalization_model: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
 

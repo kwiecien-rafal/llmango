@@ -14,7 +14,7 @@ def test_load_question_reads_the_manifest() -> None:
     assert config.question_id == QUESTION_ID
     assert config.schema_name == "FruitChoice"
     assert config.model == "gpt-5.6-luna"
-    assert len(config.languages) == 10
+    assert config.languages == ["en", "pl"]
 
 
 def test_every_declared_language_has_a_prompt_file() -> None:

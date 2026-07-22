@@ -3,6 +3,8 @@
 Asks to name favorite fruit.
 """
 
+from pydantic import BaseModel
+
 from llmango.registry import ExperimentSpec, register_experiment
 from llmango.schemas import LLMResponse
 
@@ -15,4 +17,16 @@ class FruitChoice(LLMResponse):
     fruit: str
 
 
-register_experiment(ExperimentSpec(question_id=QUESTION_ID, response_model=FruitChoice))
+def to_row(parsed: BaseModel | None) -> dict[str, object]:
+    """Map a parsed response to its parsed columns, empty on refusal or error."""
+    fruit = parsed.fruit if isinstance(parsed, FruitChoice) else ""
+    return {"fruit_raw": fruit}
+
+
+register_experiment(
+    ExperimentSpec(
+        question_id=QUESTION_ID,
+        response_model=FruitChoice,
+        to_row=to_row,
+    )
+)
