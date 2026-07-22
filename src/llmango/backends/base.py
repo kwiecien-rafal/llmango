@@ -9,7 +9,7 @@ from abc import abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, Self
 
 from pydantic import BaseModel
 
@@ -44,6 +44,20 @@ class GenResult:
     error: str | None
     created_at: datetime
 
+    @classmethod
+    def failed(cls, request: GenRequest, error: str, created_at: datetime) -> Self:
+        """Build a result carrying an error and no parsed response."""
+        return cls(
+            request=request,
+            raw_json=None,
+            parsed=None,
+            model_snapshot=None,
+            finish_reason=None,
+            refusal=None,
+            error=error,
+            created_at=created_at,
+        )
+
 
 class GenerationBackend(Protocol):
     """The single interface every generation backend implements."""
@@ -63,3 +77,24 @@ class GenerationBackend(Protocol):
     def generate_many(self, requests: Iterable[GenRequest]) -> list[GenResult]:
         """Generate results for many requests, sequentially by default."""
         return [self.generate(request) for request in requests]
+
+
+class BatchBackend(Protocol):
+    """Interface for a backend that generates through an asynchronous batch job."""
+
+    backend_id: str
+
+    @abstractmethod
+    def resolve_model_snapshot(self, model: str) -> str:
+        """Return the exact model snapshot or revision id that will be used."""
+        ...
+
+    @abstractmethod
+    def submit(self, requests: list[GenRequest]) -> str:
+        """Submit requests as one batch job and return its id."""
+        ...
+
+    @abstractmethod
+    def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
+        """Fetch the batch's results, parsed and matched back to the requests."""
+        ...

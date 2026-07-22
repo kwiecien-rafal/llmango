@@ -41,16 +41,7 @@ class OpenAIBackend(GenerationBackend):
                 seed=_given(request.seed),
             )
         except Exception as error:
-            return GenResult(
-                request=request,
-                raw_json=None,
-                parsed=None,
-                model_snapshot=None,
-                finish_reason=None,
-                refusal=None,
-                error=str(error),
-                created_at=created_at,
-            )
+            return GenResult.failed(request, str(error), created_at)
 
         choice = completion.choices[0]
         message = choice.message
