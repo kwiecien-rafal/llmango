@@ -30,7 +30,13 @@ _TRACKED_PACKAGES = (
     "lingua-language-detector",
 )
 
-_CONTENT_EXCLUDE = {"run_id", "created_at", "model_snapshot", "package_versions"}
+_CONTENT_EXCLUDE = {
+    "run_id",
+    "created_at",
+    "model_snapshot",
+    "batch_id",
+    "package_versions",
+}
 
 
 def collect_package_versions(
@@ -54,6 +60,7 @@ class RunManifest(BaseModel):
     backend: str
     model: str
     model_snapshot: str | None = None
+    batch_id: str | None = None
     languages: list[str]
     sampling: SamplingParams
     seed: int | None = None
@@ -80,6 +87,14 @@ def write_manifest(manifest: RunManifest) -> Path:
     path = manifest_path(manifest.run_id)
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     return path
+
+
+def read_manifest(run_id: str) -> RunManifest:
+    """Load a manifest by run id from runs/<run_id>.json."""
+    path = manifest_path(run_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"No manifest for run: {run_id}")
+    return RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def find_manifest_by_content_hash(target_hash: str) -> RunManifest | None:
