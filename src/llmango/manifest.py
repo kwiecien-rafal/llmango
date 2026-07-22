@@ -69,10 +69,15 @@ class RunManifest(BaseModel):
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def manifest_path(run_id: str) -> Path:
+    """Return the manifest path for a run id under runs/."""
+    return RUNS_DIR / f"{run_id}.json"
+
+
 def write_manifest(manifest: RunManifest) -> Path:
     """Write a manifest to runs/<run_id>.json and return its path."""
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RUNS_DIR / f"{manifest.run_id}.json"
+    path = manifest_path(manifest.run_id)
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     return path
 
