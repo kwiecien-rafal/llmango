@@ -28,7 +28,7 @@ class GenRequest:
     sample_idx: int
     seed: int | None
     sampling: SamplingParams
-    response_model: type[BaseModel]
+    response_schema: type[BaseModel]
 
 
 @dataclass(frozen=True)

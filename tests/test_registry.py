@@ -16,14 +16,14 @@ class ThrowawayResponse(LLMResponse):
 
 
 def test_register_get_and_resolve() -> None:
-    spec = ExperimentSpec(question_id="throwaway", response_model=ThrowawayResponse)
+    spec = ExperimentSpec(question_id="throwaway", response_schema=ThrowawayResponse)
     register_experiment(spec)
     assert get_experiment("throwaway") is spec
     assert resolve_schema("throwaway") is ThrowawayResponse
 
 
 def test_register_rejects_duplicate() -> None:
-    spec = ExperimentSpec(question_id="dupe", response_model=ThrowawayResponse)
+    spec = ExperimentSpec(question_id="dupe", response_schema=ThrowawayResponse)
     register_experiment(spec)
     with pytest.raises(ValueError):
         register_experiment(spec)

@@ -22,7 +22,7 @@ def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> Gen
         sample_idx=sample_idx,
         seed=seed,
         sampling=SamplingParams(temperature=0.5, seed=seed),
-        response_model=FruitChoice,
+        response_schema=FruitChoice,
     )
 
 
@@ -159,7 +159,7 @@ def test_build_jsonl_omits_unset_sampling_params() -> None:
         sample_idx=0,
         seed=None,
         sampling=SamplingParams(temperature=1.0),
-        response_model=FruitChoice,
+        response_schema=FruitChoice,
     )
 
     body = json.loads(build_jsonl([request]))["body"]

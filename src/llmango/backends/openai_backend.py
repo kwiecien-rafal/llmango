@@ -34,7 +34,7 @@ class OpenAIBackend(GenerationBackend):
             completion = self._client.chat.completions.parse(
                 model=request.model,
                 messages=messages,
-                response_format=request.response_model,
+                response_format=request.response_schema,
                 temperature=request.sampling.temperature,
                 top_p=_given(request.sampling.top_p),
                 max_tokens=_given(request.sampling.max_tokens),

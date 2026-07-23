@@ -16,10 +16,10 @@ class ExperimentSpec:
     """Everything the generic pipeline needs to run one experiment."""
 
     question_id: str
-    response_model: type[BaseModel]
+    response_schema: type[BaseModel]
     slug: str = ""
     to_row: Callable[[BaseModel | None], dict[str, object]] | None = None
-    normalization_model: type[BaseModel] | None = None
+    normalization_schema: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
     raw_column: str = "raw"
     canonical_column: str = "canonical"
@@ -46,5 +46,5 @@ def get_experiment(question_id: str) -> ExperimentSpec:
 
 
 def resolve_schema(question_id: str) -> type[BaseModel]:
-    """Return the response model class registered for question_id."""
-    return get_experiment(question_id).response_model
+    """Return the response schema class registered for question_id."""
+    return get_experiment(question_id).response_schema

@@ -78,9 +78,9 @@ def normalize_question(
 
     ensure_registered()
     spec = get_experiment(question_id)
-    normalization_model = spec.normalization_model
-    if normalization_model is None:
-        raise ValueError(f"Experiment {question_id} has no normalization model.")
+    normalization_schema = spec.normalization_schema
+    if normalization_schema is None:
+        raise ValueError(f"Experiment {question_id} has no normalization schema.")
 
     frame = read_results(f"{question_id}__*.parquet")
     if frame.is_empty():
@@ -105,7 +105,7 @@ def normalize_question(
             _resolve_online(
                 unresolved,
                 question_id,
-                normalization_model,
+                normalization_schema,
                 make_backend,
                 model,
                 max_llm_calls,
@@ -155,7 +155,7 @@ def _resolve_offline(
 def _resolve_online(
     unresolved: list[tuple[str, str]],
     question_id: str,
-    response_model: type[BaseModel],
+    response_schema: type[BaseModel],
     make_backend: Callable[[], GenerationBackend] | None,
     model: str | None,
     max_llm_calls: int | None,
@@ -186,7 +186,7 @@ def _resolve_online(
             sample_idx=index,
             seed=None,
             sampling=SamplingParams(temperature=0.0),
-            response_model=response_model,
+            response_schema=response_schema,
         )
         for index, (lang, raw) in enumerate(unresolved)
     ]

@@ -43,13 +43,13 @@ def _custom_id(lang: str, sample_idx: int) -> str:
 
 
 @cache
-def _response_format(model: type[BaseModel]) -> dict[str, Any]:
-    """Build the strict json_schema response_format for a Pydantic model."""
+def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
+    """Build the strict json_schema response_format for a Pydantic schema."""
     return {
         "type": "json_schema",
         "json_schema": {
-            "name": model.__name__,
-            "schema": to_strict_json_schema(model),
+            "name": schema.__name__,
+            "schema": to_strict_json_schema(schema),
             "strict": True,
         },
     }
@@ -60,7 +60,7 @@ def _body(request: GenRequest) -> dict[str, Any]:
     body: dict[str, Any] = {
         "model": request.model,
         "messages": [{"role": "user", "content": request.prompt}],
-        "response_format": _response_format(request.response_model),
+        "response_format": _response_format(request.response_schema),
         "temperature": request.sampling.temperature,
     }
     if request.sampling.top_p is not None:
@@ -112,7 +112,7 @@ def _parse_output(line: _BatchLine, request: GenRequest) -> GenResult:
         refusal = message.get("refusal")
         content = message.get("content")
         parsed = (
-            request.response_model.model_validate_json(content)
+            request.response_schema.model_validate_json(content)
             if refusal is None and content is not None
             else None
         )

@@ -31,7 +31,7 @@ def _request() -> GenRequest:
         sample_idx=0,
         seed=7,
         sampling=SamplingParams(temperature=0.5, seed=7),
-        response_model=FruitChoice,
+        response_schema=FruitChoice,
     )
 
 
