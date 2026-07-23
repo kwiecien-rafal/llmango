@@ -44,9 +44,12 @@ class Resolution(BaseModel):
 
 @dataclass(frozen=True)
 class NormalizeOutcome:
-    """What one normalization run produced."""
+    """What one normalization run produced, or a dry run would produce.
 
-    parquet_path: Path
+    parquet_path is None on a dry run, which resolves nothing and writes nothing.
+    """
+
+    parquet_path: Path | None
     rows: int
     distinct: int
     llm_calls: int
@@ -66,6 +69,7 @@ def normalize_question(
     make_backend: Callable[[], GenerationBackend] | None = None,
     model: str | None = None,
     max_llm_calls: int | None = None,
+    dry_run: bool = False,
 ) -> NormalizeOutcome:
     """Add canonical categories to a question's raw answers and write them out.
 
@@ -73,6 +77,8 @@ def normalize_question(
     language through the deterministic layers and then the LLM for the rest, and
     writes a normalized Parquet file that leaves the raw answers untouched. The
     backend is built lazily, so a run resolved entirely offline needs no API key.
+    A dry run stops after the offline layers and reports how many answers the LLM
+    would resolve, without calling it or writing anything.
     """
     from llmango.experiments import ensure_registered
 
@@ -99,6 +105,14 @@ def normalize_question(
             resolutions[(lang, raw)] = offline
         else:
             unresolved.append((lang, raw))
+
+    if dry_run:
+        return NormalizeOutcome(
+            parquet_path=None,
+            rows=frame.height,
+            distinct=len(pairs),
+            llm_calls=len(unresolved),
+        )
 
     if unresolved:
         resolutions.update(

@@ -5,9 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llmango import manifest as manifest_module
 from llmango import runner as runner_module
-from llmango import storage as storage_module
 from llmango.backends.base import GenerationBackend, GenRequest, GenResult
 from llmango.manifest import RunManifest
 from llmango.runner import fetch_batch, run, submit_batch
@@ -56,9 +54,8 @@ class FakeBatchBackend:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
+def _isolate_dirs(data_dirs: Path) -> None:
+    """Redirect output directories into tmp_path for every runner test."""
 
 
 def test_run_writes_rows_and_manifest(fake_backend: GenerationBackend) -> None:

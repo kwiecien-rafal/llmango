@@ -3,10 +3,15 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
+from llmango import analyze as analyze_module
+from llmango import manifest as manifest_module
+from llmango import normalize as normalize_module
+from llmango import storage as storage_module
 from llmango.backends.base import GenerationBackend, GenRequest, GenResult
 from llmango.experiments.favorite_fruit import FruitChoice
 
@@ -86,18 +91,23 @@ def build_fake_openai_client(
 
 
 class FakeBackend(GenerationBackend):
-    """Deterministic backend that answers with a fixed fruit per language."""
+    """Deterministic backend that answers with a scripted fruit per lang and sample.
+
+    Answers are read as answers[lang][sample_idx]; an unscripted language falls
+    back to "apple", so the zero-argument default still answers every request.
+    """
 
     backend_id = "fake"
 
-    def __init__(self, fruits: dict[str, str] | None = None) -> None:
-        self._fruits = fruits or {}
+    def __init__(self, answers: dict[str, list[str]] | None = None) -> None:
+        self._answers = answers or {}
 
     def resolve_model_snapshot(self, model: str) -> str:
         return f"{model}-fake"
 
     def generate(self, request: GenRequest) -> GenResult:
-        fruit = self._fruits.get(request.lang, "apple")
+        scripted = self._answers.get(request.lang)
+        fruit = scripted[request.sample_idx] if scripted else "apple"
         parsed = FruitChoice(fruit=fruit)
         return GenResult(
             request=request,
@@ -119,3 +129,21 @@ def make_openai_client() -> Callable[..., FakeOpenAIClient]:
 @pytest.fixture
 def fake_backend() -> FakeBackend:
     return FakeBackend()
+
+
+@pytest.fixture
+def make_fake_backend() -> Callable[..., FakeBackend]:
+    return FakeBackend
+
+
+@pytest.fixture
+def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect every pipeline output directory into tmp_path."""
+    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
+    monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
+    monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(
+        normalize_module, "NORMALIZATION_DIR", tmp_path / "normalization"
+    )
+    monkeypatch.setattr(analyze_module, "AGG_DIR", tmp_path / "aggregated")
+    return tmp_path

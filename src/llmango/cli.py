@@ -1,6 +1,6 @@
 """Command line entry points for the llmango pipeline."""
 
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
@@ -8,12 +8,15 @@ from llmango.analyze import AnalyzeOutcome, analyze_question
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
 from llmango.normalize import NormalizeOutcome, normalize_question
-from llmango.runner import RunOutcome, fetch_batch, submit_batch
+from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
 from llmango.runner import run as run_experiment
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 
+SMOKE_SAMPLES = 5
 SMOKE_SAMPLE_LIMIT = 25
+
+_PIPELINE_ERRORS = (OSError, RuntimeError, ValueError, KeyError)
 
 
 @app.callback()
@@ -30,8 +33,8 @@ def run(
         str | None, typer.Option("--model", help="Override the meta.yaml model.")
     ] = None,
     samples: Annotated[
-        int, typer.Option("--samples", "-n", help="Samples per language.")
-    ] = 1,
+        int | None, typer.Option("--samples", "-n", help="Samples per language.")
+    ] = None,
     lang: Annotated[
         list[str] | None, typer.Option("--lang", help="Restrict to these languages.")
     ] = None,
@@ -39,17 +42,32 @@ def run(
     batch: Annotated[
         bool, typer.Option("--batch", help="Submit via the OpenAI Batch API.")
     ] = False,
+    smoke: Annotated[
+        bool, typer.Option("--smoke", help=f"Tiny {SMOKE_SAMPLES}-sample smoke run.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show the plan without generating.")
+    ] = False,
     force: Annotated[
         bool, typer.Option("--force", help="Allow a large paid run.")
     ] = False,
 ) -> None:
     """Run one question across languages and persist raw results to Parquet."""
-    if samples > SMOKE_SAMPLE_LIMIT and not force:
-        typer.echo(
-            f"Refusing a large run of {samples} samples per language without --force. "
-            f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
+    count = _resolve_samples(samples, smoke, dry_run, force)
+
+    if dry_run:
+        backend = OpenAIBatchBackend if batch else OpenAIBackend
+        _report_plan(
+            plan_run(
+                question_id,
+                backend.backend_id,
+                model=model,
+                samples=count,
+                languages=lang,
+                seed=seed,
+            )
         )
-        raise typer.Exit(code=1)
+        return
 
     if batch:
         _report_submit(
@@ -57,7 +75,7 @@ def run(
                 question_id,
                 OpenAIBatchBackend(),
                 model=model,
-                samples=samples,
+                samples=count,
                 languages=lang,
                 seed=seed,
             )
@@ -69,7 +87,7 @@ def run(
             question_id,
             OpenAIBackend(),
             model=model,
-            samples=samples,
+            samples=count,
             languages=lang,
             seed=seed,
         )
@@ -85,6 +103,9 @@ def normalize(
         str | None,
         typer.Option("--model", help="Override the normalization model."),
     ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report LLM usage without calling it.")
+    ] = False,
     force: Annotated[
         bool, typer.Option("--force", help="Allow a large paid normalization run.")
     ] = False,
@@ -96,11 +117,10 @@ def normalize(
             make_backend=OpenAIBackend,
             model=model,
             max_llm_calls=None if force else SMOKE_SAMPLE_LIMIT,
+            dry_run=dry_run,
         )
-    except (OSError, RuntimeError, ValueError, KeyError) as error:
-        typer.echo(str(error))
-        raise typer.Exit(code=1) from error
-
+    except _PIPELINE_ERRORS as error:
+        _die(str(error))
     _report_normalize(outcome)
 
 
@@ -113,10 +133,8 @@ def analyze(
     """Aggregate normalized answers into the committed JSON the site reads."""
     try:
         outcome = analyze_question(question_id)
-    except (OSError, RuntimeError, ValueError, KeyError) as error:
-        typer.echo(str(error))
-        raise typer.Exit(code=1) from error
-
+    except _PIPELINE_ERRORS as error:
+        _die(str(error))
     _report_analyze(outcome)
 
 
@@ -127,12 +145,33 @@ def batch_fetch(
     """Fetch a previously submitted batch and persist its results to Parquet."""
     try:
         outcome = fetch_batch(run_id, OpenAIBatchBackend())
-    except (OSError, RuntimeError, ValueError) as error:
-        typer.echo(str(error))
-        raise typer.Exit(code=1) from error
-
+    except _PIPELINE_ERRORS as error:
+        _die(str(error))
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     typer.echo(f"Parquet: {outcome.parquet_path}")
+
+
+def _resolve_samples(
+    samples: int | None, smoke: bool, dry_run: bool, force: bool
+) -> int:
+    """Resolve the sample count, applying the smoke preset and the cost guardrail."""
+    if smoke and samples is not None:
+        _die("Pass either --smoke or --samples, not both.")
+    if smoke:
+        return SMOKE_SAMPLES
+    count = samples if samples is not None else 1
+    if not dry_run and count > SMOKE_SAMPLE_LIMIT and not force:
+        _die(
+            f"Refusing a large run of {count} samples per language without --force. "
+            f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
+        )
+    return count
+
+
+def _die(message: str) -> NoReturn:
+    """Print an error message and exit with a non-zero status."""
+    typer.echo(message)
+    raise typer.Exit(code=1)
 
 
 def _report_run(outcome: RunOutcome) -> None:
@@ -147,12 +186,32 @@ def _report_run(outcome: RunOutcome) -> None:
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
+def _report_plan(plan: RunPlan) -> None:
+    manifest = plan.manifest
+    requests = len(manifest.languages) * manifest.samples
+    typer.echo(f"Dry run for {manifest.question_id} via {manifest.backend}:")
+    typer.echo(f"  model:     {manifest.model}")
+    typer.echo(f"  languages: {', '.join(manifest.languages)}")
+    typer.echo(f"  samples:   {manifest.samples} per language")
+    typer.echo(f"  requests:  {requests} total")
+    if plan.duplicate is not None:
+        typer.echo(
+            f"  duplicate: run {plan.duplicate.run_id} already covers this; "
+            f"it would be skipped."
+        )
+    else:
+        typer.echo("  duplicate: none; results would be generated and written.")
+
+
 def _report_normalize(outcome: NormalizeOutcome) -> None:
+    written = outcome.parquet_path is not None
+    resolved = "resolved by the LLM" if written else "would be resolved by the LLM"
     typer.echo(
-        f"Normalized {outcome.rows} rows: {outcome.distinct} distinct answers, "
-        f"{outcome.llm_calls} resolved by the LLM."
+        f"{outcome.rows} rows, {outcome.distinct} distinct answers, "
+        f"{outcome.llm_calls} {resolved}."
     )
-    typer.echo(f"Parquet: {outcome.parquet_path}")
+    if written:
+        typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
 def _report_analyze(outcome: AnalyzeOutcome) -> None:
