@@ -4,8 +4,11 @@ import pytest
 
 from llmango.registry import (
     ExperimentSpec,
+    UnknownExperimentError,
     get_experiment,
     register_experiment,
+    resolve_experiment,
+    resolve_question_id,
     resolve_schema,
 )
 from llmango.schemas import LLMResponse
@@ -32,3 +35,22 @@ def test_register_rejects_duplicate() -> None:
 def test_unknown_id_raises() -> None:
     with pytest.raises(KeyError):
         get_experiment("does_not_exist")
+
+
+def test_resolve_experiment_accepts_number_and_full_id() -> None:
+    for ref in ("001", "1", "001_favorite_fruit"):
+        assert resolve_question_id(ref) == "001_favorite_fruit"
+
+
+def test_resolve_experiment_unknown_ref_raises() -> None:
+    with pytest.raises(KeyError):
+        resolve_experiment("does_not_exist")
+
+
+def test_resolve_experiment_handles_non_decimal_digits() -> None:
+    with pytest.raises(UnknownExperimentError):
+        resolve_experiment("²")
+
+
+def test_unknown_experiment_error_renders_plainly() -> None:
+    assert str(UnknownExperimentError("plain message")) == "plain message"

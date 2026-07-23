@@ -40,11 +40,11 @@ def _write_normalized(rows: list[dict[str, object]]) -> None:
         "is_fruit": pl.Boolean(),
         "multiple": pl.Boolean(),
     }
-    write_normalized(pl.DataFrame(rows, schema=schema), "favorite_fruit")
+    write_normalized(pl.DataFrame(rows, schema=schema), "001_favorite_fruit")
 
 
 def _read(tmp_path: Path, name: str) -> dict[str, object]:
-    path = tmp_path / "aggregated" / "favorite_fruit" / name
+    path = tmp_path / "aggregated" / "001_favorite_fruit" / name
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -60,7 +60,7 @@ def analyzed(env: Path) -> Path:
             _row("pl", "coś dziwnego", "other", True),
         ]
     )
-    analyze_question("favorite_fruit", detect=_fake_detect)
+    analyze_question("001_favorite_fruit", detect=_fake_detect)
     return env
 
 
@@ -115,7 +115,7 @@ def test_language_match_counts_undetermined_answers_apart(env: Path) -> None:
         ]
     )
 
-    analyze_question("favorite_fruit", detect=_fake_detect)
+    analyze_question("001_favorite_fruit", detect=_fake_detect)
 
     languages = _read(env, "language_match.json")["languages"]
     assert languages["en"] == {
@@ -134,14 +134,14 @@ def test_language_match_counts_undetermined_answers_apart(env: Path) -> None:
 
 def test_missing_normalized_parquet_raises(env: Path) -> None:
     with pytest.raises(FileNotFoundError, match="No normalized parquet"):
-        analyze_question("favorite_fruit", detect=_fake_detect)
+        analyze_question("001_favorite_fruit", detect=_fake_detect)
 
 
 def test_empty_normalized_parquet_raises(env: Path) -> None:
     _write_normalized([])
 
     with pytest.raises(ValueError, match="no rows"):
-        analyze_question("favorite_fruit", detect=_fake_detect)
+        analyze_question("001_favorite_fruit", detect=_fake_detect)
 
 
 def test_detect_language_reads_obvious_sentences() -> None:

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from llmango.registry import ExperimentSpec, register_experiment
 from llmango.schemas import LLMResponse
 
-QUESTION_ID = "favorite_fruit"
+QUESTION_ID = "001_favorite_fruit"
 
 
 class FruitChoice(LLMResponse):
@@ -90,7 +90,6 @@ register_experiment(
     ExperimentSpec(
         question_id=QUESTION_ID,
         response_schema=FruitChoice,
-        slug="001_favorite_fruit",
         to_row=to_row,
         normalization_schema=FruitNormalization,
         preprocess=preprocess,

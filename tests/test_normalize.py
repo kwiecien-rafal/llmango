@@ -35,7 +35,7 @@ def env(data_dirs: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _raw_row(lang: str, fruit: str, sample_idx: int = 0) -> dict[str, object]:
     return {
-        "question_id": "favorite_fruit",
+        "question_id": "001_favorite_fruit",
         "lang": lang,
         "model": "gpt-5.6-luna",
         "backend": "fake",
@@ -51,7 +51,7 @@ def _raw_row(lang: str, fruit: str, sample_idx: int = 0) -> dict[str, object]:
 
 
 def _write_raw(rows: list[dict[str, object]]) -> None:
-    write_results(rows, "favorite_fruit", "gpt-5.6-luna", "run-1")
+    write_results(rows, "001_favorite_fruit", "gpt-5.6-luna", "run-1")
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
@@ -113,13 +113,13 @@ def test_deterministic_layers_dedupe_and_need_no_backend(env: Path) -> None:
         ]
     )
 
-    outcome = normalize_question("favorite_fruit")
+    outcome = normalize_question("001_favorite_fruit")
 
     assert outcome.rows == 5
     assert outcome.distinct == 4
     assert outcome.llm_calls == 0
 
-    frame = pl.read_parquet(normalized_path("favorite_fruit"))
+    frame = pl.read_parquet(normalized_path("001_favorite_fruit"))
     resolved = _resolved(frame)
     assert resolved[("en", "apple")] == "apple"
     assert resolved[("en", "Apple")] == "apple"
@@ -131,9 +131,9 @@ def test_deterministic_layers_dedupe_and_need_no_backend(env: Path) -> None:
 def test_refusal_is_not_a_fruit(env: Path) -> None:
     _write_raw([_raw_row("en", "")])
 
-    outcome = normalize_question("favorite_fruit")
+    outcome = normalize_question("001_favorite_fruit")
 
-    frame = pl.read_parquet(normalized_path("favorite_fruit"))
+    frame = pl.read_parquet(normalized_path("001_favorite_fruit"))
     assert outcome.llm_calls == 0
     assert frame["is_fruit"].to_list() == [False]
     assert frame["fruit_canonical"].to_list() == [""]
@@ -146,9 +146,9 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
     ).write_text(json.dumps(cache), encoding="utf-8")
     _write_raw([_raw_row("en", "kiwi")])
 
-    outcome = normalize_question("favorite_fruit", make_backend=ExplodingBackend)
+    outcome = normalize_question("001_favorite_fruit", make_backend=ExplodingBackend)
 
-    frame = pl.read_parquet(normalized_path("favorite_fruit"))
+    frame = pl.read_parquet(normalized_path("001_favorite_fruit"))
     assert outcome.llm_calls == 0
     assert frame["fruit_canonical"].to_list() == ["kiwi"]
 
@@ -161,13 +161,13 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     _write_raw([_raw_row("en", "banana and apple")])
 
     outcome = normalize_question(
-        "favorite_fruit", make_backend=lambda: backend, model="gpt-5.6-luna"
+        "001_favorite_fruit", make_backend=lambda: backend, model="gpt-5.6-luna"
     )
 
     assert outcome.llm_calls == 1
     assert backend.calls == 1
 
-    frame = pl.read_parquet(normalized_path("favorite_fruit"))
+    frame = pl.read_parquet(normalized_path("001_favorite_fruit"))
     assert frame["fruit_canonical"].to_list() == ["banana"]
     assert frame["multiple"].to_list() == [True]
     assert frame["fruit_raw"].to_list() == ["banana and apple"]
@@ -183,10 +183,10 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
 def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
     _write_raw([_raw_row("en", "apple!"), _raw_row("en", "  Apple.  ", sample_idx=1)])
 
-    outcome = normalize_question("favorite_fruit")
+    outcome = normalize_question("001_favorite_fruit")
 
     assert outcome.llm_calls == 0
-    frame = pl.read_parquet(normalized_path("favorite_fruit"))
+    frame = pl.read_parquet(normalized_path("001_favorite_fruit"))
     assert frame["fruit_canonical"].to_list() == ["apple", "apple"]
 
 
@@ -195,7 +195,7 @@ def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
 
     with pytest.raises(ValueError, match="smoke limit"):
         normalize_question(
-            "favorite_fruit", make_backend=ExplodingBackend, max_llm_calls=0
+            "001_favorite_fruit", make_backend=ExplodingBackend, max_llm_calls=0
         )
 
 
@@ -206,18 +206,18 @@ def test_mapping_values_must_be_canonical(env: Path) -> None:
     _write_raw([_raw_row("en", "apple")])
 
     with pytest.raises(ValueError, match="canonical set"):
-        normalize_question("favorite_fruit")
+        normalize_question("001_favorite_fruit")
 
 
 def test_dry_run_counts_llm_work_without_calling_or_writing(env: Path) -> None:
     _write_raw([_raw_row("en", "apple"), _raw_row("en", "starfruit", sample_idx=1)])
 
     outcome = normalize_question(
-        "favorite_fruit", make_backend=ExplodingBackend, dry_run=True
+        "001_favorite_fruit", make_backend=ExplodingBackend, dry_run=True
     )
 
     assert outcome.parquet_path is None
     assert outcome.rows == 2
     assert outcome.distinct == 2
     assert outcome.llm_calls == 1
-    assert not normalized_path("favorite_fruit").is_file()
+    assert not normalized_path("001_favorite_fruit").is_file()

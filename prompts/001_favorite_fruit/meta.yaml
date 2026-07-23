@@ -1,4 +1,4 @@
-question_id: favorite_fruit
+question_id: 001_favorite_fruit
 schema: FruitChoice
 model: gpt-5.6-luna
 normalize_model: gpt-5.4-mini

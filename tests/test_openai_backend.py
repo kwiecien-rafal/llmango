@@ -23,7 +23,7 @@ FakeClientFactory = Callable[..., FakeClient]
 
 def _request() -> GenRequest:
     return GenRequest(
-        question_id="favorite_fruit",
+        question_id="001_favorite_fruit",
         lang="en",
         model="gpt-5.6-luna",
         prompt="What is your favorite fruit?",

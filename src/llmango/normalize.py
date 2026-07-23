@@ -80,9 +80,6 @@ def normalize_question(
     A dry run stops after the offline layers and reports how many answers the LLM
     would resolve, without calling it or writing anything.
     """
-    from llmango.experiments import ensure_registered
-
-    ensure_registered()
     spec = get_experiment(question_id)
     normalization_schema = spec.normalization_schema
     if normalization_schema is None:
@@ -92,7 +89,7 @@ def normalize_question(
     if frame.is_empty():
         raise FileNotFoundError(f"No raw results to normalize for {question_id}.")
 
-    directory = NORMALIZATION_DIR / (spec.slug or question_id)
+    directory = NORMALIZATION_DIR / question_id
     mapping = _load_mapping(directory, spec)
     cache = _load_cache(directory)
     pairs = _distinct_pairs(frame, spec)

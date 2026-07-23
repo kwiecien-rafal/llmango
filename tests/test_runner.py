@@ -59,7 +59,7 @@ def _isolate_dirs(data_dirs: Path) -> None:
 
 
 def test_run_writes_rows_and_manifest(fake_backend: GenerationBackend) -> None:
-    outcome = run("favorite_fruit", fake_backend, samples=2, languages=["en", "pl"])
+    outcome = run("001_favorite_fruit", fake_backend, samples=2, languages=["en", "pl"])
 
     assert not outcome.skipped
     assert outcome.rows_written == 4
@@ -73,8 +73,8 @@ def test_run_writes_rows_and_manifest(fake_backend: GenerationBackend) -> None:
 
 
 def test_rerun_with_same_config_adds_no_rows(fake_backend: GenerationBackend) -> None:
-    first = run("favorite_fruit", fake_backend, samples=2, languages=["en"])
-    second = run("favorite_fruit", fake_backend, samples=2, languages=["en"])
+    first = run("001_favorite_fruit", fake_backend, samples=2, languages=["en"])
+    second = run("001_favorite_fruit", fake_backend, samples=2, languages=["en"])
 
     assert not first.skipped
     assert second.skipped
@@ -84,7 +84,7 @@ def test_rerun_with_same_config_adds_no_rows(fake_backend: GenerationBackend) ->
 
 
 def test_refusals_persist_with_empty_fruit_raw() -> None:
-    outcome = run("favorite_fruit", RefusingBackend(), samples=1, languages=["en"])
+    outcome = run("001_favorite_fruit", RefusingBackend(), samples=1, languages=["en"])
 
     frame = read_results("*.parquet")
     assert outcome.rows_written == 1
@@ -96,7 +96,9 @@ def test_submit_batch_records_batch_id_without_writing_rows(
     fake_backend: GenerationBackend,
 ) -> None:
     backend = FakeBatchBackend(fake_backend)
-    outcome = submit_batch("favorite_fruit", backend, samples=2, languages=["en", "pl"])
+    outcome = submit_batch(
+        "001_favorite_fruit", backend, samples=2, languages=["en", "pl"]
+    )
 
     assert not outcome.skipped
     assert outcome.rows_written == 0
@@ -108,8 +110,8 @@ def test_submit_batch_records_batch_id_without_writing_rows(
 
 def test_submit_batch_is_idempotent(fake_backend: GenerationBackend) -> None:
     backend = FakeBatchBackend(fake_backend)
-    first = submit_batch("favorite_fruit", backend, samples=1, languages=["en"])
-    second = submit_batch("favorite_fruit", backend, samples=1, languages=["en"])
+    first = submit_batch("001_favorite_fruit", backend, samples=1, languages=["en"])
+    second = submit_batch("001_favorite_fruit", backend, samples=1, languages=["en"])
 
     assert not first.skipped
     assert second.skipped
@@ -122,7 +124,7 @@ def test_fetch_batch_writes_the_submitted_results(
 ) -> None:
     backend = FakeBatchBackend(fake_backend)
     submitted = submit_batch(
-        "favorite_fruit", backend, samples=2, languages=["en", "pl"]
+        "001_favorite_fruit", backend, samples=2, languages=["en", "pl"]
     )
 
     fetched = fetch_batch(submitted.run_id, backend)
@@ -145,4 +147,4 @@ def test_submit_batch_surfaces_batch_id_when_manifest_write_fails(
     monkeypatch.setattr(runner_module, "write_manifest", _fail)
 
     with pytest.raises(RuntimeError, match="batch-xyz"):
-        submit_batch("favorite_fruit", backend, samples=1, languages=["en"])
+        submit_batch("001_favorite_fruit", backend, samples=1, languages=["en"])
