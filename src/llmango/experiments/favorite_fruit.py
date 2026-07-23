@@ -89,10 +89,10 @@ def to_row(parsed: BaseModel | None) -> dict[str, object]:
 register_experiment(
     ExperimentSpec(
         question_id=QUESTION_ID,
-        response_model=FruitChoice,
+        response_schema=FruitChoice,
         slug="001_favorite_fruit",
         to_row=to_row,
-        normalization_model=FruitNormalization,
+        normalization_schema=FruitNormalization,
         preprocess=preprocess,
         raw_column="fruit_raw",
         canonical_column="fruit_canonical",

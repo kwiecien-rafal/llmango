@@ -344,7 +344,7 @@ def _build_requests(
                     sample_idx=sample_idx,
                     seed=seed,
                     sampling=sampling,
-                    response_model=spec.response_model,
+                    response_schema=spec.response_schema,
                 )
             )
     return requests
