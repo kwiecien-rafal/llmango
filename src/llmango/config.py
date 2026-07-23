@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = REPO_ROOT / "prompts"
 DATA_DIR = REPO_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
+NORMALIZED_DIR = DATA_DIR / "normalized"
 AGG_DIR = DATA_DIR / "aggregated"
 NORMALIZATION_DIR = DATA_DIR / "normalization"
 RUNS_DIR = REPO_ROOT / "runs"

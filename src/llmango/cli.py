@@ -6,6 +6,7 @@ import typer
 
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
+from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.runner import RunOutcome, fetch_batch, submit_batch
 from llmango.runner import run as run_experiment
 
@@ -74,6 +75,34 @@ def run(
     )
 
 
+@app.command()
+def normalize(
+    question_id: Annotated[
+        str, typer.Argument(help="Question to normalize.")
+    ] = "favorite_fruit",
+    model: Annotated[
+        str | None,
+        typer.Option("--model", help="Override the normalization model."),
+    ] = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="Allow a large paid normalization run.")
+    ] = False,
+) -> None:
+    """Map raw answers to canonical categories and write a normalized Parquet file."""
+    try:
+        outcome = normalize_question(
+            question_id,
+            make_backend=OpenAIBackend,
+            model=model,
+            max_llm_calls=None if force else SMOKE_SAMPLE_LIMIT,
+        )
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from error
+
+    _report_normalize(outcome)
+
+
 @app.command(name="batch-fetch")
 def batch_fetch(
     run_id: Annotated[str, typer.Argument(help="Run id of a submitted batch.")],
@@ -99,6 +128,14 @@ def _report_run(outcome: RunOutcome) -> None:
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     typer.echo(f"Parquet:  {outcome.parquet_path}")
     typer.echo(f"Manifest: {outcome.manifest_path}")
+
+
+def _report_normalize(outcome: NormalizeOutcome) -> None:
+    typer.echo(
+        f"Normalized {outcome.rows} rows: {outcome.distinct} distinct answers, "
+        f"{outcome.llm_calls} resolved by the LLM."
+    )
+    typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
 def _report_submit(outcome: RunOutcome) -> None:

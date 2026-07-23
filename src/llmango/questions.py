@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from llmango.config import PROMPTS_DIR
-from llmango.registry import resolve_schema
+from llmango.registry import get_experiment, resolve_schema
 
 
 class SamplingParams(BaseModel):
@@ -35,6 +35,7 @@ class QuestionConfig(BaseModel):
     schema_name: str = Field(alias="schema")
     languages: list[str]
     model: str | None = None
+    normalize_model: str | None = None
     sampling: SamplingParams = Field(default_factory=SamplingParams)
 
 
@@ -53,9 +54,19 @@ def prompt_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def experiment_dir(question_id: str) -> Path:
+    """Return an experiment's folder, named by its slug and holding its prompts."""
+    _register_experiments()
+    try:
+        slug = get_experiment(question_id).slug or question_id
+    except KeyError:
+        slug = question_id
+    return PROMPTS_DIR / slug
+
+
 def load_prompt(question_id: str, lang: str) -> PromptFile:
     """Load one language's prompt file for a question."""
-    path = PROMPTS_DIR / question_id / f"{lang}.md"
+    path = experiment_dir(question_id) / f"{lang}.md"
     if not path.is_file():
         raise FileNotFoundError(f"Missing prompt file: {path}")
     text = path.read_text(encoding="utf-8")
@@ -69,9 +80,8 @@ def load_question(question_id: str) -> QuestionConfig:
     matches the registered experiment model, and that every declared language
     has a prompt file.
     """
-    _register_experiments()
-
-    meta_path = PROMPTS_DIR / question_id / "meta.yaml"
+    directory = experiment_dir(question_id)
+    meta_path = directory / "meta.yaml"
     if not meta_path.is_file():
         raise FileNotFoundError(f"Missing question manifest: {meta_path}")
 
@@ -81,7 +91,7 @@ def load_question(question_id: str) -> QuestionConfig:
     if config.question_id != question_id:
         raise ValueError(
             f"meta.yaml question_id '{config.question_id}' does not match "
-            f"directory '{question_id}'"
+            f"requested '{question_id}'"
         )
 
     registered = resolve_schema(question_id).__name__
@@ -92,9 +102,7 @@ def load_question(question_id: str) -> QuestionConfig:
         )
 
     missing = [
-        lang
-        for lang in config.languages
-        if not (PROMPTS_DIR / question_id / f"{lang}.md").is_file()
+        lang for lang in config.languages if not (directory / f"{lang}.md").is_file()
     ]
     if missing:
         raise FileNotFoundError(

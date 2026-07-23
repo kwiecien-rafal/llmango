@@ -1,6 +1,7 @@
 question_id: favorite_fruit
 schema: FruitChoice
 model: gpt-5.6-luna
+normalize_model: gpt-5.6-luna
 languages:
   - en
   - pl

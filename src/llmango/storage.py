@@ -10,7 +10,7 @@ from pathlib import Path
 
 import polars as pl
 
-from llmango.config import RAW_DIR
+from llmango.config import NORMALIZED_DIR, RAW_DIR
 
 COMMON_LEADING_COLUMNS = [
     "question_id",
@@ -89,3 +89,16 @@ def read_results(pattern: str = "*.parquet") -> pl.DataFrame:
     if not paths:
         return pl.DataFrame()
     return pl.concat(pl.read_parquet(path) for path in paths)
+
+
+def normalized_path(question_id: str) -> Path:
+    """Return the normalized Parquet path for a question under data/normalized/."""
+    return NORMALIZED_DIR / f"{question_id}.parquet"
+
+
+def write_normalized(frame: pl.DataFrame, question_id: str) -> Path:
+    """Write a question's normalized frame to a single Parquet file and return it."""
+    NORMALIZED_DIR.mkdir(parents=True, exist_ok=True)
+    path = normalized_path(question_id)
+    frame.write_parquet(path)
+    return path

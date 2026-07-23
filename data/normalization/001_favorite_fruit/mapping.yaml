@@ -1,0 +1,96 @@
+# Deterministic normalization map: preprocessed answer -> canonical fruit.
+#
+# Keys are answers after preprocessing (Unicode NFKC, lowercased, articles and
+# qualifiers stripped). Values are canonical categories from FruitEnum, or
+# "other" for the tail. This layer is free, reproducible and reviewed in pull
+# requests; the LLM layer only ever sees strings absent from this table and the
+# cache.
+#
+# Conventions: tomato and avocado are kept as everyday-language categories
+# rather than forced onto a botanical grouping. Culture-specific fruits keep
+# their own canonical value instead of collapsing into a nearby Western fruit.
+
+# English
+apple: apple
+apples: apple
+banana: banana
+bananas: banana
+orange: orange
+oranges: orange
+mango: mango
+mangoes: mango
+strawberry: strawberry
+strawberries: strawberry
+grape: grape
+grapes: grape
+watermelon: watermelon
+pineapple: pineapple
+peach: peach
+peaches: peach
+pear: pear
+pears: pear
+cherry: cherry
+cherries: cherry
+lemon: lemon
+lime: lime
+kiwi: kiwi
+blueberry: blueberry
+blueberries: blueberry
+raspberry: raspberry
+raspberries: raspberry
+blackberry: blackberry
+plum: plum
+plums: plum
+pomegranate: pomegranate
+apricot: apricot
+fig: fig
+figs: fig
+melon: melon
+coconut: coconut
+papaya: papaya
+avocado: avocado
+tomato: tomato
+persimmon: persimmon
+lychee: lychee
+dragonfruit: dragonfruit
+dragon fruit: dragonfruit
+guava: guava
+passionfruit: passionfruit
+passion fruit: passionfruit
+durian: durian
+
+# Polish
+jabłko: apple
+banan: banana
+pomarańcza: orange
+truskawka: strawberry
+truskawki: strawberry
+winogrono: grape
+winogrona: grape
+arbuz: watermelon
+ananas: pineapple
+brzoskwinia: peach
+gruszka: pear
+gruszki: pear
+wiśnia: cherry
+czereśnia: cherry
+cytryna: lemon
+limonka: lime
+borówka: blueberry
+jagoda: blueberry
+malina: raspberry
+maliny: raspberry
+jeżyna: blackberry
+śliwka: plum
+śliwki: plum
+granat: pomegranate
+morela: apricot
+figa: fig
+kokos: coconut
+papaja: papaya
+awokado: avocado
+pomidor: tomato
+kaki: persimmon
+liczi: lychee
+smoczy owoc: dragonfruit
+marakuja: passionfruit

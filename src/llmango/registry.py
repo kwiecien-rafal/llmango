@@ -17,9 +17,13 @@ class ExperimentSpec:
 
     question_id: str
     response_model: type[BaseModel]
+    slug: str = ""
     to_row: Callable[[BaseModel | None], dict[str, object]] | None = None
     normalization_model: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
+    raw_column: str = "raw"
+    canonical_column: str = "canonical"
+    canonical_values: frozenset[str] | None = None
 
 
 _REGISTRY: dict[str, ExperimentSpec] = {}
