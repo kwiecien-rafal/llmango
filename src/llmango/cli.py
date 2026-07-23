@@ -4,6 +4,7 @@ from typing import Annotated
 
 import typer
 
+from llmango.analyze import AnalyzeOutcome, analyze_question
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
 from llmango.normalize import NormalizeOutcome, normalize_question
@@ -103,6 +104,22 @@ def normalize(
     _report_normalize(outcome)
 
 
+@app.command()
+def analyze(
+    question_id: Annotated[
+        str, typer.Argument(help="Question to analyze.")
+    ] = "favorite_fruit",
+) -> None:
+    """Aggregate normalized answers into the committed JSON the site reads."""
+    try:
+        outcome = analyze_question(question_id)
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        typer.echo(str(error))
+        raise typer.Exit(code=1) from error
+
+    _report_analyze(outcome)
+
+
 @app.command(name="batch-fetch")
 def batch_fetch(
     run_id: Annotated[str, typer.Argument(help="Run id of a submitted batch.")],
@@ -136,6 +153,12 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
         f"{outcome.llm_calls} resolved by the LLM."
     )
     typer.echo(f"Parquet: {outcome.parquet_path}")
+
+
+def _report_analyze(outcome: AnalyzeOutcome) -> None:
+    typer.echo(f"Wrote {len(outcome.paths)} aggregate files:")
+    for path in outcome.paths:
+        typer.echo(f"  {path}")
 
 
 def _report_submit(outcome: RunOutcome) -> None:
