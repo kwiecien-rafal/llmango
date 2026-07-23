@@ -102,3 +102,11 @@ def write_normalized(frame: pl.DataFrame, question_id: str) -> Path:
     path = normalized_path(question_id)
     frame.write_parquet(path)
     return path
+
+
+def read_normalized(question_id: str) -> pl.DataFrame:
+    """Read a question's normalized results, or an empty frame if none exist."""
+    path = normalized_path(question_id)
+    if not path.is_file():
+        return pl.DataFrame()
+    return pl.read_parquet(path)
