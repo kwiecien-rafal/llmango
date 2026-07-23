@@ -42,6 +42,14 @@ class RunOutcome:
     batch_id: str | None = None
 
 
+@dataclass(frozen=True)
+class RunPlan:
+    """A preview of a run: its manifest and any existing duplicate."""
+
+    manifest: RunManifest
+    duplicate: RunManifest | None
+
+
 def _new_run_id(question_id: str) -> str:
     return f"{question_id}-{uuid.uuid4().hex[:12]}"
 
@@ -214,6 +222,30 @@ def run(
         manifest_path=written_manifest_path,
         rows_written=len(rows),
         skipped=False,
+    )
+
+
+def plan_run(
+    question_id: str,
+    backend_id: str,
+    *,
+    model: str | None = None,
+    samples: int = 1,
+    languages: list[str] | None = None,
+    seed: int | None = None,
+) -> RunPlan:
+    """Build a run's manifest and check for a duplicate without generating anything.
+
+    Takes the backend id rather than a backend so a dry run needs no client and
+    no API key. Reuses the same preparation the real run does, so the previewed
+    languages and model match what a run would use.
+    """
+    manifest = _prepare(
+        question_id, backend_id, model, samples, languages, seed, None
+    ).manifest
+    return RunPlan(
+        manifest=manifest,
+        duplicate=find_manifest_by_content_hash(manifest.content_hash()),
     )
 
 

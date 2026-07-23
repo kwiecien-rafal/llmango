@@ -6,8 +6,6 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from llmango import analyze as analyze_module
-from llmango import storage as storage_module
 from llmango.analyze import analyze_question
 from llmango.lang_detect import detect_language
 from llmango.storage import write_normalized
@@ -20,10 +18,8 @@ def _fake_detect(text: str, languages: tuple[str, ...]) -> str | None:
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
-    monkeypatch.setattr(analyze_module, "AGG_DIR", tmp_path / "aggregated")
-    return tmp_path
+def env(data_dirs: Path) -> Path:
+    return data_dirs
 
 
 def _row(lang: str, raw: str, canonical: str, is_fruit: bool) -> dict[str, object]:

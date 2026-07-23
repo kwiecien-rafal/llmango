@@ -9,7 +9,6 @@ import pytest
 
 from llmango import normalize as normalize_module
 from llmango import questions as questions_module
-from llmango import storage as storage_module
 from llmango.backends.base import GenerationBackend, GenRequest, GenResult
 from llmango.experiments.favorite_fruit import FruitNormalization
 from llmango.normalize import normalize_question
@@ -20,15 +19,10 @@ _SLUG = "001_favorite_fruit"
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    norm_dir = tmp_path / "normalization" / _SLUG
-    prompt_dir = tmp_path / "prompts" / _SLUG
-    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
-    monkeypatch.setattr(
-        normalize_module, "NORMALIZATION_DIR", tmp_path / "normalization"
-    )
-    monkeypatch.setattr(questions_module, "PROMPTS_DIR", tmp_path / "prompts")
+def env(data_dirs: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    norm_dir = data_dirs / "normalization" / _SLUG
+    prompt_dir = data_dirs / "prompts" / _SLUG
+    monkeypatch.setattr(questions_module, "PROMPTS_DIR", data_dirs / "prompts")
 
     norm_dir.mkdir(parents=True)
     (norm_dir / "mapping.yaml").write_text(_MAPPING, encoding="utf-8")
@@ -36,7 +30,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (prompt_dir / "normalize.md").write_text(
         "Normalize {raw} written in {lang}.", encoding="utf-8"
     )
-    return tmp_path
+    return data_dirs
 
 
 def _raw_row(lang: str, fruit: str, sample_idx: int = 0) -> dict[str, object]:
@@ -213,3 +207,17 @@ def test_mapping_values_must_be_canonical(env: Path) -> None:
 
     with pytest.raises(ValueError, match="canonical set"):
         normalize_question("favorite_fruit")
+
+
+def test_dry_run_counts_llm_work_without_calling_or_writing(env: Path) -> None:
+    _write_raw([_raw_row("en", "apple"), _raw_row("en", "starfruit", sample_idx=1)])
+
+    outcome = normalize_question(
+        "favorite_fruit", make_backend=ExplodingBackend, dry_run=True
+    )
+
+    assert outcome.parquet_path is None
+    assert outcome.rows == 2
+    assert outcome.distinct == 2
+    assert outcome.llm_calls == 1
+    assert not normalized_path("favorite_fruit").is_file()
