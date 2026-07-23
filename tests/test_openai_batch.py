@@ -14,7 +14,7 @@ from llmango.questions import SamplingParams
 
 def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> GenRequest:
     return GenRequest(
-        question_id="favorite_fruit",
+        question_id="001_favorite_fruit",
         lang=lang,
         model="gpt-5.6-luna",
         prompt=f"What is your favorite fruit? ({lang})",
@@ -151,7 +151,7 @@ def test_build_jsonl_encodes_each_request() -> None:
 
 def test_build_jsonl_omits_unset_sampling_params() -> None:
     request = GenRequest(
-        question_id="favorite_fruit",
+        question_id="001_favorite_fruit",
         lang="en",
         model="gpt-5.6-luna",
         prompt="prompt",

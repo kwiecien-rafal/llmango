@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from llmango.config import PROMPTS_DIR
-from llmango.registry import get_experiment, resolve_schema
+from llmango.registry import resolve_schema
 
 
 class SamplingParams(BaseModel):
@@ -55,13 +55,8 @@ def prompt_sha256(text: str) -> str:
 
 
 def experiment_dir(question_id: str) -> Path:
-    """Return an experiment's folder, named by its slug and holding its prompts."""
-    _register_experiments()
-    try:
-        slug = get_experiment(question_id).slug or question_id
-    except KeyError:
-        slug = question_id
-    return PROMPTS_DIR / slug
+    """Return an experiment's folder, named by its id and holding its prompts."""
+    return PROMPTS_DIR / question_id
 
 
 def load_prompt(question_id: str, lang: str) -> PromptFile:
@@ -110,10 +105,3 @@ def load_question(question_id: str) -> QuestionConfig:
         )
 
     return config
-
-
-def _register_experiments() -> None:
-    """Import the experiments package so every ExperimentSpec is registered."""
-    from llmango.experiments import ensure_registered
-
-    ensure_registered()

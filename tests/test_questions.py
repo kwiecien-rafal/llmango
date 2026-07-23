@@ -6,7 +6,7 @@ from llmango.experiments.favorite_fruit import FruitChoice
 from llmango.questions import load_prompt, load_question, prompt_sha256
 from llmango.registry import resolve_schema
 
-QUESTION_ID = "favorite_fruit"
+QUESTION_ID = "001_favorite_fruit"
 
 
 def test_load_question_reads_the_manifest() -> None:

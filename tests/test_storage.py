@@ -12,7 +12,7 @@ from llmango.storage import read_results, results_path, write_results
 
 def _row(sample_idx: int, fruit: str) -> dict[str, object]:
     return {
-        "question_id": "favorite_fruit",
+        "question_id": "001_favorite_fruit",
         "lang": "en",
         "model": "gpt-5.6-luna",
         "backend": "fake",
@@ -33,8 +33,8 @@ def test_write_then_read_round_trips(
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
     rows = [_row(0, "apple"), _row(1, "mango")]
 
-    path = write_results(rows, "favorite_fruit", "gpt-5.6-luna", "run-001")
-    assert path == results_path("favorite_fruit", "gpt-5.6-luna", "run-001")
+    path = write_results(rows, "001_favorite_fruit", "gpt-5.6-luna", "run-001")
+    assert path == results_path("001_favorite_fruit", "gpt-5.6-luna", "run-001")
     assert path.exists()
 
     frame = read_results("*.parquet")
@@ -47,7 +47,7 @@ def test_columns_follow_the_canonical_order(
 ) -> None:
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
 
-    write_results([_row(0, "apple")], "favorite_fruit", "gpt-5.6-luna", "run-001")
+    write_results([_row(0, "apple")], "001_favorite_fruit", "gpt-5.6-luna", "run-001")
 
     frame = read_results("*.parquet")
     assert frame.columns == [
@@ -71,7 +71,7 @@ def test_column_dtypes_are_pinned(
 ) -> None:
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
 
-    write_results([_row(0, "apple")], "favorite_fruit", "gpt-5.6-luna", "run-001")
+    write_results([_row(0, "apple")], "001_favorite_fruit", "gpt-5.6-luna", "run-001")
 
     frame = read_results("*.parquet")
     assert frame.schema["sample_idx"] == pl.Int64

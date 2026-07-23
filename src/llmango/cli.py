@@ -8,6 +8,7 @@ from llmango.analyze import AnalyzeOutcome, analyze_question
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
 from llmango.normalize import NormalizeOutcome, normalize_question
+from llmango.registry import resolve_question_id
 from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
 from llmango.runner import run as run_experiment
 
@@ -26,9 +27,9 @@ def main() -> None:
 
 @app.command()
 def run(
-    question_id: Annotated[
-        str, typer.Argument(help="Question to run.")
-    ] = "favorite_fruit",
+    experiment: Annotated[
+        str, typer.Argument(help="Experiment number or id (001 or 001_favorite_fruit).")
+    ] = "001_favorite_fruit",
     model: Annotated[
         str | None, typer.Option("--model", help="Override the meta.yaml model.")
     ] = None,
@@ -53,52 +54,56 @@ def run(
     ] = False,
 ) -> None:
     """Run one question across languages and persist raw results to Parquet."""
+    question_id = _resolve(experiment)
     count = _resolve_samples(samples, smoke, dry_run, force)
 
-    if dry_run:
-        backend = OpenAIBatchBackend if batch else OpenAIBackend
-        _report_plan(
-            plan_run(
+    try:
+        if dry_run:
+            backend = OpenAIBatchBackend if batch else OpenAIBackend
+            _report_plan(
+                plan_run(
+                    question_id,
+                    backend.backend_id,
+                    model=model,
+                    samples=count,
+                    languages=lang,
+                    seed=seed,
+                )
+            )
+            return
+
+        if batch:
+            _report_submit(
+                submit_batch(
+                    question_id,
+                    OpenAIBatchBackend(),
+                    model=model,
+                    samples=count,
+                    languages=lang,
+                    seed=seed,
+                )
+            )
+            return
+
+        _report_run(
+            run_experiment(
                 question_id,
-                backend.backend_id,
+                OpenAIBackend(),
                 model=model,
                 samples=count,
                 languages=lang,
                 seed=seed,
             )
         )
-        return
-
-    if batch:
-        _report_submit(
-            submit_batch(
-                question_id,
-                OpenAIBatchBackend(),
-                model=model,
-                samples=count,
-                languages=lang,
-                seed=seed,
-            )
-        )
-        return
-
-    _report_run(
-        run_experiment(
-            question_id,
-            OpenAIBackend(),
-            model=model,
-            samples=count,
-            languages=lang,
-            seed=seed,
-        )
-    )
+    except _PIPELINE_ERRORS as error:
+        _die(str(error))
 
 
 @app.command()
 def normalize(
-    question_id: Annotated[
-        str, typer.Argument(help="Question to normalize.")
-    ] = "favorite_fruit",
+    experiment: Annotated[
+        str, typer.Argument(help="Experiment number or id (001 or 001_favorite_fruit).")
+    ] = "001_favorite_fruit",
     model: Annotated[
         str | None,
         typer.Option("--model", help="Override the normalization model."),
@@ -111,6 +116,7 @@ def normalize(
     ] = False,
 ) -> None:
     """Map raw answers to canonical categories and write a normalized Parquet file."""
+    question_id = _resolve(experiment)
     try:
         outcome = normalize_question(
             question_id,
@@ -126,11 +132,12 @@ def normalize(
 
 @app.command()
 def analyze(
-    question_id: Annotated[
-        str, typer.Argument(help="Question to analyze.")
-    ] = "favorite_fruit",
+    experiment: Annotated[
+        str, typer.Argument(help="Experiment number or id (001 or 001_favorite_fruit).")
+    ] = "001_favorite_fruit",
 ) -> None:
     """Aggregate normalized answers into the committed JSON the site reads."""
+    question_id = _resolve(experiment)
     try:
         outcome = analyze_question(question_id)
     except _PIPELINE_ERRORS as error:
@@ -166,6 +173,14 @@ def _resolve_samples(
             f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
         )
     return count
+
+
+def _resolve(experiment: str) -> str:
+    """Resolve an experiment reference to its canonical question_id, or exit."""
+    try:
+        return resolve_question_id(experiment)
+    except KeyError as error:
+        _die(str(error))
 
 
 def _die(message: str) -> NoReturn:

@@ -41,7 +41,7 @@ def pipeline(data_dirs: Path) -> Path:
 
 
 def _aggregate(tmp_path: Path, name: str) -> dict[str, dict[str, object]]:
-    path = tmp_path / "aggregated" / "favorite_fruit" / name
+    path = tmp_path / "aggregated" / "001_favorite_fruit" / name
     return json.loads(path.read_text(encoding="utf-8"))["languages"]
 
 
@@ -49,17 +49,20 @@ def test_pipeline_generates_normalizes_and_aggregates(
     pipeline: Path, make_fake_backend: Callable[..., GenerationBackend]
 ) -> None:
     run_outcome = run(
-        "favorite_fruit", make_fake_backend(_ANSWERS), samples=4, languages=["en", "pl"]
+        "001_favorite_fruit",
+        make_fake_backend(_ANSWERS),
+        samples=4,
+        languages=["en", "pl"],
     )
     assert not run_outcome.skipped
     assert run_outcome.rows_written == 8
 
-    normalize_outcome = normalize_question("favorite_fruit")
+    normalize_outcome = normalize_question("001_favorite_fruit")
     assert normalize_outcome.rows == 8
     assert normalize_outcome.distinct == 7
     assert normalize_outcome.llm_calls == 0
 
-    analyze_question("favorite_fruit", detect=_detect)
+    analyze_question("001_favorite_fruit", detect=_detect)
 
     distributions = _aggregate(pipeline, "distributions.json")
     refusals = _aggregate(pipeline, "refusal_rate.json")

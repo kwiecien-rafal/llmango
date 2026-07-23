@@ -58,9 +58,6 @@ def analyze_question(
     The detector is injectable so tests can run offline; by default it uses the
     lingua-backed detector restricted to the languages present in the data.
     """
-    from llmango.experiments import ensure_registered
-
-    ensure_registered()
     spec = get_experiment(question_id)
     if not normalized_path(question_id).is_file():
         raise FileNotFoundError(
