@@ -1,0 +1,4 @@
+languages: [en, pl, ja]
+order: fixed
+order_ids: [mango, apple, banana, pomegranate, pear, orange, watermelon, grape, pineapple, lychee]
+schema_variants: [en]

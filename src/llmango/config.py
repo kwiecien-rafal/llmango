@@ -15,6 +15,7 @@ AGG_DIR = DATA_DIR / "aggregated"
 NORMALIZATION_DIR = DATA_DIR / "normalization"
 RUNS_DIR = REPO_ROOT / "runs"
 RESULTS_DIR = REPO_ROOT / "results"
+PRICING_FILE = DATA_DIR / "pricing.json"
 
 
 def load_env() -> None:

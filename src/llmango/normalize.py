@@ -1,11 +1,13 @@
 """Post-hoc normalization of free-text answers to canonical categories.
 
-Maps each raw answer onto a canonical English category in layers, cheapest
-first: dedupe the distinct answers per language, resolve them against a
-deterministic mapping table, then fall back to an LLM for whatever is left. Raw
-answers are never overwritten. Normalization only adds the canonical, is_fruit
-and multiple columns and writes a separate normalized Parquet file. Every LLM
-result is cached and promoted, so reruns never pay for the same string twice.
+Runs per experiment: reads the raw answers of every question in the experiment
+and maps each onto a canonical English category in layers, cheapest first. The
+shared fruit table seeds the deterministic mapping so every in-list answer
+resolves for free; leftover strings (off-list or free-text) fall through to the
+mapping file and then an LLM. Raw answers are never overwritten. Normalization
+only adds the canonical, is_fruit and multiple columns and writes a separate
+normalized Parquet file. Every LLM result is cached and promoted, so reruns
+never pay for the same string twice.
 """
 
 import json
@@ -21,8 +23,14 @@ from pydantic import BaseModel, ConfigDict
 
 from llmango.backends.base import GenerationBackend, GenRequest
 from llmango.config import NORMALIZATION_DIR
-from llmango.questions import SamplingParams, experiment_dir, load_question
-from llmango.registry import ExperimentSpec, get_experiment
+from llmango.questions import (
+    SamplingParams,
+    experiment_dir,
+    list_questions,
+    load_experiment_config,
+    load_fruits,
+)
+from llmango.registry import ExperimentSpec, get_experiment, resolve_experiment_id
 from llmango.storage import read_results, write_normalized
 
 _MAPPING_FILE = "mapping.yaml"
@@ -63,34 +71,33 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
     return text
 
 
-def normalize_question(
-    question_id: str,
+def normalize_experiment(
+    experiment_id: str,
     *,
     make_backend: Callable[[], GenerationBackend] | None = None,
     model: str | None = None,
     max_llm_calls: int | None = None,
     dry_run: bool = False,
 ) -> NormalizeOutcome:
-    """Add canonical categories to a question's raw answers and write them out.
+    """Add canonical categories to an experiment's raw answers and write them out.
 
-    Reads every raw result for the question, resolves each distinct answer per
-    language through the deterministic layers and then the LLM for the rest, and
-    writes a normalized Parquet file that leaves the raw answers untouched. The
-    backend is built lazily, so a run resolved entirely offline needs no API key.
-    A dry run stops after the offline layers and reports how many answers the LLM
-    would resolve, without calling it or writing anything.
+    Reads every question's raw results, resolves each distinct answer per language
+    through the deterministic layers and then the LLM for the rest, and writes a
+    normalized Parquet file that leaves the raw answers untouched. The backend is
+    built lazily, so a run resolved entirely offline needs no API key. A dry run
+    stops after the offline layers and reports how many answers the LLM would
+    resolve, without calling it or writing anything.
     """
-    spec = get_experiment(question_id)
+    experiment_id = resolve_experiment_id(experiment_id)
+    spec = get_experiment(experiment_id)
     normalization_schema = spec.normalization_schema
     if normalization_schema is None:
-        raise ValueError(f"Experiment {question_id} has no normalization schema.")
+        raise ValueError(f"Experiment {experiment_id} has no normalization schema.")
 
-    frame = read_results(f"{question_id}__*.parquet")
-    if frame.is_empty():
-        raise FileNotFoundError(f"No raw results to normalize for {question_id}.")
+    frame = _read_experiment_raw(experiment_id)
 
-    directory = NORMALIZATION_DIR / question_id
-    mapping = _load_mapping(directory, spec)
+    directory = NORMALIZATION_DIR / experiment_id
+    mapping = _load_mapping(directory, spec, experiment_id)
     cache = _load_cache(directory)
     pairs = _distinct_pairs(frame, spec)
 
@@ -115,7 +122,7 @@ def normalize_question(
         resolutions.update(
             _resolve_online(
                 unresolved,
-                question_id,
+                experiment_id,
                 normalization_schema,
                 make_backend,
                 model,
@@ -126,13 +133,25 @@ def normalize_question(
         _save_cache(directory, cache)
 
     normalized = _join_resolutions(frame, resolutions, spec)
-    parquet_path = write_normalized(normalized, question_id)
+    parquet_path = write_normalized(normalized, experiment_id)
     return NormalizeOutcome(
         parquet_path=parquet_path,
         rows=frame.height,
         distinct=len(pairs),
         llm_calls=len(unresolved),
     )
+
+
+def _read_experiment_raw(experiment_id: str) -> pl.DataFrame:
+    """Read and concatenate every question's raw results for an experiment."""
+    frames = [
+        frame
+        for question_id in list_questions(experiment_id)
+        if not (frame := read_results(f"{question_id}__*.parquet")).is_empty()
+    ]
+    if not frames:
+        raise FileNotFoundError(f"No raw results to normalize for {experiment_id}.")
+    return pl.concat(frames)
 
 
 def _distinct_pairs(frame: pl.DataFrame, spec: ExperimentSpec) -> list[tuple[str, str]]:
@@ -165,7 +184,7 @@ def _resolve_offline(
 
 def _resolve_online(
     unresolved: list[tuple[str, str]],
-    question_id: str,
+    experiment_id: str,
     response_schema: type[BaseModel],
     make_backend: Callable[[], GenerationBackend] | None,
     model: str | None,
@@ -182,14 +201,14 @@ def _resolve_online(
         raise ValueError(
             f"{len(unresolved)} answers need the LLM layer but no backend given."
         )
-    resolved_model = model or _normalize_model(question_id)
+    resolved_model = model or _normalize_model(experiment_id)
     if not resolved_model:
-        raise ValueError(f"No model given to normalize {question_id}.")
+        raise ValueError(f"No model given to normalize {experiment_id}.")
 
-    template = _load_prompt(question_id)
+    template = _load_prompt(experiment_id)
     requests = [
         GenRequest(
-            question_id=question_id,
+            question_id=experiment_id,
             lang=lang,
             model=resolved_model,
             prompt=template.replace("{lang}", lang).replace("{raw}", raw),
@@ -243,27 +262,42 @@ def _join_resolutions(
     return frame.join(resolution_frame, on=["lang", spec.raw_column], how="left")
 
 
-def _normalize_model(question_id: str) -> str | None:
+def _normalize_model(experiment_id: str) -> str | None:
     """Return the configured normalization model, falling back to the run model."""
-    config = load_question(question_id)
+    config = load_experiment_config(experiment_id)
     return config.normalize_model or config.model
 
 
-def _load_mapping(directory: Path, spec: ExperimentSpec) -> dict[str, str]:
-    """Load the deterministic mapping table, keyed by preprocessed answer."""
+def _load_mapping(
+    directory: Path, spec: ExperimentSpec, experiment_id: str
+) -> dict[str, str]:
+    """Load the deterministic mapping, seeded by the fruit table labels.
+
+    The fruit table's per-language labels resolve every in-list answer for free;
+    mapping.yaml adds or overrides entries for anything else.
+    """
+    mapping = _fruit_label_mapping(experiment_id, spec)
     path = directory / _MAPPING_FILE
-    if not path.is_file():
-        return {}
-    raw_map: dict[str, str] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    mapping = {preprocess(key, spec): value for key, value in raw_map.items()}
+    if path.is_file():
+        raw_map: dict[str, str] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        mapping.update((preprocess(key, spec), value) for key, value in raw_map.items())
     if spec.canonical_values is not None:
         invalid = sorted(set(mapping.values()) - spec.canonical_values)
         if invalid:
             raise ValueError(
-                f"mapping.yaml has values outside the canonical set: "
-                f"{', '.join(invalid)}"
+                f"mapping has values outside the canonical set: {', '.join(invalid)}"
             )
     return mapping
+
+
+def _fruit_label_mapping(experiment_id: str, spec: ExperimentSpec) -> dict[str, str]:
+    """Build a label-to-canonical mapping from the experiment's fruit table."""
+    table = load_fruits(experiment_id)
+    return {
+        preprocess(label, spec): canonical
+        for canonical, labels in table.labels.items()
+        for label in labels.values()
+    }
 
 
 def _load_cache(directory: Path) -> dict[str, dict[str, dict[str, object]]]:
@@ -284,8 +318,8 @@ def _save_cache(
     )
 
 
-def _load_prompt(question_id: str) -> str:
-    path = experiment_dir(question_id) / _PROMPT_FILE
+def _load_prompt(experiment_id: str) -> str:
+    path = experiment_dir(experiment_id) / _PROMPT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing normalization prompt: {path}")
     return path.read_text(encoding="utf-8")

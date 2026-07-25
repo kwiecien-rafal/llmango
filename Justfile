@@ -1,20 +1,20 @@
 # Task shortcuts over the llmango CLI.
 #
-# Reference an experiment by its number (001) or full id (001_favorite_fruit);
-# the CLI resolves either to the same run.
+# `run` takes a question (001a, 001b, ...); `normalize` and `analyze` take an
+# experiment by its number (001) or full id (001_fruit).
 set shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 # List available recipes.
 default:
     @just --list
 
-# Generate raw responses for an experiment: `just run 001 --smoke`.
-run exp *args:
-    uv run llmango run {{ exp }} {{ args }}
+# Generate raw responses for a question: `just run 001a --smoke`.
+run question *args:
+    uv run llmango run {{ question }} {{ args }}
 
-# Submit an experiment's run via the OpenAI Batch API.
-batch exp *args:
-    uv run llmango run {{ exp }} --batch {{ args }}
+# Submit a question's run via the OpenAI Batch API.
+batch question *args:
+    uv run llmango run {{ question }} --batch {{ args }}
 
 # Fetch a previously submitted batch by run id.
 batch-fetch run_id:
@@ -28,9 +28,10 @@ normalize exp *args:
 analyze exp:
     uv run llmango analyze {{ exp }}
 
-# Run the full pipeline for one experiment: `just all 001 --smoke`.
-all exp *args:
-    just run {{ exp }} {{ args }}
+# Run one question, then normalize and analyze its experiment:
+# `just all 001a 001 --smoke`.
+all question exp *args:
+    just run {{ question }} {{ args }}
     just normalize {{ exp }}
     just analyze {{ exp }}
 

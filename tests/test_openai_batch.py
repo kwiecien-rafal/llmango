@@ -1,23 +1,23 @@
 """Tests for the OpenAI Batch backend, with the client faked so nothing hits network."""
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 from openai import OpenAI
 
 from llmango.backends.base import GenRequest
 from llmango.backends.openai_batch import OpenAIBatchBackend, build_jsonl
-from llmango.experiments.favorite_fruit import FruitChoice
+from llmango.experiments.fruit import FruitChoice
 from llmango.questions import SamplingParams
 
 
 def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> GenRequest:
     return GenRequest(
-        question_id="001_favorite_fruit",
+        question_id="001a",
         lang=lang,
         model="gpt-5.6-luna",
-        prompt=f"What is your favorite fruit? ({lang})",
+        prompt=f"Pick one random fruit ({lang})",
         prompt_sha256="deadbeef",
         sample_idx=sample_idx,
         seed=seed,
@@ -139,7 +139,7 @@ def test_build_jsonl_encodes_each_request() -> None:
     assert first["body"]["temperature"] == 0.5
     assert first["body"]["seed"] == 7
     assert first["body"]["messages"] == [
-        {"role": "user", "content": "What is your favorite fruit? (en)"}
+        {"role": "user", "content": "Pick one random fruit (en)"}
     ]
     schema = first["body"]["response_format"]["json_schema"]
     assert schema["name"] == "FruitChoice"
@@ -151,7 +151,7 @@ def test_build_jsonl_encodes_each_request() -> None:
 
 def test_build_jsonl_omits_unset_sampling_params() -> None:
     request = GenRequest(
-        question_id="001_favorite_fruit",
+        question_id="001a",
         lang="en",
         model="gpt-5.6-luna",
         prompt="prompt",
@@ -167,6 +167,12 @@ def test_build_jsonl_omits_unset_sampling_params() -> None:
     assert "seed" not in body
     assert "top_p" not in body
     assert "max_tokens" not in body
+
+
+def test_build_jsonl_omits_response_format_for_free_text() -> None:
+    body = json.loads(build_jsonl([replace(_request(), response_schema=None)]))["body"]
+
+    assert "response_format" not in body
 
 
 def test_submit_uploads_the_jsonl_and_creates_a_batch() -> None:
@@ -198,6 +204,56 @@ def test_fetch_parses_output_lines_back_to_requests() -> None:
     assert cast(FruitChoice, results[1].parsed).fruit == "banan"
     assert results[0].model_snapshot == "gpt-5.6-luna-2026-01-01"
     assert all(result.error is None for result in results)
+
+
+def test_fetch_captures_provenance_and_usage() -> None:
+    record = {
+        "custom_id": "en::0",
+        "response": {
+            "status_code": 200,
+            "body": {
+                "id": "chatcmpl-batch",
+                "model": "gpt-5.6-luna-2026-01-01",
+                "system_fingerprint": "fp_batch",
+                "service_tier": "flex",
+                "created": 1_700_000_000,
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 4,
+                    "total_tokens": 24,
+                    "prompt_tokens_details": {"cached_tokens": 8},
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                },
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": FruitChoice(fruit="mango").model_dump_json(),
+                            "refusal": None,
+                        },
+                    }
+                ],
+            },
+        },
+        "error": None,
+    }
+    client = _client(content_text=json.dumps(record))
+    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+
+    result = backend.fetch("batch-1", [_request()])[0]
+
+    assert result.response_id == "chatcmpl-batch"
+    assert result.system_fingerprint == "fp_batch"
+    assert result.service_tier == "flex"
+    assert result.provider_created_at is not None
+    assert result.response_envelope is not None
+    assert "chatcmpl-batch" in result.response_envelope
+    assert result.request_envelope is not None
+    assert "Pick one random fruit" in result.request_envelope
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 20
+    assert result.usage.cached_tokens == 8
+    assert result.usage.reasoning_tokens == 2
 
 
 def test_fetch_captures_a_refusal() -> None:

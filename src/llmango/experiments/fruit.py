@@ -1,7 +1,9 @@
-"""Experiment 001: favorite_fruit.
+"""Experiment 001: fruit.
 
-Asks a model to name its favorite fruit, then normalizes the free-text answer to
-a canonical English category.
+Measures how random a model is when asked to pick a fruit from a fixed list,
+how the prompt language shifts that pick, and how requesting a structured
+response in a non-target language shifts it. The raw pick is preserved and
+normalized post-hoc to a canonical English category.
 """
 
 from enum import StrEnum
@@ -9,16 +11,21 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from llmango.registry import ExperimentSpec, register_experiment
+from llmango.registry import ExperimentSpec, SchemaVariant, register_experiment
 from llmango.schemas import LLMResponse
 
-QUESTION_ID = "001_favorite_fruit"
+EXPERIMENT_ID = "001_fruit"
 
 
 class FruitChoice(LLMResponse):
-    """A model's favorite fruit"""
 
     fruit: str
+
+
+# 001d polish schema
+class WyborOwocu(LLMResponse):
+
+    owoc: str
 
 
 class FruitEnum(StrEnum):
@@ -71,7 +78,7 @@ class FruitNormalization(LLMResponse):
     multiple: bool
 
 
-_QUALIFIERS = {"a", "an", "the", "my", "favorite", "favourite", "fresh", "ripe"}
+_QUALIFIERS = {"a", "an", "the", "fresh", "ripe"}
 
 
 def preprocess(text: str) -> str:
@@ -80,16 +87,19 @@ def preprocess(text: str) -> str:
     return " ".join(tokens)
 
 
-def to_row(parsed: BaseModel | None) -> dict[str, object]:
-    """Map a parsed response to its parsed columns, empty on refusal or error."""
-    fruit = parsed.fruit if isinstance(parsed, FruitChoice) else ""
-    return {"fruit_raw": fruit}
+def to_row(parsed: BaseModel | None, raw_text: str) -> dict[str, object]:
+    """Map an extracted answer to its parsed column."""
+    return {"fruit_raw": raw_text}
 
 
 register_experiment(
     ExperimentSpec(
-        question_id=QUESTION_ID,
-        response_schema=FruitChoice,
+        experiment_id=EXPERIMENT_ID,
+        schema_variants={
+            "en": SchemaVariant(schema=FruitChoice, field="fruit"),
+            "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
+            "none": SchemaVariant(schema=None, field=None),
+        },
         to_row=to_row,
         normalization_schema=FruitNormalization,
         preprocess=preprocess,

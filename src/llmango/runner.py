@@ -1,11 +1,14 @@
 """Run orchestration for the sync and batch generation paths.
 
 A run turns one question into validated responses across languages and samples,
-writes them to Parquet, and records a manifest. Reruns with the same
-configuration are skipped by matching the manifest content hash, so results are
-never duplicated. The batch path splits this into submit and fetch.
+writes them to Parquet, and records a manifest. Prompts are rendered per sample
+from templates and the shared fruit table, so the option order can be fixed or
+shuffled per sample. Reruns with the same configuration are skipped by matching
+the manifest content hash, so results are never duplicated. The batch path splits
+this into submit and fetch.
 """
 
+import json
 import time
 import uuid
 from dataclasses import dataclass
@@ -16,6 +19,7 @@ from llmango.backends.base import (
     GenerationBackend,
     GenRequest,
     GenResult,
+    Usage,
 )
 from llmango.manifest import (
     RunManifest,
@@ -24,9 +28,25 @@ from llmango.manifest import (
     read_manifest,
     write_manifest,
 )
-from llmango.questions import PromptFile, SamplingParams, load_prompt, load_question
-from llmango.registry import ExperimentSpec, get_experiment
-from llmango.storage import results_path, write_results
+from llmango.pricing import (
+    PricingEntry,
+    PricingTable,
+    compute_cost,
+    load_pricing,
+    pricing_version,
+    resolve_entry,
+)
+from llmango.questions import (
+    FruitTable,
+    PromptTemplate,
+    load_fruits,
+    load_question,
+    load_template,
+    prompt_sha256,
+    render_prompt,
+)
+from llmango.registry import ExperimentSpec, SchemaVariant, get_experiment
+from llmango.storage import COST_COLUMNS, USAGE_COLUMNS, results_path, write_results
 
 
 @dataclass(frozen=True)
@@ -44,10 +64,11 @@ class RunOutcome:
 
 @dataclass(frozen=True)
 class RunPlan:
-    """A preview of a run: its manifest and any existing duplicate."""
+    """A preview of a run: its manifest, any existing duplicate, and the price."""
 
     manifest: RunManifest
     duplicate: RunManifest | None
+    pricing: PricingEntry | None
 
 
 def _new_run_id(question_id: str) -> str:
@@ -70,18 +91,50 @@ def _generate_with_retry(
     return result
 
 
+def _usage_columns(usage: Usage | None) -> dict[str, object]:
+    """Map token usage to its columns, all null when usage is missing."""
+    if usage is None:
+        return {column: None for column in USAGE_COLUMNS}
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+        "cached_tokens": usage.cached_tokens,
+        "reasoning_tokens": usage.reasoning_tokens,
+    }
+
+
+def _cost_columns(
+    usage: Usage | None, pricing_entry: PricingEntry | None
+) -> dict[str, object]:
+    """Compute cost columns from usage and price, null when either is absent."""
+    if usage is None or pricing_entry is None:
+        return {column: None for column in COST_COLUMNS}
+    cost = compute_cost(pricing_entry, usage)
+    return {
+        "input_cost_usd": cost.input_cost_usd,
+        "output_cost_usd": cost.output_cost_usd,
+        "total_cost_usd": cost.total_cost_usd,
+        "pricing_version": pricing_version(pricing_entry),
+    }
+
+
 def _result_to_row(
     result: GenResult,
     backend_id: str,
     run_id: str,
     spec: ExperimentSpec,
+    variant: SchemaVariant,
+    pricing_entry: PricingEntry | None,
 ) -> dict[str, object]:
-    """Combine the common columns with the experiment's parsed fields."""
+    """Combine the common columns, parsed fields, provenance, usage and cost."""
     request = result.request
-    parsed_fields = spec.to_row(result.parsed) if spec.to_row else {}
+    raw_text = variant.extract(result.parsed, result.raw_json)
+    parsed_fields = spec.to_row(result.parsed, raw_text) if spec.to_row else {}
     return {
         "question_id": request.question_id,
         "lang": request.lang,
+        "schema_lang": request.schema_lang,
         "model": request.model,
         "backend": backend_id,
         "run_id": run_id,
@@ -89,8 +142,22 @@ def _result_to_row(
         "seed": request.seed,
         "temperature": request.sampling.temperature,
         "prompt_sha256": request.prompt_sha256,
+        "prompt": request.prompt,
+        "option_order": json.dumps(list(request.option_order), ensure_ascii=False),
         "raw_json": result.raw_json,
         **parsed_fields,
+        "model_snapshot": result.model_snapshot,
+        "finish_reason": result.finish_reason,
+        "refusal": result.refusal,
+        "error": result.error,
+        "response_id": result.response_id,
+        "system_fingerprint": result.system_fingerprint,
+        "service_tier": result.service_tier,
+        "provider_created_at": result.provider_created_at,
+        "request_envelope": result.request_envelope,
+        "response_envelope": result.response_envelope,
+        **_usage_columns(result.usage),
+        **_cost_columns(result.usage, pricing_entry),
         "created_at": result.created_at,
     }
 
@@ -101,55 +168,57 @@ class _PreparedRun:
 
     spec: ExperimentSpec
     manifest: RunManifest
-    prompts: dict[str, PromptFile]
+    templates: dict[str, PromptTemplate]
+    fruits: FruitTable
 
 
 def _prepare(
-    question_id: str,
+    question_ref: str,
     backend_id: str,
     model: str | None,
     samples: int,
     languages: list[str] | None,
     seed: int | None,
+    schema_lang: str,
     run_id: str | None,
 ) -> _PreparedRun:
     """Load the question and build its manifest, ready for the idempotency check."""
-    config = load_question(question_id)
-    spec = get_experiment(question_id)
+    config = load_question(question_ref)
+    spec = get_experiment(config.experiment_id)
+    spec.variant(schema_lang)
 
     model = model or config.model
     if not model:
-        raise ValueError(f"No model given and none set in meta.yaml for {question_id}")
+        raise ValueError(
+            f"No model given and none set in experiment.yaml for {config.experiment_id}"
+        )
 
     languages = languages or config.languages
     effective_seed = seed if seed is not None else config.sampling.seed
-    prompts = {lang: load_prompt(question_id, lang) for lang in languages}
+    templates = {
+        lang: load_template(config.experiment_id, config.question_id, lang)
+        for lang in languages
+    }
+    fruits = load_fruits(config.experiment_id)
 
     manifest = RunManifest(
-        run_id=run_id or _new_run_id(question_id),
-        question_id=question_id,
+        run_id=run_id or _new_run_id(config.question_id),
+        experiment_id=config.experiment_id,
+        question_id=config.question_id,
         backend=backend_id,
         model=model,
+        schema_lang=schema_lang,
         languages=languages,
         sampling=config.sampling,
         seed=effective_seed,
         samples=samples,
-        prompt_sha256={lang: prompt.sha256 for lang, prompt in prompts.items()},
+        order=config.order,
+        order_ids=config.order_ids,
+        template_sha256={lang: template.sha256 for lang, template in templates.items()},
+        fruits_sha256=fruits.sha256,
     )
-    return _PreparedRun(spec=spec, manifest=manifest, prompts=prompts)
-
-
-def _requests_for(prepared: _PreparedRun) -> list[GenRequest]:
-    """Build the requests for a prepared run, once past the idempotency check."""
-    manifest = prepared.manifest
-    return _build_requests(
-        manifest.question_id,
-        manifest.model,
-        manifest.samples,
-        prepared.prompts,
-        manifest.seed,
-        manifest.sampling,
-        prepared.spec,
+    return _PreparedRun(
+        spec=spec, manifest=manifest, templates=templates, fruits=fruits
     )
 
 
@@ -168,28 +237,52 @@ def _skipped_outcome(manifest: RunManifest) -> RunOutcome:
     )
 
 
+def _pin_pricing(
+    manifest: RunManifest, pricing_table: PricingTable | None
+) -> PricingEntry:
+    """Resolve the price for the run's model and pin it into the manifest.
+
+    Fails loud before any generation if the model is absent from the pricing
+    file, so a paid run never proceeds without a known cost.
+    """
+    table = pricing_table if pricing_table is not None else load_pricing()
+    entry = resolve_entry(table, manifest.model, manifest.model_snapshot)
+    manifest.pricing = entry
+    return entry
+
+
 def run(
-    question_id: str,
+    question: str,
     backend: GenerationBackend,
     *,
     model: str | None = None,
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
+    schema_lang: str = "en",
     run_id: str | None = None,
     max_retries: int = 3,
     retry_backoff: float = 1.0,
     requests_per_minute: float | None = None,
+    pricing_table: PricingTable | None = None,
 ) -> RunOutcome:
     """Generate responses for one question and persist them to Parquet.
 
-    Loads the question config and experiment spec, builds one request per
+    Loads the question config and experiment spec, renders one prompt per
     language and sample, and writes the validated results plus a run manifest.
     If a manifest with the same content hash already exists, the run is skipped
-    and nothing is regenerated.
+    and nothing is regenerated. The pricing table defaults to the committed
+    pricing file and is pinned into the manifest so cost stays reproducible.
     """
     prepared = _prepare(
-        question_id, backend.backend_id, model, samples, languages, seed, run_id
+        question,
+        backend.backend_id,
+        model,
+        samples,
+        languages,
+        seed,
+        schema_lang,
+        run_id,
     )
     manifest = prepared.manifest
 
@@ -198,15 +291,24 @@ def run(
         return _skipped_outcome(existing)
 
     manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
+    pricing_entry = _pin_pricing(manifest, pricing_table)
+    variant = prepared.spec.variant(manifest.schema_lang)
     results = _generate_all(
         backend,
-        _requests_for(prepared),
+        _build_requests(manifest, prepared.spec, prepared.templates, prepared.fruits),
         max_retries,
         retry_backoff,
         requests_per_minute,
     )
     rows = [
-        _result_to_row(result, manifest.backend, manifest.run_id, prepared.spec)
+        _result_to_row(
+            result,
+            manifest.backend,
+            manifest.run_id,
+            prepared.spec,
+            variant,
+            pricing_entry,
+        )
         for result in results
     ]
 
@@ -226,13 +328,14 @@ def run(
 
 
 def plan_run(
-    question_id: str,
+    question: str,
     backend_id: str,
     *,
     model: str | None = None,
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
+    schema_lang: str = "en",
 ) -> RunPlan:
     """Build a run's manifest and check for a duplicate without generating anything.
 
@@ -241,32 +344,51 @@ def plan_run(
     languages and model match what a run would use.
     """
     manifest = _prepare(
-        question_id, backend_id, model, samples, languages, seed, None
+        question, backend_id, model, samples, languages, seed, schema_lang, None
     ).manifest
     return RunPlan(
         manifest=manifest,
         duplicate=find_manifest_by_content_hash(manifest.content_hash()),
+        pricing=_preview_pricing(manifest.model),
     )
 
 
+def _preview_pricing(model: str) -> PricingEntry | None:
+    """Look up a model's price for a dry run, tolerating a missing pricing file."""
+    try:
+        return resolve_entry(load_pricing(), model, None)
+    except (FileNotFoundError, KeyError):
+        return None
+
+
 def submit_batch(
-    question_id: str,
+    question: str,
     backend: BatchBackend,
     *,
     model: str | None = None,
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
+    schema_lang: str = "en",
     run_id: str | None = None,
+    pricing_table: PricingTable | None = None,
 ) -> RunOutcome:
     """Submit one question as an OpenAI batch and record its manifest.
 
     Nothing is generated inline: the batch is queued and its id stored in the
     manifest so results can be fetched later. Skips submission if an identical
-    run already exists, so a batch is never submitted twice.
+    run already exists, so a batch is never submitted twice. The price is pinned
+    into the manifest at submit time so fetch computes cost from the same price.
     """
     prepared = _prepare(
-        question_id, backend.backend_id, model, samples, languages, seed, run_id
+        question,
+        backend.backend_id,
+        model,
+        samples,
+        languages,
+        seed,
+        schema_lang,
+        run_id,
     )
     manifest = prepared.manifest
 
@@ -275,7 +397,10 @@ def submit_batch(
         return _skipped_outcome(existing)
 
     manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
-    manifest.batch_id = backend.submit(_requests_for(prepared))
+    _pin_pricing(manifest, pricing_table)
+    manifest.batch_id = backend.submit(
+        _build_requests(manifest, prepared.spec, prepared.templates, prepared.fruits)
+    )
     try:
         written_manifest_path = write_manifest(manifest)
     except OSError as error:
@@ -300,18 +425,22 @@ def submit_batch(
 def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
     """Fetch a submitted batch's results and persist them to Parquet.
 
-    Rebuilds the exact requests from the stored manifest, verifying each prompt
-    still hashes to the value recorded at submit time before writing results.
+    Rebuilds the exact requests from the stored manifest, verifying the templates
+    and fruit table still hash to the values recorded at submit time before
+    writing results.
     """
     manifest = read_manifest(run_id)
     if manifest.batch_id is None:
         raise ValueError(f"Run {run_id} has no batch to fetch.")
 
-    spec = get_experiment(manifest.question_id)
+    spec = get_experiment(manifest.experiment_id)
+    variant = spec.variant(manifest.schema_lang)
     requests = _requests_from_manifest(manifest, spec)
     results = backend.fetch(manifest.batch_id, requests)
     rows = [
-        _result_to_row(result, manifest.backend, manifest.run_id, spec)
+        _result_to_row(
+            result, manifest.backend, manifest.run_id, spec, variant, manifest.pricing
+        )
         for result in results
     ]
 
@@ -332,51 +461,59 @@ def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
 def _requests_from_manifest(
     manifest: RunManifest, spec: ExperimentSpec
 ) -> list[GenRequest]:
-    """Rebuild a run's requests from its manifest, checking prompt hashes match."""
-    prompts = {
-        lang: load_prompt(manifest.question_id, lang) for lang in manifest.languages
+    """Rebuild a run's requests from its manifest, checking inputs still match."""
+    templates = {
+        lang: load_template(manifest.experiment_id, manifest.question_id, lang)
+        for lang in manifest.languages
     }
-    for lang, prompt in prompts.items():
-        if prompt.sha256 != manifest.prompt_sha256[lang]:
+    for lang, template in templates.items():
+        if template.sha256 != manifest.template_sha256[lang]:
             raise ValueError(
-                f"Prompt {manifest.question_id}/{lang}.md changed since submit; "
+                f"Template {manifest.question_id}/{lang}.md changed since submit; "
                 f"its hash no longer matches the manifest."
             )
-    return _build_requests(
-        manifest.question_id,
-        manifest.model,
-        manifest.samples,
-        prompts,
-        manifest.seed,
-        manifest.sampling,
-        spec,
-    )
+    fruits = load_fruits(manifest.experiment_id)
+    if fruits.sha256 != manifest.fruits_sha256:
+        raise ValueError(
+            f"fruits.yaml for {manifest.experiment_id} changed since submit; "
+            f"its hash no longer matches the manifest."
+        )
+    return _build_requests(manifest, spec, templates, fruits)
 
 
 def _build_requests(
-    question_id: str,
-    model: str,
-    samples: int,
-    prompts: dict[str, PromptFile],
-    seed: int | None,
-    sampling: SamplingParams,
+    manifest: RunManifest,
     spec: ExperimentSpec,
+    templates: dict[str, PromptTemplate],
+    fruits: FruitTable,
 ) -> list[GenRequest]:
-    """Build one request per language and sample index."""
+    """Render one request per language and sample from the run's templates."""
+    variant = spec.variant(manifest.schema_lang)
     requests: list[GenRequest] = []
-    for lang, prompt in prompts.items():
-        for sample_idx in range(samples):
+    for lang in manifest.languages:
+        template = templates[lang]
+        for sample_idx in range(manifest.samples):
+            prompt, shown = render_prompt(
+                template,
+                fruits,
+                manifest.order,
+                manifest.order_ids,
+                sample_idx,
+                manifest.seed,
+            )
             requests.append(
                 GenRequest(
-                    question_id=question_id,
+                    question_id=manifest.question_id,
                     lang=lang,
-                    model=model,
-                    prompt=prompt.text,
-                    prompt_sha256=prompt.sha256,
+                    model=manifest.model,
+                    prompt=prompt,
+                    prompt_sha256=prompt_sha256(prompt),
                     sample_idx=sample_idx,
-                    seed=seed,
-                    sampling=sampling,
-                    response_schema=spec.response_schema,
+                    seed=manifest.seed,
+                    sampling=manifest.sampling,
+                    response_schema=variant.schema,
+                    option_order=tuple(shown),
+                    schema_lang=manifest.schema_lang,
                 )
             )
     return requests

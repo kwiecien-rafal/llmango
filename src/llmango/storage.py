@@ -2,7 +2,9 @@
 
 Raw results are written one Parquet file per (question, model, run). The common
 columns are fixed here per CLAUDE.md; each experiment contributes its own parsed
-fields via its to_row hook, which land between raw_json and created_at.
+fields via its to_row hook, which land between raw_json and the provenance block.
+After the parsed fields comes a fixed block recording the provenance, token usage
+and cost of each generation, then created_at.
 """
 
 from collections.abc import Iterable
@@ -15,6 +17,7 @@ from llmango.config import NORMALIZED_DIR, RAW_DIR
 COMMON_LEADING_COLUMNS = [
     "question_id",
     "lang",
+    "schema_lang",
     "model",
     "backend",
     "run_id",
@@ -22,14 +25,47 @@ COMMON_LEADING_COLUMNS = [
     "seed",
     "temperature",
     "prompt_sha256",
+    "prompt",
+    "option_order",
     "raw_json",
 ]
+
+PROVENANCE_COLUMNS = [
+    "model_snapshot",
+    "finish_reason",
+    "refusal",
+    "error",
+    "response_id",
+    "system_fingerprint",
+    "service_tier",
+    "provider_created_at",
+    "request_envelope",
+    "response_envelope",
+]
+
+USAGE_COLUMNS = [
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cached_tokens",
+    "reasoning_tokens",
+]
+
+COST_COLUMNS = [
+    "input_cost_usd",
+    "output_cost_usd",
+    "total_cost_usd",
+    "pricing_version",
+]
+
+FIXED_TRAILING_COLUMNS = PROVENANCE_COLUMNS + USAGE_COLUMNS + COST_COLUMNS
 
 TRAILING_COLUMNS = ["created_at"]
 
 _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "question_id": pl.String(),
     "lang": pl.String(),
+    "schema_lang": pl.String(),
     "model": pl.String(),
     "backend": pl.String(),
     "run_id": pl.String(),
@@ -37,7 +73,28 @@ _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "seed": pl.Int64(),
     "temperature": pl.Float64(),
     "prompt_sha256": pl.String(),
+    "prompt": pl.String(),
+    "option_order": pl.String(),
     "raw_json": pl.String(),
+    "model_snapshot": pl.String(),
+    "finish_reason": pl.String(),
+    "refusal": pl.String(),
+    "error": pl.String(),
+    "response_id": pl.String(),
+    "system_fingerprint": pl.String(),
+    "service_tier": pl.String(),
+    "provider_created_at": pl.Datetime(time_unit="us", time_zone="UTC"),
+    "request_envelope": pl.String(),
+    "response_envelope": pl.String(),
+    "prompt_tokens": pl.Int64(),
+    "completion_tokens": pl.Int64(),
+    "total_tokens": pl.Int64(),
+    "cached_tokens": pl.Int64(),
+    "reasoning_tokens": pl.Int64(),
+    "input_cost_usd": pl.Float64(),
+    "output_cost_usd": pl.Float64(),
+    "total_cost_usd": pl.Float64(),
+    "pricing_version": pl.String(),
     "created_at": pl.Datetime(time_unit="us", time_zone="UTC"),
 }
 
@@ -53,14 +110,18 @@ def results_path(question_id: str, model: str, run_id: str) -> Path:
 
 
 def _ordered_columns(columns: Iterable[str]) -> list[str]:
-    """Order columns as leading common, then parsed fields, then created_at."""
-    present = list(columns)
-    parsed = [
-        column
-        for column in present
-        if column not in COMMON_LEADING_COLUMNS and column not in TRAILING_COLUMNS
-    ]
-    return COMMON_LEADING_COLUMNS + parsed + TRAILING_COLUMNS
+    """Order present columns: leading common, parsed, the fixed block, created_at."""
+    present = set(columns)
+    known = (
+        set(COMMON_LEADING_COLUMNS)
+        | set(FIXED_TRAILING_COLUMNS)
+        | set(TRAILING_COLUMNS)
+    )
+    parsed = [column for column in columns if column not in known]
+    ordered = (
+        COMMON_LEADING_COLUMNS + parsed + FIXED_TRAILING_COLUMNS + TRAILING_COLUMNS
+    )
+    return [column for column in ordered if column in present]
 
 
 def write_results(

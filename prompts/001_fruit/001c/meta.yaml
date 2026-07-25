@@ -1,0 +1,3 @@
+languages: [en, pl, ja]
+order: shuffle
+schema_variants: [en]

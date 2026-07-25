@@ -1,0 +1,24 @@
+# Canonical fruit list for experiment 001, ordered by canonical index.
+# The list order here is the identity order; each question declares its own
+# shown order (fixed permutation or per-sample shuffle). Labels double as the
+# deterministic normalization mapping (label -> canonical) per language.
+- canonical: apple
+  labels: { en: apple, pl: jabłko, ja: りんご }
+- canonical: banana
+  labels: { en: banana, pl: banan, ja: バナナ }
+- canonical: orange
+  labels: { en: orange, pl: pomarańcza, ja: オレンジ }
+- canonical: mango
+  labels: { en: mango, pl: mango, ja: マンゴー }
+- canonical: grape
+  labels: { en: grape, pl: winogrono, ja: ぶどう }
+- canonical: pear
+  labels: { en: pear, pl: gruszka, ja: 梨 }
+- canonical: watermelon
+  labels: { en: watermelon, pl: arbuz, ja: スイカ }
+- canonical: pineapple
+  labels: { en: pineapple, pl: ananas, ja: パイナップル }
+- canonical: lychee
+  labels: { en: lychee, pl: liczi, ja: ライチ }
+- canonical: pomegranate
+  labels: { en: pomegranate, pl: granat, ja: ザクロ }

@@ -8,18 +8,39 @@ back to their request even though the batch returns them in any order.
 
 import json
 from datetime import UTC, datetime
-from functools import cache
 from typing import Any
 
 from openai import OpenAI
-from openai.lib._pydantic import to_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
-from llmango.backends.base import BatchBackend, GenRequest, GenResult
+from llmango.backends.base import BatchBackend, GenRequest, GenResult, Usage
+from llmango.backends.openai_common import build_usage, request_body, request_envelope
 from llmango.config import require_openai_key
 
 _ENDPOINT = "/v1/chat/completions"
 _COMPLETION_WINDOW = "24h"
+
+
+def _usage_from_body(usage: dict[str, Any] | None) -> Usage | None:
+    """Map a batch response body's usage dict onto our Usage."""
+    if usage is None:
+        return None
+    prompt_details: dict[str, Any] = usage.get("prompt_tokens_details") or {}
+    completion_details: dict[str, Any] = usage.get("completion_tokens_details") or {}
+    return build_usage(
+        usage.get("prompt_tokens", 0),
+        usage.get("completion_tokens", 0),
+        usage.get("total_tokens", 0),
+        prompt_details.get("cached_tokens", 0),
+        completion_details.get("reasoning_tokens", 0),
+    )
+
+
+def _provider_created_at(created: object) -> datetime | None:
+    """Convert a batch body's unix created timestamp to a UTC datetime."""
+    if isinstance(created, int):
+        return datetime.fromtimestamp(created, UTC)
+    return None
 
 
 class _BatchResponse(BaseModel):
@@ -42,36 +63,6 @@ def _custom_id(lang: str, sample_idx: int) -> str:
     return f"{lang}::{sample_idx}"
 
 
-@cache
-def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
-    """Build the strict json_schema response_format for a Pydantic schema."""
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": schema.__name__,
-            "schema": to_strict_json_schema(schema),
-            "strict": True,
-        },
-    }
-
-
-def _body(request: GenRequest) -> dict[str, Any]:
-    """Build the chat-completions request body for one generation."""
-    body: dict[str, Any] = {
-        "model": request.model,
-        "messages": [{"role": "user", "content": request.prompt}],
-        "response_format": _response_format(request.response_schema),
-        "temperature": request.sampling.temperature,
-    }
-    if request.sampling.top_p is not None:
-        body["top_p"] = request.sampling.top_p
-    if request.sampling.max_tokens is not None:
-        body["max_tokens"] = request.sampling.max_tokens
-    if request.seed is not None:
-        body["seed"] = request.seed
-    return body
-
-
 def build_jsonl(requests: list[GenRequest]) -> str:
     """Serialize requests to the batch input JSONL, one line per request."""
     lines = [
@@ -80,7 +71,7 @@ def build_jsonl(requests: list[GenRequest]) -> str:
                 "custom_id": _custom_id(request.lang, request.sample_idx),
                 "method": "POST",
                 "url": _ENDPOINT,
-                "body": _body(request),
+                "body": request_body(request),
             },
             ensure_ascii=False,
         )
@@ -96,13 +87,16 @@ def _parse_output(line: _BatchLine, request: GenRequest) -> GenResult:
     line never aborts the whole fetch.
     """
     created_at = datetime.now(UTC)
+    envelope = request_envelope(request)
     if line.error is not None:
-        return GenResult.failed(request, f"batch error: {line.error}", created_at)
+        return GenResult.failed(
+            request, f"batch error: {line.error}", created_at, envelope
+        )
     if line.response is None:
-        return GenResult.failed(request, "no response", created_at)
+        return GenResult.failed(request, "no response", created_at, envelope)
     if line.response.status_code != 200:
         return GenResult.failed(
-            request, f"batch status {line.response.status_code}", created_at
+            request, f"batch status {line.response.status_code}", created_at, envelope
         )
 
     try:
@@ -111,9 +105,10 @@ def _parse_output(line: _BatchLine, request: GenRequest) -> GenResult:
         message = choice["message"]
         refusal = message.get("refusal")
         content = message.get("content")
+        schema = request.response_schema
         parsed = (
-            request.response_schema.model_validate_json(content)
-            if refusal is None and content is not None
+            schema.model_validate_json(content)
+            if schema is not None and refusal is None and content is not None
             else None
         )
         return GenResult(
@@ -125,9 +120,18 @@ def _parse_output(line: _BatchLine, request: GenRequest) -> GenResult:
             refusal=refusal,
             error=None,
             created_at=created_at,
+            response_id=body.get("id"),
+            system_fingerprint=body.get("system_fingerprint"),
+            service_tier=body.get("service_tier"),
+            provider_created_at=_provider_created_at(body.get("created")),
+            request_envelope=envelope,
+            response_envelope=json.dumps(body, ensure_ascii=False),
+            usage=_usage_from_body(body.get("usage")),
         )
     except (KeyError, IndexError, ValidationError) as error:
-        return GenResult.failed(request, f"unparseable response: {error}", created_at)
+        return GenResult.failed(
+            request, f"unparseable response: {error}", created_at, envelope
+        )
 
 
 class OpenAIBatchBackend(BatchBackend):
@@ -177,7 +181,10 @@ class OpenAIBatchBackend(BatchBackend):
             line = lines.get(_custom_id(request.lang, request.sample_idx))
             if line is None:
                 result = GenResult.failed(
-                    request, "missing from batch output", datetime.now(UTC)
+                    request,
+                    "missing from batch output",
+                    datetime.now(UTC),
+                    request_envelope(request),
                 )
             else:
                 result = _parse_output(line, request)

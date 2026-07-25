@@ -1,6 +1,7 @@
 """Tests for the OpenAI backend, with the client faked so nothing hits network."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 from typing import Protocol, cast
 
@@ -8,7 +9,7 @@ from openai import OpenAI
 
 from llmango.backends.base import GenRequest
 from llmango.backends.openai_backend import OpenAIBackend
-from llmango.experiments.favorite_fruit import FruitChoice
+from llmango.experiments.fruit import FruitChoice
 from llmango.questions import SamplingParams
 
 
@@ -23,10 +24,10 @@ FakeClientFactory = Callable[..., FakeClient]
 
 def _request() -> GenRequest:
     return GenRequest(
-        question_id="001_favorite_fruit",
+        question_id="001a",
         lang="en",
         model="gpt-5.6-luna",
-        prompt="What is your favorite fruit?",
+        prompt="Pick one random fruit from this list: apple, mango",
         prompt_sha256="deadbeef",
         sample_idx=0,
         seed=7,
@@ -55,6 +56,33 @@ def test_generate_parses_the_structured_response(
     assert result.refusal is None
     assert result.error is None
     assert isinstance(result.created_at, datetime)
+
+
+def test_generate_captures_provenance_and_usage(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(_request())
+
+    assert result.response_id == "chatcmpl-fake"
+    assert result.system_fingerprint == "fp_fake"
+    assert result.service_tier == "default"
+    assert result.provider_created_at is not None
+    assert result.response_envelope is not None
+    assert "chatcmpl-fake" in result.response_envelope
+
+    assert result.request_envelope is not None
+    assert "Pick one random fruit from this list" in result.request_envelope
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 12
+    assert result.usage.completion_tokens == 3
+    assert result.usage.total_tokens == 15
+    assert result.usage.cached_tokens == 4
+    assert result.usage.reasoning_tokens == 1
 
 
 def test_generate_captures_a_refusal(make_openai_client: FakeClientFactory) -> None:
@@ -87,6 +115,19 @@ def test_generate_forwards_the_sampling_params(
     assert call["temperature"] == 0.5
     assert call["seed"] == 7
     assert call["response_format"] is FruitChoice
+
+
+def test_generate_free_text_sends_no_response_format(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    client = make_openai_client(parsed=None, content="banana")
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(replace(_request(), response_schema=None))
+
+    assert result.parsed is None
+    assert result.raw_json == "banana"
+    assert "response_format" not in client.calls[0]
 
 
 def test_resolve_model_snapshot_reads_the_client(

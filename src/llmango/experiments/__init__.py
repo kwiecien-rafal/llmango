@@ -1,6 +1,6 @@
 """Experiment modules. Importing this package registers every experiment."""
 
-from llmango.experiments import favorite_fruit as favorite_fruit
+from llmango.experiments import fruit as fruit
 
 
 def ensure_registered() -> None:

@@ -1,5 +1,6 @@
 """Shared test fixtures: a fake, offline OpenAI client and a fake, offline backend."""
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,8 +13,24 @@ from llmango import analyze as analyze_module
 from llmango import manifest as manifest_module
 from llmango import normalize as normalize_module
 from llmango import storage as storage_module
-from llmango.backends.base import GenerationBackend, GenRequest, GenResult
-from llmango.experiments.favorite_fruit import FruitChoice
+from llmango.backends.base import GenerationBackend, GenRequest, GenResult, Usage
+from llmango.experiments.fruit import FruitChoice
+from llmango.pricing import PricingEntry, PricingTable
+
+
+@dataclass
+class FakeTokenDetails:
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
+
+
+@dataclass
+class FakeUsage:
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    prompt_tokens_details: FakeTokenDetails | None
+    completion_tokens_details: FakeTokenDetails | None
 
 
 @dataclass
@@ -33,6 +50,22 @@ class FakeChoice:
 class FakeCompletion:
     choices: list[FakeChoice]
     model: str
+    id: str = "chatcmpl-fake"
+    system_fingerprint: str | None = "fp_fake"
+    service_tier: str | None = "default"
+    created: int = 1_700_000_000
+    usage: FakeUsage | None = None
+
+    def model_dump_json(self) -> str:
+        return json.dumps(
+            {
+                "id": self.id,
+                "model": self.model,
+                "system_fingerprint": self.system_fingerprint,
+                "service_tier": self.service_tier,
+                "created": self.created,
+            }
+        )
 
 
 @dataclass
@@ -46,6 +79,10 @@ class FakeCompletions:
     calls: list[dict[str, object]]
 
     def parse(self, **kwargs: object) -> FakeCompletion:
+        self.calls.append(kwargs)
+        return self.completion
+
+    def create(self, **kwargs: object) -> FakeCompletion:
         self.calls.append(kwargs)
         return self.completion
 
@@ -70,6 +107,17 @@ class FakeOpenAIClient:
     calls: list[dict[str, object]]
 
 
+def _default_usage() -> FakeUsage:
+    """A populated usage object so tests exercise the token and cost columns."""
+    return FakeUsage(
+        prompt_tokens=12,
+        completion_tokens=3,
+        total_tokens=15,
+        prompt_tokens_details=FakeTokenDetails(cached_tokens=4),
+        completion_tokens_details=FakeTokenDetails(reasoning_tokens=1),
+    )
+
+
 def build_fake_openai_client(
     *,
     parsed: BaseModel | None = None,
@@ -77,11 +125,14 @@ def build_fake_openai_client(
     refusal: str | None = None,
     finish_reason: str = "stop",
     model: str = "gpt-5.6-luna-2026-01-01",
+    usage: FakeUsage | None = None,
 ) -> FakeOpenAIClient:
     """Build a fake OpenAI client whose parse call returns a canned completion."""
     message = FakeMessage(content=content, parsed=parsed, refusal=refusal)
     choice = FakeChoice(message=message, finish_reason=finish_reason)
-    completion = FakeCompletion(choices=[choice], model=model)
+    completion = FakeCompletion(
+        choices=[choice], model=model, usage=usage or _default_usage()
+    )
     calls: list[dict[str, object]] = []
     return FakeOpenAIClient(
         chat=FakeChat(completions=FakeCompletions(completion=completion, calls=calls)),
@@ -109,6 +160,7 @@ class FakeBackend(GenerationBackend):
         scripted = self._answers.get(request.lang)
         fruit = scripted[request.sample_idx] if scripted else "apple"
         parsed = FruitChoice(fruit=fruit)
+        now = datetime.now(UTC)
         return GenResult(
             request=request,
             raw_json=parsed.model_dump_json(),
@@ -117,7 +169,19 @@ class FakeBackend(GenerationBackend):
             finish_reason="stop",
             refusal=None,
             error=None,
-            created_at=datetime.now(UTC),
+            created_at=now,
+            response_id="chatcmpl-fake",
+            system_fingerprint="fp_fake",
+            service_tier="default",
+            provider_created_at=now,
+            response_envelope='{"id": "chatcmpl-fake"}',
+            usage=Usage(
+                prompt_tokens=12,
+                completion_tokens=3,
+                total_tokens=15,
+                cached_tokens=4,
+                reasoning_tokens=1,
+            ),
         )
 
 
@@ -134,6 +198,23 @@ def fake_backend() -> FakeBackend:
 @pytest.fixture
 def make_fake_backend() -> Callable[..., FakeBackend]:
     return FakeBackend
+
+
+@pytest.fixture
+def pricing_table() -> PricingTable:
+    """A small, self-contained pricing table for the tests' generation model."""
+    return PricingTable(
+        currency="USD",
+        unit="per_1m_tokens",
+        models={
+            "gpt-5.6-luna": PricingEntry(
+                input=0.05,
+                cached_input=0.005,
+                output=0.4,
+                last_updated="2026-07-24",
+            )
+        },
+    )
 
 
 @pytest.fixture

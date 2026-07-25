@@ -16,6 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from llmango.config import RUNS_DIR
+from llmango.pricing import PricingEntry
 from llmango.questions import SamplingParams
 
 _TRACKED_PACKAGES = (
@@ -36,6 +37,7 @@ _CONTENT_EXCLUDE = {
     "model_snapshot",
     "batch_id",
     "package_versions",
+    "pricing",
 }
 
 
@@ -53,19 +55,31 @@ def collect_package_versions(
 
 
 class RunManifest(BaseModel):
-    """A traceable record of one run's exact configuration and environment."""
+    """A traceable record of one run's exact configuration and environment.
+
+    Prompts are rendered per sample from templates and the shared fruit table, so
+    the manifest hashes those inputs plus the order strategy and schema language
+    rather than a single static prompt. The same inputs plus seed and sample
+    index reproduce every prompt exactly.
+    """
 
     run_id: str
+    experiment_id: str
     question_id: str
     backend: str
     model: str
     model_snapshot: str | None = None
+    pricing: PricingEntry | None = None
     batch_id: str | None = None
+    schema_lang: str = "en"
     languages: list[str]
     sampling: SamplingParams
     seed: int | None = None
     samples: int
-    prompt_sha256: dict[str, str]
+    order: str
+    order_ids: list[str] | None = None
+    template_sha256: dict[str, str]
+    fruits_sha256: str
     package_versions: dict[str, str] = Field(default_factory=collect_package_versions)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

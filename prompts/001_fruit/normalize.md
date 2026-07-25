@@ -1,4 +1,4 @@
-Normalize a stated favorite fruit to a single canonical English category.
+Normalize a stated fruit choice to a single canonical English category.
 
 The answer below was written in the language with BCP-47 code: {lang}
 Answer: {raw}

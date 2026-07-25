@@ -18,7 +18,12 @@ from llmango.questions import SamplingParams
 
 @dataclass(frozen=True)
 class GenRequest:
-    """One prompt to generate one structured response for."""
+    """One prompt to generate one response for.
+
+    response_schema is None for a free-text request, which sends no structured
+    output. option_order and schema_lang are carried through unused by backends
+    so the runner can record them as provenance columns.
+    """
 
     question_id: str
     lang: str
@@ -28,7 +33,24 @@ class GenRequest:
     sample_idx: int
     seed: int | None
     sampling: SamplingParams
-    response_schema: type[BaseModel]
+    response_schema: type[BaseModel] | None
+    option_order: tuple[str, ...] = ()
+    schema_lang: str = "en"
+
+
+@dataclass(frozen=True)
+class Usage:
+    """Token counts reported by the provider for one generation.
+
+    reasoning_tokens are already part of completion_tokens; they are kept for
+    information and never added to cost a second time.
+    """
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cached_tokens: int
+    reasoning_tokens: int
 
 
 @dataclass(frozen=True)
@@ -43,10 +65,27 @@ class GenResult:
     refusal: str | None
     error: str | None
     created_at: datetime
+    response_id: str | None = None
+    system_fingerprint: str | None = None
+    service_tier: str | None = None
+    provider_created_at: datetime | None = None
+    request_envelope: str | None = None
+    response_envelope: str | None = None
+    usage: Usage | None = None
 
     @classmethod
-    def failed(cls, request: GenRequest, error: str, created_at: datetime) -> Self:
-        """Build a result carrying an error and no parsed response."""
+    def failed(
+        cls,
+        request: GenRequest,
+        error: str,
+        created_at: datetime,
+        request_envelope: str | None = None,
+    ) -> Self:
+        """Build a result carrying an error and no parsed response.
+
+        The request envelope is still recorded when known, so a failed call
+        remains traceable to exactly what was sent.
+        """
         return cls(
             request=request,
             raw_json=None,
@@ -56,6 +95,7 @@ class GenResult:
             refusal=None,
             error=error,
             created_at=created_at,
+            request_envelope=request_envelope,
         )
 
 

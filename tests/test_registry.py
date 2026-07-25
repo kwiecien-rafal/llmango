@@ -4,11 +4,12 @@ import pytest
 
 from llmango.registry import (
     ExperimentSpec,
+    SchemaVariant,
     UnknownExperimentError,
     get_experiment,
     register_experiment,
     resolve_experiment,
-    resolve_question_id,
+    resolve_experiment_id,
     resolve_schema,
 )
 from llmango.schemas import LLMResponse
@@ -18,15 +19,22 @@ class ThrowawayResponse(LLMResponse):
     value: str
 
 
+def _spec(experiment_id: str) -> ExperimentSpec:
+    return ExperimentSpec(
+        experiment_id=experiment_id,
+        schema_variants={"en": SchemaVariant(ThrowawayResponse, "value")},
+    )
+
+
 def test_register_get_and_resolve() -> None:
-    spec = ExperimentSpec(question_id="throwaway", response_schema=ThrowawayResponse)
+    spec = _spec("throwaway")
     register_experiment(spec)
     assert get_experiment("throwaway") is spec
     assert resolve_schema("throwaway") is ThrowawayResponse
 
 
 def test_register_rejects_duplicate() -> None:
-    spec = ExperimentSpec(question_id="dupe", response_schema=ThrowawayResponse)
+    spec = _spec("dupe")
     register_experiment(spec)
     with pytest.raises(ValueError):
         register_experiment(spec)
@@ -37,9 +45,15 @@ def test_unknown_id_raises() -> None:
         get_experiment("does_not_exist")
 
 
-def test_resolve_experiment_accepts_number_and_full_id() -> None:
-    for ref in ("001", "1", "001_favorite_fruit"):
-        assert resolve_question_id(ref) == "001_favorite_fruit"
+def test_variant_lookup_raises_on_unknown_schema_lang() -> None:
+    spec = _spec("variants")
+    with pytest.raises(ValueError, match="schema variant"):
+        spec.variant("pl")
+
+
+def test_resolve_experiment_accepts_number_id_and_question() -> None:
+    for ref in ("001", "1", "001_fruit", "001a"):
+        assert resolve_experiment_id(ref) == "001_fruit"
 
 
 def test_resolve_experiment_unknown_ref_raises() -> None:

@@ -1,16 +1,18 @@
 """Aggregate normalized answers into the small JSON the site reads.
 
-Reads a question's normalized Parquet and, per language, computes the
-distribution over canonical categories, the refusal rate, and the output
-language-match rate that measures drift away from the language that was asked.
-Each metric is written as a compact JSON file under
-data/aggregated/<question_id>/. The share that fell into 'other' is reported
-alongside the distribution as a first-class number, not hidden.
+Reads an experiment's normalized Parquet and, per question and schema variant and
+language, computes the distribution over canonical categories and the refusal
+rate. Each metric is written as a compact JSON file under
+data/aggregated/<experiment_id>/, nested question -> schema_lang -> language. The
+share that fell into 'other' is reported alongside the distribution as a
+first-class number, not hidden.
 
-The language-match metric detects the language of each answer against the set
-actually present in the data. Short answers are often too ambiguous to place
-confidently, so those are counted as undetermined and reported alongside the
-match rate rather than forced into a match or a mismatch.
+Experiments whose answers carry enough free text to detect drift can opt into an
+output language-match rate by setting detect_language_drift on their spec. When
+enabled, the metric detects the language of each answer against the set actually
+present in the data; short answers that are too ambiguous to place confidently
+are counted as undetermined. Single-token experiments like fruit leave it off,
+since a lone fruit word is a cross-language cognate and too short to detect.
 """
 
 import json
@@ -23,7 +25,7 @@ import polars as pl
 
 from llmango.config import AGG_DIR
 from llmango.lang_detect import detect_language, primary_subtag
-from llmango.registry import ExperimentSpec, get_experiment
+from llmango.registry import ExperimentSpec, get_experiment, resolve_experiment_id
 from llmango.storage import normalized_path, read_normalized
 
 _OTHER = "other"
@@ -35,6 +37,8 @@ DetectFn = Callable[[str, tuple[str, ...]], str | None]
 class Answer:
     """One normalized answer, reduced to the fields aggregation needs."""
 
+    question_id: str
+    schema_lang: str
     lang: str
     raw: str
     canonical: str
@@ -48,56 +52,82 @@ class AnalyzeOutcome:
     paths: list[Path]
 
 
-def analyze_question(
-    question_id: str,
+Head = dict[str, list[Answer]]
+Metric = Callable[[Head], Mapping[str, object]]
+
+
+def analyze_experiment(
+    experiment_id: str,
     *,
     detect: DetectFn = detect_language,
 ) -> AnalyzeOutcome:
-    """Aggregate a question's normalized answers into the committed JSON files.
+    """Aggregate an experiment's normalized answers into the committed JSON files.
 
     The detector is injectable so tests can run offline; by default it uses the
     lingua-backed detector restricted to the languages present in the data.
     """
-    spec = get_experiment(question_id)
-    if not normalized_path(question_id).is_file():
+    experiment_id = resolve_experiment_id(experiment_id)
+    spec = get_experiment(experiment_id)
+    if not normalized_path(experiment_id).is_file():
         raise FileNotFoundError(
-            f"No normalized parquet for {question_id}. Run 'llmango normalize' first."
+            f"No normalized parquet for {experiment_id}. Run 'llmango normalize' first."
         )
-    frame = read_normalized(question_id)
+    frame = read_normalized(experiment_id)
     if frame.is_empty():
-        raise ValueError(f"Normalized results for {question_id} contain no rows.")
+        raise ValueError(f"Normalized results for {experiment_id} contain no rows.")
 
-    grouped = _by_language(_answers(frame, spec))
-    languages = tuple(grouped)
-    metrics = {
-        "distributions.json": {
-            lang: _distribution(subset) for lang, subset in grouped.items()
+    heads = _group_heads(_answers(frame, spec))
+    metrics: dict[str, Metric] = {
+        "distributions.json": lambda head: {
+            lang: _distribution(subset) for lang, subset in head.items()
         },
-        "refusal_rate.json": {
-            lang: _refusal(subset) for lang, subset in grouped.items()
-        },
-        "language_match.json": {
-            lang: _match(subset, lang, languages, detect)
-            for lang, subset in grouped.items()
+        "refusal_rate.json": lambda head: {
+            lang: _refusal(subset) for lang, subset in head.items()
         },
     }
+    if spec.detect_language_drift:
+        metrics["language_match.json"] = lambda head: {
+            lang: _match(subset, lang, tuple(head), detect)
+            for lang, subset in head.items()
+        }
+
     paths = [
-        _write_json(question_id, name, per_language)
-        for name, per_language in metrics.items()
+        _write_json(experiment_id, name, _nest(heads, metric))
+        for name, metric in metrics.items()
     ]
     return AnalyzeOutcome(paths=paths)
 
 
 def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
     """Reduce the normalized frame to the answer records aggregation reads."""
-    langs = frame.get_column("lang").to_list()
-    raws = frame.get_column(spec.raw_column).to_list()
-    canonicals = frame.get_column(spec.canonical_column).to_list()
-    is_fruit = frame.get_column("is_fruit").to_list()
+    columns = {
+        name: frame.get_column(name).to_list()
+        for name in (
+            "question_id",
+            "schema_lang",
+            "lang",
+            spec.raw_column,
+            spec.canonical_column,
+            "is_fruit",
+        )
+    }
     return [
-        Answer(str(lang), _text(raw), _text(canonical), bool(fruit))
-        for lang, raw, canonical, fruit in zip(
-            langs, raws, canonicals, is_fruit, strict=True
+        Answer(
+            str(question_id),
+            str(schema_lang),
+            str(lang),
+            _text(raw),
+            _text(canonical),
+            bool(fruit),
+        )
+        for question_id, schema_lang, lang, raw, canonical, fruit in zip(
+            columns["question_id"],
+            columns["schema_lang"],
+            columns["lang"],
+            columns[spec.raw_column],
+            columns[spec.canonical_column],
+            columns["is_fruit"],
+            strict=True,
         )
     ]
 
@@ -107,16 +137,25 @@ def _text(value: object) -> str:
     return "" if value is None else str(value)
 
 
-def _by_language(answers: list[Answer]) -> dict[str, list[Answer]]:
-    """Group answers by language, ordered for a stable file."""
-    groups: dict[str, list[Answer]] = {}
+def _group_heads(answers: list[Answer]) -> dict[tuple[str, str], Head]:
+    """Group answers by (question_id, schema_lang), then by language."""
+    heads: dict[tuple[str, str], Head] = {}
     for answer in answers:
-        groups.setdefault(answer.lang, []).append(answer)
-    return {lang: groups[lang] for lang in sorted(groups)}
+        head = heads.setdefault((answer.question_id, answer.schema_lang), {})
+        head.setdefault(answer.lang, []).append(answer)
+    return {key: heads[key] for key in sorted(heads)}
+
+
+def _nest(heads: dict[tuple[str, str], Head], metric: Metric) -> Mapping[str, object]:
+    """Apply a metric to each head, nested question -> schema_lang -> language."""
+    nested: dict[str, dict[str, object]] = {}
+    for (question_id, schema_lang), head in heads.items():
+        nested.setdefault(question_id, {})[schema_lang] = dict(metric(head))
+    return nested
 
 
 def _distribution(answers: list[Answer]) -> dict[str, object]:
-    """Count one language's valid answers over their canonical categories."""
+    """Count one group's valid answers over their canonical categories."""
     counts = Counter(answer.canonical for answer in answers if answer.is_fruit)
     total = counts.total()
     return {
@@ -127,7 +166,7 @@ def _distribution(answers: list[Answer]) -> dict[str, object]:
 
 
 def _refusal(answers: list[Answer]) -> dict[str, object]:
-    """The share of one language's answers that were refusals or non-answers."""
+    """The share of one group's answers that were refusals or non-answers."""
     refusals = sum(1 for answer in answers if not answer.is_fruit)
     return {
         "total": len(answers),
@@ -142,7 +181,7 @@ def _match(
     languages: tuple[str, ...],
     detect: DetectFn,
 ) -> dict[str, object]:
-    """How one language's valid answers split across in-language, other, unsure."""
+    """How one group's valid answers split across in-language, other, unsure."""
     texts = Counter(answer.raw for answer in answers if answer.is_fruit and answer.raw)
     expected = primary_subtag(lang)
     matched = 0
@@ -167,16 +206,14 @@ def _rate(part: int, whole: int) -> float:
     return round(part / whole, 4) if whole else 0.0
 
 
-def _write_json(
-    question_id: str, name: str, per_language: Mapping[str, object]
-) -> Path:
-    """Write one metric to data/aggregated/<question_id>/<name> and return it."""
-    directory = AGG_DIR / question_id
+def _write_json(experiment_id: str, name: str, payload: Mapping[str, object]) -> Path:
+    """Write one metric to data/aggregated/<experiment_id>/<name> and return it."""
+    directory = AGG_DIR / experiment_id
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
-    payload = {"question_id": question_id, "languages": per_language}
+    body = {"experiment_id": experiment_id, "questions": payload}
     path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return path
