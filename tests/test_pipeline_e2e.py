@@ -76,8 +76,8 @@ def test_pipeline_generates_normalizes_and_aggregates(
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
     assert distributions["pl"]["other_share"] == 0.3333
-    assert refusals["en"] == {"total": 4, "refusals": 1, "rate": 0.25}
-    assert refusals["pl"] == {"total": 4, "refusals": 1, "rate": 0.25}
+    assert refusals["en"] == {"total": 4, "errors": 0, "refusals": 1, "rate": 0.25}
+    assert refusals["pl"] == {"total": 4, "errors": 0, "refusals": 1, "rate": 0.25}
     assert not (pipeline / "aggregated" / _EXPERIMENT / "language_match.json").exists()
 
     for lang, distribution in distributions.items():

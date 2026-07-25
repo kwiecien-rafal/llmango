@@ -3,9 +3,13 @@
 Reads an experiment's normalized Parquet and, per question and schema variant and
 language, computes the distribution over canonical categories and the refusal
 rate. Each metric is written as a compact JSON file under
-data/aggregated/<experiment_id>/, nested question -> schema_lang -> language. The
-share that fell into 'other' is reported alongside the distribution as a
+data/aggregated/<experiment_id>/, nested question -> schema_variant -> language.
+The share that fell into 'other' is reported alongside the distribution as a
 first-class number, not hidden.
+
+A call that errored is not a refusal. Errored rows are counted and reported on
+their own, and left out of the refusal rate's denominator, so an API failure
+never inflates a number that describes how the model behaved.
 
 Experiments whose answers carry enough free text to detect drift can opt into an
 output language-match rate by setting detect_language_drift on their spec. When
@@ -38,11 +42,12 @@ class Answer:
     """One normalized answer, reduced to the fields aggregation needs."""
 
     question_id: str
-    schema_lang: str
+    schema_variant: str
     lang: str
     raw: str
     canonical: str
     is_fruit: bool
+    is_error: bool
 
 
 @dataclass(frozen=True)
@@ -104,29 +109,32 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
         name: frame.get_column(name).to_list()
         for name in (
             "question_id",
-            "schema_lang",
+            "schema_variant",
             "lang",
             spec.raw_column,
             spec.canonical_column,
             "is_fruit",
+            "error",
         )
     }
     return [
         Answer(
-            str(question_id),
-            str(schema_lang),
-            str(lang),
-            _text(raw),
-            _text(canonical),
-            bool(fruit),
+            question_id=str(question_id),
+            schema_variant=str(schema_variant),
+            lang=str(lang),
+            raw=_text(raw),
+            canonical=_text(canonical),
+            is_fruit=bool(fruit),
+            is_error=error is not None,
         )
-        for question_id, schema_lang, lang, raw, canonical, fruit in zip(
+        for question_id, schema_variant, lang, raw, canonical, fruit, error in zip(
             columns["question_id"],
-            columns["schema_lang"],
+            columns["schema_variant"],
             columns["lang"],
             columns[spec.raw_column],
             columns[spec.canonical_column],
             columns["is_fruit"],
+            columns["error"],
             strict=True,
         )
     ]
@@ -138,19 +146,19 @@ def _text(value: object) -> str:
 
 
 def _group_heads(answers: list[Answer]) -> dict[tuple[str, str], Head]:
-    """Group answers by (question_id, schema_lang), then by language."""
+    """Group answers by (question_id, schema_variant), then by language."""
     heads: dict[tuple[str, str], Head] = {}
     for answer in answers:
-        head = heads.setdefault((answer.question_id, answer.schema_lang), {})
+        head = heads.setdefault((answer.question_id, answer.schema_variant), {})
         head.setdefault(answer.lang, []).append(answer)
     return {key: heads[key] for key in sorted(heads)}
 
 
 def _nest(heads: dict[tuple[str, str], Head], metric: Metric) -> Mapping[str, object]:
-    """Apply a metric to each head, nested question -> schema_lang -> language."""
+    """Apply a metric to each head, nested question -> schema_variant -> language."""
     nested: dict[str, dict[str, object]] = {}
-    for (question_id, schema_lang), head in heads.items():
-        nested.setdefault(question_id, {})[schema_lang] = dict(metric(head))
+    for (question_id, schema_variant), head in heads.items():
+        nested.setdefault(question_id, {})[schema_variant] = dict(metric(head))
     return nested
 
 
@@ -166,12 +174,20 @@ def _distribution(answers: list[Answer]) -> dict[str, object]:
 
 
 def _refusal(answers: list[Answer]) -> dict[str, object]:
-    """The share of one group's answers that were refusals or non-answers."""
-    refusals = sum(1 for answer in answers if not answer.is_fruit)
+    """The share of one group's completed calls that refused or did not answer.
+
+    Errored calls never reached the model's judgement, so they are reported
+    separately and excluded from the rate rather than counted as refusals.
+    """
+    errors = sum(1 for answer in answers if answer.is_error)
+    refusals = sum(
+        1 for answer in answers if not answer.is_error and not answer.is_fruit
+    )
     return {
         "total": len(answers),
+        "errors": errors,
         "refusals": refusals,
-        "rate": _rate(refusals, len(answers)),
+        "rate": _rate(refusals, len(answers) - errors),
     }
 
 

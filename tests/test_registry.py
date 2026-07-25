@@ -45,10 +45,34 @@ def test_unknown_id_raises() -> None:
         get_experiment("does_not_exist")
 
 
-def test_variant_lookup_raises_on_unknown_schema_lang() -> None:
+def test_variant_lookup_raises_on_unknown_schema_variant() -> None:
     spec = _spec("variants")
     with pytest.raises(ValueError, match="schema variant"):
         spec.variant("pl")
+
+
+def test_schema_identity_names_and_hashes_the_response_schema() -> None:
+    variant = SchemaVariant(ThrowawayResponse, "value")
+
+    assert variant.schema_name == "ThrowawayResponse"
+    assert len(variant.schema_sha256 or "") == 64
+
+
+def test_schema_hash_changes_when_a_field_changes() -> None:
+    class Renamed(LLMResponse):
+        other: str
+
+    assert (
+        SchemaVariant(ThrowawayResponse, "value").schema_sha256
+        != SchemaVariant(Renamed, "other").schema_sha256
+    )
+
+
+def test_free_text_variant_has_no_schema_identity() -> None:
+    variant = SchemaVariant(None, None)
+
+    assert variant.schema_name is None
+    assert variant.schema_sha256 is None
 
 
 def test_resolve_experiment_accepts_number_id_and_question() -> None:

@@ -55,6 +55,11 @@ def request_body(request: GenRequest) -> dict[str, Any]:
 
     Optional sampling params are included only when set, so the body matches
     exactly what each backend puts on the wire.
+
+    The request seed is deliberately never sent. It keys the option order only.
+    The provider treats a seed as a request for repeatable sampling, so sending
+    it would ask for the same answer on every sample of a fixed-order question
+    and suppress the very randomness these runs measure.
     """
     body: dict[str, Any] = {
         "model": request.model,
@@ -67,8 +72,6 @@ def request_body(request: GenRequest) -> dict[str, Any]:
         body["top_p"] = request.sampling.top_p
     if request.sampling.max_tokens is not None:
         body["max_tokens"] = request.sampling.max_tokens
-    if request.seed is not None:
-        body["seed"] = request.seed
     return body
 
 

@@ -137,7 +137,6 @@ def test_build_jsonl_encodes_each_request() -> None:
     assert first["url"] == "/v1/chat/completions"
     assert first["body"]["model"] == "gpt-5.6-luna"
     assert first["body"]["temperature"] == 0.5
-    assert first["body"]["seed"] == 7
     assert first["body"]["messages"] == [
         {"role": "user", "content": "Pick one random fruit (en)"}
     ]
@@ -164,9 +163,19 @@ def test_build_jsonl_omits_unset_sampling_params() -> None:
 
     body = json.loads(build_jsonl([request]))["body"]
 
-    assert "seed" not in body
     assert "top_p" not in body
     assert "max_tokens" not in body
+
+
+def test_build_jsonl_never_sends_the_seed() -> None:
+    """The seed keys the option order only; sending it would ask for repeatable
+    answers and flatten the distribution the run measures."""
+    request = _request(seed=7)
+
+    body = json.loads(build_jsonl([request]))["body"]
+
+    assert request.seed == 7
+    assert "seed" not in body
 
 
 def test_build_jsonl_omits_response_format_for_free_text() -> None:

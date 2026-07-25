@@ -13,6 +13,7 @@ from llmango.pricing import (
     load_pricing,
     pricing_version,
     resolve_entry,
+    round_usd,
 )
 
 
@@ -58,6 +59,37 @@ def test_compute_cost_applies_the_cached_discount() -> None:
     assert cost.input_cost_usd == pytest.approx(4.2e-7)
     assert cost.output_cost_usd == pytest.approx(1.2e-6)
     assert cost.total_cost_usd == pytest.approx(1.62e-6)
+
+
+def test_compute_cost_applies_the_batch_discount() -> None:
+    entry = resolve_entry(_table(), "gpt-5.6-luna", None)
+
+    sync = compute_cost(entry, _usage())
+    batched = compute_cost(entry, _usage(), batched=True)
+
+    assert batched.total_cost_usd == pytest.approx(sync.total_cost_usd / 2)
+    assert batched.input_cost_usd == pytest.approx(2.1e-7)
+
+
+def test_costs_are_rounded_to_significant_digits() -> None:
+    entry = PricingEntry(input=0.15, output=0.6, last_updated="2026-07-24")
+    usage = Usage(
+        prompt_tokens=137,
+        completion_tokens=12,
+        total_tokens=149,
+        cached_tokens=0,
+        reasoning_tokens=0,
+    )
+
+    cost = compute_cost(entry, usage)
+
+    assert repr(cost.input_cost_usd) == "2.055e-05"
+    assert cost.total_cost_usd == cost.input_cost_usd + cost.output_cost_usd
+
+
+def test_round_usd_snaps_noise_but_keeps_real_precision() -> None:
+    assert round_usd(0.00021299999999999998) == 0.000213
+    assert round_usd(0.18518505) == 0.18518505
 
 
 def test_compute_cost_defaults_cached_rate_to_input() -> None:

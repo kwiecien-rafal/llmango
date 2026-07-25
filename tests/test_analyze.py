@@ -37,37 +37,45 @@ def drift_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(analyze_module, "get_experiment", lambda experiment_id: spec)
 
 
-def _row(lang: str, raw: str, canonical: str, is_fruit: bool) -> dict[str, object]:
+def _row(
+    lang: str,
+    raw: str,
+    canonical: str,
+    is_fruit: bool,
+    error: str | None = None,
+) -> dict[str, object]:
     return {
         "question_id": "001a",
-        "schema_lang": "en",
+        "schema_variant": "en",
         "lang": lang,
         "fruit_raw": raw,
         "fruit_canonical": canonical,
         "is_fruit": is_fruit,
         "multiple": False,
+        "error": error,
     }
 
 
 def _write_normalized(rows: list[dict[str, object]]) -> None:
     schema: dict[str, pl.DataType] = {
         "question_id": pl.String(),
-        "schema_lang": pl.String(),
+        "schema_variant": pl.String(),
         "lang": pl.String(),
         "fruit_raw": pl.String(),
         "fruit_canonical": pl.String(),
         "is_fruit": pl.Boolean(),
         "multiple": pl.Boolean(),
+        "error": pl.String(),
     }
     write_normalized(pl.DataFrame(rows, schema=schema), _EXPERIMENT)
 
 
 def _read_langs(
-    tmp_path: Path, name: str, schema_lang: str = "en"
+    tmp_path: Path, name: str, schema_variant: str = "en"
 ) -> dict[str, object]:
     path = tmp_path / "aggregated" / _EXPERIMENT / name
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload["questions"]["001a"][schema_lang]
+    return payload["questions"]["001a"][schema_variant]
 
 
 @pytest.fixture
@@ -106,8 +114,24 @@ def test_refusals_are_excluded_from_distribution_but_counted(analyzed: Path) -> 
     refusal = _read_langs(analyzed, "refusal_rate.json")
 
     assert "" not in distribution["en"]["counts"]
-    assert refusal["en"] == {"total": 3, "refusals": 1, "rate": 0.3333}
-    assert refusal["pl"] == {"total": 3, "refusals": 0, "rate": 0.0}
+    assert refusal["en"] == {"total": 3, "errors": 0, "refusals": 1, "rate": 0.3333}
+    assert refusal["pl"] == {"total": 3, "errors": 0, "refusals": 0, "rate": 0.0}
+
+
+def test_errored_calls_are_reported_apart_from_refusals(env: Path) -> None:
+    _write_normalized(
+        [
+            _row("en", "apple", "apple", True),
+            _row("en", "", "", False),
+            _row("en", "", "", False, error="connection reset"),
+            _row("en", "", "", False, error="rate limited"),
+        ]
+    )
+
+    analyze_experiment(_EXPERIMENT, detect=_fake_detect)
+
+    refusal = _read_langs(env, "refusal_rate.json")
+    assert refusal["en"] == {"total": 4, "errors": 2, "refusals": 1, "rate": 0.5}
 
 
 def test_language_match_is_skipped_when_drift_detection_is_disabled(

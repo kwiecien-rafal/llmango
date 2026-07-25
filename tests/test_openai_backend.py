@@ -113,8 +113,22 @@ def test_generate_forwards_the_sampling_params(
     call = client.calls[0]
     assert call["model"] == "gpt-5.6-luna"
     assert call["temperature"] == 0.5
-    assert call["seed"] == 7
     assert call["response_format"] is FruitChoice
+
+
+def test_generate_never_sends_the_seed(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    """The seed keys the option order only; sending it would ask for repeatable
+    answers and flatten the distribution the run measures."""
+    parsed = FruitChoice(fruit="apple")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    backend.generate(_request())
+
+    assert _request().seed == 7
+    assert "seed" not in client.calls[0]
 
 
 def test_generate_free_text_sends_no_response_format(

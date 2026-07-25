@@ -40,7 +40,9 @@ def run(
     lang: Annotated[
         list[str] | None, typer.Option("--lang", help="Restrict to these languages.")
     ] = None,
-    seed: Annotated[int | None, typer.Option("--seed", help="Sampling seed.")] = None,
+    seed: Annotated[
+        int | None, typer.Option("--seed", help="Seed for the shuffled option order.")
+    ] = None,
     batch: Annotated[
         bool, typer.Option("--batch", help="Submit via the OpenAI Batch API.")
     ] = False,
@@ -62,9 +64,9 @@ def run(
     count = _resolve_samples(samples, smoke, dry_run, force)
     try:
         variants = load_question(question).schema_variants
-        for schema_lang in variants:
+        for schema_variant in variants:
             _run_variant(
-                question, schema_lang, count, model, lang, seed, batch, dry_run
+                question, schema_variant, count, model, lang, seed, batch, dry_run
             )
     except _PIPELINE_ERRORS as error:
         _die(str(error))
@@ -72,7 +74,7 @@ def run(
 
 def _run_variant(
     question: str,
-    schema_lang: str,
+    schema_variant: str,
     samples: int,
     model: str | None,
     lang: list[str] | None,
@@ -86,7 +88,7 @@ def _run_variant(
         "samples": samples,
         "languages": lang,
         "seed": seed,
-        "schema_lang": schema_lang,
+        "schema_variant": schema_variant,
     }
     if dry_run:
         backend = OpenAIBatchBackend if batch else OpenAIBackend
@@ -195,23 +197,29 @@ def _report_run(outcome: RunOutcome) -> None:
         )
         return
     typer.echo(
-        f"Run {outcome.run_id} (schema {outcome.manifest.schema_lang}): "
+        f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
         f"wrote {outcome.rows_written} rows."
     )
+    usage = outcome.manifest.usage
+    if usage is not None:
+        typer.echo(
+            f"Usage:    {usage.total.total_tokens} tokens, "
+            f"${usage.total.total_cost_usd:.6f}"
+        )
     typer.echo(f"Parquet:  {outcome.parquet_path}")
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
 def _report_plan(plan: RunPlan) -> None:
     manifest = plan.manifest
-    requests = len(manifest.languages) * manifest.samples
     typer.echo(f"Dry run for {manifest.question_id} via {manifest.backend}:")
     typer.echo(f"  model:     {manifest.model}")
-    typer.echo(f"  schema:    {manifest.schema_lang}")
+    schema = manifest.schema_name or "free text"
+    typer.echo(f"  schema:    {manifest.schema_variant} ({schema})")
     typer.echo(f"  order:     {manifest.order}")
     typer.echo(f"  languages: {', '.join(manifest.languages)}")
-    typer.echo(f"  samples:   {manifest.samples} per language")
-    typer.echo(f"  requests:  {requests} total")
+    typer.echo(f"  samples:   {manifest.samples_per_language} per language")
+    typer.echo(f"  requests:  {manifest.total_requests} total")
     if plan.pricing is not None:
         price = plan.pricing
         typer.echo(
@@ -257,7 +265,7 @@ def _report_submit(outcome: RunOutcome) -> None:
         )
         return
     typer.echo(
-        f"Run {outcome.run_id} (schema {outcome.manifest.schema_lang}): "
+        f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
         f"submitted batch {outcome.batch_id}."
     )
     typer.echo(f"Fetch results with: llmango batch-fetch {outcome.run_id}")

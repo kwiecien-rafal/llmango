@@ -57,7 +57,6 @@ class OpenAIBackend(GenerationBackend):
                     temperature=request.sampling.temperature,
                     top_p=_given(request.sampling.top_p),
                     max_tokens=_given(request.sampling.max_tokens),
-                    seed=_given(request.seed),
                 )
                 parsed = completion.choices[0].message.parsed
             else:
@@ -67,7 +66,6 @@ class OpenAIBackend(GenerationBackend):
                     temperature=request.sampling.temperature,
                     top_p=_given(request.sampling.top_p),
                     max_tokens=_given(request.sampling.max_tokens),
-                    seed=_given(request.seed),
                 )
                 parsed = None
         except Exception as error:

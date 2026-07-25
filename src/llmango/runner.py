@@ -10,8 +10,8 @@ this into submit and fetch.
 
 import json
 import time
-import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from llmango.backends.base import (
@@ -23,6 +23,9 @@ from llmango.backends.base import (
 )
 from llmango.manifest import (
     RunManifest,
+    RunUsage,
+    UsageTotals,
+    build_run_id,
     find_manifest_by_content_hash,
     manifest_path,
     read_manifest,
@@ -35,6 +38,7 @@ from llmango.pricing import (
     load_pricing,
     pricing_version,
     resolve_entry,
+    round_usd,
 )
 from llmango.questions import (
     FruitTable,
@@ -71,8 +75,15 @@ class RunPlan:
     pricing: PricingEntry | None
 
 
-def _new_run_id(question_id: str) -> str:
-    return f"{question_id}-{uuid.uuid4().hex[:12]}"
+_TOKEN_FIELDS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cached_tokens",
+    "reasoning_tokens",
+)
+
+_COST_FIELDS = ("input_cost_usd", "output_cost_usd", "total_cost_usd")
 
 
 def _generate_with_retry(
@@ -105,12 +116,12 @@ def _usage_columns(usage: Usage | None) -> dict[str, object]:
 
 
 def _cost_columns(
-    usage: Usage | None, pricing_entry: PricingEntry | None
+    usage: Usage | None, pricing_entry: PricingEntry | None, batched: bool
 ) -> dict[str, object]:
     """Compute cost columns from usage and price, null when either is absent."""
     if usage is None or pricing_entry is None:
         return {column: None for column in COST_COLUMNS}
-    cost = compute_cost(pricing_entry, usage)
+    cost = compute_cost(pricing_entry, usage, batched=batched)
     return {
         "input_cost_usd": cost.input_cost_usd,
         "output_cost_usd": cost.output_cost_usd,
@@ -126,6 +137,7 @@ def _result_to_row(
     spec: ExperimentSpec,
     variant: SchemaVariant,
     pricing_entry: PricingEntry | None,
+    batched: bool = False,
 ) -> dict[str, object]:
     """Combine the common columns, parsed fields, provenance, usage and cost."""
     request = result.request
@@ -134,7 +146,8 @@ def _result_to_row(
     return {
         "question_id": request.question_id,
         "lang": request.lang,
-        "schema_lang": request.schema_lang,
+        "schema_variant": request.schema_variant,
+        "schema_name": variant.schema_name,
         "model": request.model,
         "backend": backend_id,
         "run_id": run_id,
@@ -157,9 +170,67 @@ def _result_to_row(
         "request_envelope": result.request_envelope,
         "response_envelope": result.response_envelope,
         **_usage_columns(result.usage),
-        **_cost_columns(result.usage, pricing_entry),
+        **_cost_columns(result.usage, pricing_entry, batched),
         "created_at": result.created_at,
     }
+
+
+def _int(value: object) -> int:
+    """Read a token count, treating the null of an errored row as zero."""
+    return value if isinstance(value, int) else 0
+
+
+def _float(value: object) -> float:
+    """Read a cost, treating the null of an errored row as zero."""
+    return value if isinstance(value, float) else 0.0
+
+
+def _totals(rows: list[dict[str, object]]) -> UsageTotals:
+    """Sum one group of rows into its token and cost totals in a single pass.
+
+    Costs are summed from the values written to the parquet, already rounded, so
+    the manifest total and the file it describes cannot disagree.
+    """
+    tokens = dict.fromkeys(_TOKEN_FIELDS, 0)
+    costs = dict.fromkeys(_COST_FIELDS, 0.0)
+    errors = 0
+    provider_refusals = 0
+    for row in rows:
+        if row.get("error") is not None:
+            errors += 1
+        if row.get("refusal") is not None:
+            provider_refusals += 1
+        for field in _TOKEN_FIELDS:
+            tokens[field] += _int(row.get(field))
+        for field in _COST_FIELDS:
+            costs[field] += _float(row.get(field))
+    return UsageTotals(
+        rows=len(rows),
+        errors=errors,
+        provider_refusals=provider_refusals,
+        prompt_tokens=tokens["prompt_tokens"],
+        completion_tokens=tokens["completion_tokens"],
+        total_tokens=tokens["total_tokens"],
+        cached_tokens=tokens["cached_tokens"],
+        reasoning_tokens=tokens["reasoning_tokens"],
+        input_cost_usd=round_usd(costs["input_cost_usd"]),
+        output_cost_usd=round_usd(costs["output_cost_usd"]),
+        total_cost_usd=round_usd(costs["total_cost_usd"]),
+    )
+
+
+def _run_usage(rows: list[dict[str, object]], languages: list[str]) -> RunUsage:
+    """Measure what a run consumed, in total and per language."""
+    grouped: dict[str, list[dict[str, object]]] = {lang: [] for lang in languages}
+    for row in rows:
+        group = grouped.get(str(row.get("lang")))
+        if group is not None:
+            group.append(row)
+    return RunUsage(
+        measured_at=datetime.now(UTC),
+        total=_totals(rows),
+        by_language={lang: _totals(group) for lang, group in grouped.items()},
+    )
 
 
 @dataclass(frozen=True)
@@ -179,13 +250,17 @@ def _prepare(
     samples: int,
     languages: list[str] | None,
     seed: int | None,
-    schema_lang: str,
+    schema_variant: str,
     run_id: str | None,
 ) -> _PreparedRun:
-    """Load the question and build its manifest, ready for the idempotency check."""
+    """Load the question and build its manifest, ready for the idempotency check.
+
+    The run id is derived from the finished manifest, since it embeds the
+    configuration's content hash, so it is filled in once the rest is known.
+    """
     config = load_question(question_ref)
     spec = get_experiment(config.experiment_id)
-    spec.variant(schema_lang)
+    variant = spec.variant(schema_variant)
 
     model = model or config.model
     if not model:
@@ -202,21 +277,24 @@ def _prepare(
     fruits = load_fruits(config.experiment_id)
 
     manifest = RunManifest(
-        run_id=run_id or _new_run_id(config.question_id),
+        run_id="",
         experiment_id=config.experiment_id,
         question_id=config.question_id,
         backend=backend_id,
         model=model,
-        schema_lang=schema_lang,
+        schema_variant=schema_variant,
+        schema_name=variant.schema_name,
+        schema_sha256=variant.schema_sha256,
         languages=languages,
         sampling=config.sampling,
         seed=effective_seed,
-        samples=samples,
+        samples_per_language=samples,
         order=config.order,
         order_ids=config.order_ids,
         template_sha256={lang: template.sha256 for lang, template in templates.items()},
         fruits_sha256=fruits.sha256,
     )
+    manifest.run_id = run_id or build_run_id(manifest)
     return _PreparedRun(
         spec=spec, manifest=manifest, templates=templates, fruits=fruits
     )
@@ -227,9 +305,7 @@ def _skipped_outcome(manifest: RunManifest) -> RunOutcome:
     return RunOutcome(
         run_id=manifest.run_id,
         manifest=manifest,
-        parquet_path=results_path(
-            manifest.question_id, manifest.model, manifest.run_id
-        ),
+        parquet_path=results_path(manifest.run_id, manifest.model),
         manifest_path=manifest_path(manifest.run_id),
         rows_written=0,
         skipped=True,
@@ -259,7 +335,7 @@ def run(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_lang: str = "en",
+    schema_variant: str = "en",
     run_id: str | None = None,
     max_retries: int = 3,
     retry_backoff: float = 1.0,
@@ -281,7 +357,7 @@ def run(
         samples,
         languages,
         seed,
-        schema_lang,
+        schema_variant,
         run_id,
     )
     manifest = prepared.manifest
@@ -292,7 +368,7 @@ def run(
 
     manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
     pricing_entry = _pin_pricing(manifest, pricing_table)
-    variant = prepared.spec.variant(manifest.schema_lang)
+    variant = prepared.spec.variant(manifest.schema_variant)
     results = _generate_all(
         backend,
         _build_requests(manifest, prepared.spec, prepared.templates, prepared.fruits),
@@ -311,10 +387,9 @@ def run(
         )
         for result in results
     ]
+    manifest.usage = _run_usage(rows, manifest.languages)
 
-    parquet_path = write_results(
-        rows, manifest.question_id, manifest.model, manifest.run_id
-    )
+    parquet_path = write_results(rows, manifest.run_id, manifest.model)
     written_manifest_path = write_manifest(manifest)
 
     return RunOutcome(
@@ -335,7 +410,7 @@ def plan_run(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_lang: str = "en",
+    schema_variant: str = "en",
 ) -> RunPlan:
     """Build a run's manifest and check for a duplicate without generating anything.
 
@@ -344,7 +419,7 @@ def plan_run(
     languages and model match what a run would use.
     """
     manifest = _prepare(
-        question, backend_id, model, samples, languages, seed, schema_lang, None
+        question, backend_id, model, samples, languages, seed, schema_variant, None
     ).manifest
     return RunPlan(
         manifest=manifest,
@@ -369,7 +444,7 @@ def submit_batch(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_lang: str = "en",
+    schema_variant: str = "en",
     run_id: str | None = None,
     pricing_table: PricingTable | None = None,
 ) -> RunOutcome:
@@ -387,7 +462,7 @@ def submit_batch(
         samples,
         languages,
         seed,
-        schema_lang,
+        schema_variant,
         run_id,
     )
     manifest = prepared.manifest
@@ -412,9 +487,7 @@ def submit_batch(
     return RunOutcome(
         run_id=manifest.run_id,
         manifest=manifest,
-        parquet_path=results_path(
-            manifest.question_id, manifest.model, manifest.run_id
-        ),
+        parquet_path=results_path(manifest.run_id, manifest.model),
         manifest_path=written_manifest_path,
         rows_written=0,
         skipped=False,
@@ -427,31 +500,38 @@ def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
 
     Rebuilds the exact requests from the stored manifest, verifying the templates
     and fruit table still hash to the values recorded at submit time before
-    writing results.
+    writing results. The manifest is rewritten with the usage and cost the batch
+    turned out to consume, which submit time could not know; its configuration,
+    and so its content hash, is untouched.
     """
     manifest = read_manifest(run_id)
     if manifest.batch_id is None:
         raise ValueError(f"Run {run_id} has no batch to fetch.")
 
     spec = get_experiment(manifest.experiment_id)
-    variant = spec.variant(manifest.schema_lang)
+    variant = spec.variant(manifest.schema_variant)
     requests = _requests_from_manifest(manifest, spec)
     results = backend.fetch(manifest.batch_id, requests)
     rows = [
         _result_to_row(
-            result, manifest.backend, manifest.run_id, spec, variant, manifest.pricing
+            result,
+            manifest.backend,
+            manifest.run_id,
+            spec,
+            variant,
+            manifest.pricing,
+            batched=True,
         )
         for result in results
     ]
+    manifest.usage = _run_usage(rows, manifest.languages)
 
-    parquet_path = write_results(
-        rows, manifest.question_id, manifest.model, manifest.run_id
-    )
+    parquet_path = write_results(rows, manifest.run_id, manifest.model)
     return RunOutcome(
         run_id=manifest.run_id,
         manifest=manifest,
         parquet_path=parquet_path,
-        manifest_path=manifest_path(manifest.run_id),
+        manifest_path=write_manifest(manifest),
         rows_written=len(rows),
         skipped=False,
         batch_id=manifest.batch_id,
@@ -488,11 +568,11 @@ def _build_requests(
     fruits: FruitTable,
 ) -> list[GenRequest]:
     """Render one request per language and sample from the run's templates."""
-    variant = spec.variant(manifest.schema_lang)
+    variant = spec.variant(manifest.schema_variant)
     requests: list[GenRequest] = []
     for lang in manifest.languages:
         template = templates[lang]
-        for sample_idx in range(manifest.samples):
+        for sample_idx in range(manifest.samples_per_language):
             prompt, shown = render_prompt(
                 template,
                 fruits,
@@ -513,7 +593,7 @@ def _build_requests(
                     sampling=manifest.sampling,
                     response_schema=variant.schema,
                     option_order=tuple(shown),
-                    schema_lang=manifest.schema_lang,
+                    schema_variant=manifest.schema_variant,
                 )
             )
     return requests

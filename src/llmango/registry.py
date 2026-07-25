@@ -8,6 +8,8 @@ filesystem entities resolved in questions.py, while the spec here carries the
 code-level schema and normalization shared across an experiment's questions.
 """
 
+import hashlib
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,6 +47,26 @@ class SchemaVariant:
             return str(getattr(parsed, self.field))
         return raw_json or ""
 
+    @property
+    def schema_name(self) -> str | None:
+        """The response schema class name, or None for the free-text variant."""
+        return self.schema.__name__ if self.schema is not None else None
+
+    @property
+    def schema_sha256(self) -> str | None:
+        """Hash the variant's JSON schema, or None for the free-text variant.
+
+        The schema is itself part of the prompt: its field names, their order and
+        any enums all reach the model. Hashing it makes an edit to a schema as
+        traceable as an edit to a prompt template, and keys are left in
+        declaration order rather than sorted, because that order is one of the
+        things the model sees.
+        """
+        if self.schema is None:
+            return None
+        encoded = json.dumps(self.schema.model_json_schema(), ensure_ascii=False)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
 
 @dataclass(frozen=True)
 class ExperimentSpec:
@@ -59,27 +81,27 @@ class ExperimentSpec:
     canonical_column: str = "canonical"
     canonical_values: frozenset[str] | None = None
     detect_language_drift: bool = False
-    default_schema_lang: str = "en"
+    default_variant: str = "en"
 
     @property
     def response_schema(self) -> type[BaseModel]:
         """The default variant's response schema, used for name validation."""
-        variant = self.schema_variants[self.default_schema_lang]
+        variant = self.schema_variants[self.default_variant]
         if variant.schema is None:
             raise ValueError(
                 f"Experiment {self.experiment_id} has no default response schema."
             )
         return variant.schema
 
-    def variant(self, schema_lang: str) -> SchemaVariant:
-        """Return the schema variant for a run's schema language."""
+    def variant(self, schema_variant: str) -> SchemaVariant:
+        """Return the registered schema variant a run asked for."""
         try:
-            return self.schema_variants[schema_lang]
+            return self.schema_variants[schema_variant]
         except KeyError:
             known = ", ".join(sorted(self.schema_variants))
             raise ValueError(
                 f"Experiment {self.experiment_id} has no schema variant "
-                f"'{schema_lang}'. Known variants: {known}."
+                f"'{schema_variant}'. Known variants: {known}."
             ) from None
 
 

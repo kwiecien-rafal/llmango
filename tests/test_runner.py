@@ -7,7 +7,7 @@ import pytest
 
 from llmango import runner as runner_module
 from llmango.backends.base import GenerationBackend, GenRequest, GenResult
-from llmango.manifest import RunManifest
+from llmango.manifest import RunManifest, read_manifest
 from llmango.pricing import PricingTable
 from llmango.runner import fetch_batch, run, submit_batch
 from llmango.storage import read_results
@@ -96,6 +96,8 @@ def test_run_writes_rows_and_manifest(
     assert outcome.rows_written == 4
     assert outcome.parquet_path.exists()
     assert outcome.manifest_path.exists()
+    assert outcome.parquet_path.stem.startswith(outcome.run_id)
+    assert outcome.manifest_path.stem == outcome.run_id
 
     frame = read_results("*.parquet")
     assert frame.height == 4
@@ -172,10 +174,10 @@ def test_refusals_persist_with_empty_fruit_raw(pricing_table: PricingTable) -> N
     assert frame["prompt_tokens"].to_list() == [None]
 
 
-def test_run_tags_schema_lang_and_option_order(
+def test_run_tags_the_schema_variant_and_option_order(
     fake_backend: GenerationBackend, pricing_table: PricingTable
 ) -> None:
-    run(
+    outcome = run(
         "001a",
         fake_backend,
         samples=1,
@@ -185,7 +187,9 @@ def test_run_tags_schema_lang_and_option_order(
     )
 
     frame = read_results("*.parquet")
-    assert frame["schema_lang"].to_list() == ["en"]
+    assert frame["schema_variant"].to_list() == ["en"]
+    assert frame["schema_name"].to_list() == ["FruitChoice"]
+    assert outcome.manifest.schema_sha256
     order = frame["option_order"].to_list()[0]
     assert order.startswith("[") and "apple" in order
 
@@ -196,13 +200,16 @@ def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None
         FreeTextBackend(),
         samples=1,
         languages=["pl"],
-        schema_lang="none",
+        schema_variant="none",
         pricing_table=pricing_table,
     )
 
     frame = read_results("*.parquet")
-    assert outcome.manifest.schema_lang == "none"
-    assert frame["schema_lang"].to_list() == ["none"]
+    assert outcome.manifest.schema_variant == "none"
+    assert outcome.manifest.schema_name is None
+    assert outcome.manifest.schema_sha256 is None
+    assert frame["schema_variant"].to_list() == ["none"]
+    assert frame["schema_name"].to_list() == [None]
     assert frame["fruit_raw"].to_list() == ["jabłko"]
     assert frame["raw_json"].to_list() == ["jabłko"]
 
@@ -272,7 +279,72 @@ def test_fetch_batch_writes_the_submitted_results(
     frame = read_results("*.parquet")
     assert frame.height == 4
     assert frame["fruit_raw"].to_list() == ["apple"] * 4
-    assert frame["total_cost_usd"].to_list() == pytest.approx([1.62e-6] * 4)
+    assert frame["total_cost_usd"].to_list() == pytest.approx([0.81e-6] * 4)
+
+
+def test_fetch_batch_records_usage_in_the_manifest(
+    fake_backend: GenerationBackend, pricing_table: PricingTable
+) -> None:
+    backend = FakeBatchBackend(fake_backend)
+    submitted = submit_batch(
+        "001a",
+        backend,
+        samples=2,
+        languages=["en", "pl"],
+        pricing_table=pricing_table,
+    )
+    assert submitted.manifest.usage is None
+
+    fetch_batch(submitted.run_id, backend)
+
+    manifest = read_manifest(submitted.run_id)
+    assert manifest.usage is not None
+    assert manifest.usage.total.rows == 4
+    assert manifest.usage.total.total_cost_usd == pytest.approx(3.24e-6)
+    assert manifest.usage.by_language["pl"].rows == 2
+
+
+def test_run_records_usage_in_total_and_per_language(
+    fake_backend: GenerationBackend, pricing_table: PricingTable
+) -> None:
+    outcome = run(
+        "001a",
+        fake_backend,
+        samples=2,
+        languages=["en", "pl"],
+        pricing_table=pricing_table,
+    )
+
+    usage = outcome.manifest.usage
+    assert usage is not None
+    assert usage.total.rows == 4
+    assert usage.total.prompt_tokens == 48
+    assert usage.total.errors == 0
+    assert usage.total.provider_refusals == 0
+    assert set(usage.by_language) == {"en", "pl"}
+    assert usage.by_language["en"].rows == 2
+    assert usage.by_language["en"].total_cost_usd == pytest.approx(
+        usage.total.total_cost_usd / 2
+    )
+
+
+def test_usage_counts_provider_refusals_and_keeps_their_cost_null(
+    pricing_table: PricingTable,
+) -> None:
+    outcome = run(
+        "001a",
+        RefusingBackend(),
+        samples=2,
+        languages=["en"],
+        pricing_table=pricing_table,
+    )
+
+    usage = outcome.manifest.usage
+    assert usage is not None
+    assert usage.total.rows == 2
+    assert usage.total.provider_refusals == 2
+    assert usage.total.total_tokens == 0
+    assert usage.total.total_cost_usd == 0.0
 
 
 def test_submit_batch_surfaces_batch_id_when_manifest_write_fails(

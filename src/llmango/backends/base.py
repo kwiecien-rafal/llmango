@@ -21,8 +21,12 @@ class GenRequest:
     """One prompt to generate one response for.
 
     response_schema is None for a free-text request, which sends no structured
-    output. option_order and schema_lang are carried through unused by backends
-    so the runner can record them as provenance columns.
+    output. option_order and schema_variant are carried through unused by
+    backends so the runner can record them as provenance columns.
+
+    seed keys the option order and is provenance only. A backend must never
+    forward it to a provider as a sampling seed, which would ask for repeatable
+    answers and flatten the distribution the run exists to measure.
     """
 
     question_id: str
@@ -35,7 +39,7 @@ class GenRequest:
     sampling: SamplingParams
     response_schema: type[BaseModel] | None
     option_order: tuple[str, ...] = ()
-    schema_lang: str = "en"
+    schema_variant: str = "en"
 
 
 @dataclass(frozen=True)

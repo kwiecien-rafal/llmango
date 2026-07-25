@@ -29,27 +29,40 @@ def env(data_dirs: Path) -> Path:
     return data_dirs
 
 
-def _raw_row(lang: str, fruit: str, sample_idx: int = 0) -> dict[str, object]:
+_RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
+
+_SHOWN = '["mango", "apple", "banana"]'
+
+
+def _raw_row(
+    lang: str,
+    fruit: str,
+    sample_idx: int = 0,
+    option_order: str = _SHOWN,
+    error: str | None = None,
+) -> dict[str, object]:
     return {
         "question_id": "001a",
         "lang": lang,
-        "schema_lang": "en",
+        "schema_variant": "en",
+        "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
         "backend": "fake",
-        "run_id": "run-1",
+        "run_id": _RUN_ID,
         "sample_idx": sample_idx,
         "seed": 0,
         "temperature": 1.0,
         "prompt_sha256": "x",
-        "option_order": "[]",
+        "option_order": option_order,
         "raw_json": None,
         "fruit_raw": fruit,
+        "error": error,
         "created_at": datetime(2026, 7, 20, tzinfo=UTC),
     }
 
 
 def _write_raw(rows: list[dict[str, object]]) -> None:
-    write_results(rows, "001a", "gpt-5.6-luna", "run-1")
+    write_results(rows, _RUN_ID, "gpt-5.6-luna")
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
@@ -134,7 +147,58 @@ def test_refusal_is_not_a_fruit(env: Path) -> None:
     frame = pl.read_parquet(normalized_path(_EXPERIMENT))
     assert outcome.llm_calls == 0
     assert frame["is_fruit"].to_list() == [False]
-    assert frame["fruit_canonical"].to_list() == [""]
+    assert frame["fruit_canonical"].to_list() == [None]
+    assert frame["chosen_position"].to_list() == [None]
+
+
+def test_chosen_position_reports_where_the_answer_was_shown(env: Path) -> None:
+    _write_raw(
+        [
+            _raw_row("en", "mango"),
+            _raw_row("pl", "jabłko", sample_idx=1),
+            _raw_row("en", "banana", sample_idx=2),
+        ]
+    )
+
+    normalize_experiment(_EXPERIMENT)
+
+    frame = pl.read_parquet(normalized_path(_EXPERIMENT)).sort("sample_idx")
+    assert frame["fruit_canonical"].to_list() == ["mango", "apple", "banana"]
+    assert frame["chosen_position"].to_list() == [1, 2, 3]
+
+
+def test_chosen_position_is_null_when_the_answer_was_not_shown(env: Path) -> None:
+    _write_raw([_raw_row("en", "kiwi", option_order='["mango", "apple"]')])
+
+    normalize_experiment(
+        _EXPERIMENT,
+        make_backend=lambda: StubBackend(
+            FruitNormalization(
+                raw="kiwi", canonical="kiwi", is_fruit=True, multiple=False
+            )
+        ),
+        model="gpt-5.6-luna",
+    )
+
+    frame = pl.read_parquet(normalized_path(_EXPERIMENT))
+    assert frame["fruit_canonical"].to_list() == ["kiwi"]
+    assert frame["chosen_position"].to_list() == [None]
+
+
+def test_added_columns_sit_next_to_the_raw_answer(env: Path) -> None:
+    _write_raw([_raw_row("en", "apple")])
+
+    normalize_experiment(_EXPERIMENT)
+
+    columns = pl.read_parquet(normalized_path(_EXPERIMENT)).columns
+    start = columns.index("fruit_raw")
+    assert columns[start : start + 5] == [
+        "fruit_raw",
+        "fruit_canonical",
+        "is_fruit",
+        "multiple",
+        "chosen_position",
+    ]
 
 
 def test_cache_hit_skips_the_llm(env: Path) -> None:

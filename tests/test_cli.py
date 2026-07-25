@@ -36,6 +36,15 @@ def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
     assert not (data_dirs / "runs").exists()
 
 
+def test_dry_run_names_the_schema_behind_each_variant(data_dirs: Path) -> None:
+    result = runner.invoke(app, ["run", "001d", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "schema:    en (FruitChoice)" in result.output
+    assert "schema:    pl (WyborOwocu)" in result.output
+    assert "schema:    none (free text)" in result.output
+
+
 def test_report_normalize_omits_parquet_on_dry_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

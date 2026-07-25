@@ -9,15 +9,18 @@ import pytest
 from llmango import storage as storage_module
 from llmango.storage import read_results, results_path, write_results
 
+_RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
+
 
 def _row(sample_idx: int, fruit: str) -> dict[str, object]:
     return {
         "question_id": "001a",
         "lang": "en",
-        "schema_lang": "en",
+        "schema_variant": "en",
+        "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
         "backend": "fake",
-        "run_id": "run-001",
+        "run_id": _RUN_ID,
         "sample_idx": sample_idx,
         "seed": 7,
         "temperature": 1.0,
@@ -55,8 +58,8 @@ def test_write_then_read_round_trips(
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
     rows = [_row(0, "apple"), _row(1, "mango")]
 
-    path = write_results(rows, "001a", "gpt-5.6-luna", "run-001")
-    assert path == results_path("001a", "gpt-5.6-luna", "run-001")
+    path = write_results(rows, _RUN_ID, "gpt-5.6-luna")
+    assert path == results_path(_RUN_ID, "gpt-5.6-luna")
     assert path.exists()
 
     frame = read_results("*.parquet")
@@ -69,13 +72,14 @@ def test_columns_follow_the_canonical_order(
 ) -> None:
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
 
-    write_results([_row(0, "apple")], "001a", "gpt-5.6-luna", "run-001")
+    write_results([_row(0, "apple")], _RUN_ID, "gpt-5.6-luna")
 
     frame = read_results("*.parquet")
     assert frame.columns == [
         "question_id",
         "lang",
-        "schema_lang",
+        "schema_variant",
+        "schema_name",
         "model",
         "backend",
         "run_id",
@@ -115,7 +119,7 @@ def test_column_dtypes_are_pinned(
 ) -> None:
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
 
-    write_results([_row(0, "apple")], "001a", "gpt-5.6-luna", "run-001")
+    write_results([_row(0, "apple")], _RUN_ID, "gpt-5.6-luna")
 
     frame = read_results("*.parquet")
     assert frame.schema["sample_idx"] == pl.Int64
@@ -130,6 +134,17 @@ def test_column_dtypes_are_pinned(
         time_unit="us", time_zone="UTC"
     )
     assert frame.schema["created_at"] == pl.Datetime(time_unit="us", time_zone="UTC")
+
+
+def test_result_file_is_named_after_its_run_and_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
+
+    path = results_path(_RUN_ID, "vendor/model-1")
+
+    assert path.name == f"{_RUN_ID}__vendor-model-1.parquet"
+    assert path.name.startswith("001a__")
 
 
 def test_read_results_is_empty_when_no_files(

@@ -18,13 +18,11 @@ EXPERIMENT_ID = "001_fruit"
 
 
 class FruitChoice(LLMResponse):
-
     fruit: str
 
 
 # 001d polish schema
 class WyborOwocu(LLMResponse):
-
     owoc: str
 
 

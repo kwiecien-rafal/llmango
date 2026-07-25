@@ -5,9 +5,13 @@ and maps each onto a canonical English category in layers, cheapest first. The
 shared fruit table seeds the deterministic mapping so every in-list answer
 resolves for free; leftover strings (off-list or free-text) fall through to the
 mapping file and then an LLM. Raw answers are never overwritten. Normalization
-only adds the canonical, is_fruit and multiple columns and writes a separate
-normalized Parquet file. Every LLM result is cached and promoted, so reruns
-never pay for the same string twice.
+only adds the canonical, is_fruit, multiple and chosen_position columns and
+writes a separate normalized Parquet file. Every LLM result is cached and
+promoted, so reruns never pay for the same string twice.
+
+Position is resolved here rather than at generation time because it takes a
+canonical answer to locate: the raw answer is free text in the prompt's language,
+while option_order records which canonical ids were shown and in what order.
 """
 
 import json
@@ -240,12 +244,17 @@ def _join_resolutions(
     resolutions: dict[tuple[str, str], Resolution],
     spec: ExperimentSpec,
 ) -> pl.DataFrame:
-    """Attach the canonical columns to every raw row via its (lang, answer)."""
+    """Attach the canonical columns to every raw row via its (lang, answer).
+
+    An answer that resolved to no category at all, such as a refusal, is written
+    as a null rather than an empty string, so the column never carries a category
+    that does not exist.
+    """
     rows = [
         {
             "lang": lang,
             spec.raw_column: raw,
-            spec.canonical_column: resolution.canonical,
+            spec.canonical_column: resolution.canonical or None,
             "is_fruit": resolution.is_fruit,
             "multiple": resolution.multiple,
         }
@@ -259,7 +268,38 @@ def _join_resolutions(
         "multiple": pl.Boolean(),
     }
     resolution_frame = pl.DataFrame(rows, schema_overrides=schema)
-    return frame.join(resolution_frame, on=["lang", spec.raw_column], how="left")
+    joined = frame.join(resolution_frame, on=["lang", spec.raw_column], how="left")
+    return _order_columns(joined.with_columns(_positions(joined, spec)), spec)
+
+
+def _position(order: list[str] | None, canonical: str | None) -> int | None:
+    """Return the 1-based place of one canonical answer among the options shown.
+
+    Null whenever the answer is not one of them: a refusal, an 'other' answer, or
+    a category that exists but was not on this sample's list.
+    """
+    if order is None or canonical is None or canonical not in order:
+        return None
+    return order.index(canonical) + 1
+
+
+def _positions(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.Series:
+    """Locate every row's canonical answer in the option order it was shown."""
+    shown = frame.get_column("option_order").str.json_decode(pl.List(pl.String()))
+    canonicals = frame.get_column(spec.canonical_column).to_list()
+    positions = [
+        _position(order, canonical)
+        for order, canonical in zip(shown.to_list(), canonicals, strict=True)
+    ]
+    return pl.Series("chosen_position", positions, dtype=pl.Int64())
+
+
+def _order_columns(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.DataFrame:
+    """Move the added columns to sit directly after the raw answer they describe."""
+    added = [spec.canonical_column, "is_fruit", "multiple", "chosen_position"]
+    kept = [column for column in frame.columns if column not in added]
+    cut = kept.index(spec.raw_column) + 1
+    return frame.select(kept[:cut] + added + kept[cut:])
 
 
 def _normalize_model(experiment_id: str) -> str | None:
