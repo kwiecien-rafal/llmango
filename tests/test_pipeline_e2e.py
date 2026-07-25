@@ -1,4 +1,4 @@
-"""End-to-end pipeline test: generate, normalize and analyze with a fake backend."""
+"""End-to-end pipeline: generate, normalize, aggregate and chart a fake backend."""
 
 import json
 from collections.abc import Callable
@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from llmango.analyze import analyze_experiment
+from llmango.aggregate import aggregate_experiment
 from llmango.backends.base import GenerationBackend
+from llmango.charts import analyze_experiment
 from llmango.normalize import normalize_experiment
 from llmango.runner import run
 from llmango.storage import read_results
@@ -44,7 +45,7 @@ def _aggregate(tmp_path: Path, name: str) -> dict[str, dict[str, object]]:
     return payload["questions"]["001a"]["en"]
 
 
-def test_pipeline_generates_normalizes_and_aggregates(
+def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., GenerationBackend]
 ) -> None:
     run_outcome = run(
@@ -68,7 +69,7 @@ def test_pipeline_generates_normalizes_and_aggregates(
     assert normalize_outcome.distinct == 7
     assert normalize_outcome.llm_calls == 0
 
-    analyze_experiment("001", detect=_detect)
+    aggregate_experiment("001", detect=_detect)
 
     distributions = _aggregate(pipeline, "distributions.json")
     refusals = _aggregate(pipeline, "refusal_rate.json")
@@ -84,3 +85,17 @@ def test_pipeline_generates_normalizes_and_aggregates(
         counts: dict[str, int] = distribution["counts"]
         assert sum(counts.values()) == distribution["n"]
         assert distribution["n"] + refusals[lang]["refusals"] == refusals[lang]["total"]
+
+    analyze_outcome = analyze_experiment("001")
+
+    assert [chart.file for chart in analyze_outcome.charts] == [
+        "001a__distribution.svg",
+        "refusal.svg",
+    ]
+    charts = pipeline / "charts" / _EXPERIMENT
+    assert (charts / "001a__distribution.svg").read_text(encoding="utf-8").count("<svg")
+    index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
+    distribution = index["charts"][0]
+    assert distribution["columns"] == ["en", "pl"]
+    labels = [row["label"] for row in distribution["rows"]]
+    assert labels == ["banana", "apple", "other"]

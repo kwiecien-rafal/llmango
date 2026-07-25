@@ -34,7 +34,12 @@ from llmango.questions import (
     load_experiment_config,
     load_fruits,
 )
-from llmango.registry import ExperimentSpec, get_experiment, resolve_experiment_id
+from llmango.registry import (
+    OTHER_CATEGORY,
+    ExperimentSpec,
+    get_experiment,
+    resolve_experiment_id,
+)
 from llmango.storage import read_results, write_normalized
 
 _MAPPING_FILE = "mapping.yaml"
@@ -230,7 +235,7 @@ def _resolve_online(
     for (lang, raw), result in zip(unresolved, results, strict=True):
         if result.parsed is None:
             resolved[(lang, raw)] = Resolution(
-                canonical="other", is_fruit=True, multiple=False
+                canonical=OTHER_CATEGORY, is_fruit=True, multiple=False
             )
             continue
         resolution = Resolution.model_validate(result.parsed.model_dump(mode="json"))

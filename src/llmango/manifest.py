@@ -72,7 +72,7 @@ class UsageTotals(BaseModel):
     provider_refusals counts only rows where the provider set its own refusal
     field. It is deliberately not the experiment's refusal rate, which also
     covers answers that decline in plain language and cannot be known until
-    normalization has run. Analyze owns that metric.
+    normalization has run. Aggregate owns that metric.
     """
 
     rows: int = 0

@@ -1,10 +1,15 @@
-"""Command line entry points for the llmango pipeline."""
+"""Command line entry points for the llmango pipeline.
 
-from typing import Annotated, Any, NoReturn
+llmango.charts is imported inside the analyze command rather than here, because
+importing it pulls in matplotlib, which costs roughly half a second of startup
+that every other command would pay without ever drawing anything.
+"""
+
+from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import typer
 
-from llmango.analyze import AnalyzeOutcome, analyze_experiment
+from llmango.aggregate import AggregateOutcome, aggregate_experiment
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
 from llmango.normalize import NormalizeOutcome, normalize_experiment
@@ -13,10 +18,17 @@ from llmango.registry import resolve_experiment_id
 from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
 from llmango.runner import run as run_experiment
 
+if TYPE_CHECKING:
+    from llmango.charts import AnalyzeOutcome
+
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 
 SMOKE_SAMPLES = 5
 SMOKE_SAMPLE_LIMIT = 25
+
+ExperimentArgument = Annotated[
+    str, typer.Argument(help="Experiment number or id (001 or 001_fruit).")
+]
 
 _PIPELINE_ERRORS = (OSError, RuntimeError, ValueError, KeyError)
 
@@ -101,9 +113,7 @@ def _run_variant(
 
 @app.command()
 def normalize(
-    experiment: Annotated[
-        str, typer.Argument(help="Experiment number or id (001 or 001_fruit).")
-    ] = "001",
+    experiment: ExperimentArgument = "001",
     model: Annotated[
         str | None,
         typer.Option("--model", help="Override the normalization model."),
@@ -131,12 +141,21 @@ def normalize(
 
 
 @app.command()
-def analyze(
-    experiment: Annotated[
-        str, typer.Argument(help="Experiment number or id (001 or 001_fruit).")
-    ] = "001",
-) -> None:
-    """Aggregate normalized answers into the committed JSON the site reads."""
+def aggregate(experiment: ExperimentArgument = "001") -> None:
+    """Aggregate normalized answers into the committed JSON the charts read."""
+    experiment_id = _resolve(experiment)
+    try:
+        outcome = aggregate_experiment(experiment_id)
+    except _PIPELINE_ERRORS as error:
+        _die(str(error))
+    _report_aggregate(outcome)
+
+
+@app.command()
+def analyze(experiment: ExperimentArgument = "001") -> None:
+    """Draw the charts the site embeds from an experiment's aggregates."""
+    from llmango.charts import analyze_experiment
+
     experiment_id = _resolve(experiment)
     try:
         outcome = analyze_experiment(experiment_id)
@@ -251,10 +270,18 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
         typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
-def _report_analyze(outcome: AnalyzeOutcome) -> None:
+def _report_aggregate(outcome: AggregateOutcome) -> None:
     typer.echo(f"Wrote {len(outcome.paths)} aggregate files:")
     for path in outcome.paths:
         typer.echo(f"  {path}")
+
+
+def _report_analyze(outcome: "AnalyzeOutcome") -> None:
+    typer.echo(f"Drew {len(outcome.charts)} charts:")
+    for chart in outcome.charts:
+        subject = chart.question_id or outcome.experiment_id
+        typer.echo(f"  {chart.file}  {subject} {chart.metric}, {len(chart.arms)} arms")
+    typer.echo(f"Index: {outcome.index_path}")
 
 
 def _report_submit(outcome: RunOutcome) -> None:

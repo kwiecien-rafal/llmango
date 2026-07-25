@@ -14,7 +14,8 @@ NORMALIZED_DIR = DATA_DIR / "normalized"
 AGG_DIR = DATA_DIR / "aggregated"
 NORMALIZATION_DIR = DATA_DIR / "normalization"
 RUNS_DIR = REPO_ROOT / "runs"
-RESULTS_DIR = REPO_ROOT / "results"
+SITE_DIR = REPO_ROOT / "site"
+CHARTS_DIR = SITE_DIR / "public" / "charts"
 PRICING_FILE = DATA_DIR / "pricing.json"
 
 

@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv",
     "huggingface_hub",
     "lingua-language-detector",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +60,10 @@ pythonVersion = "3.12"
 typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
+
+[[tool.pyright.executionEnvironments]]
+root = "src/llmango/charts.py"
+reportUnknownMemberType = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,14 @@
+{
+  "name": "llmango-site",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^7.0.3",
+    "astro": "^7.1.3"
+  }
+}

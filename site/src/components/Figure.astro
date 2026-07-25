@@ -1,0 +1,64 @@
+---
+/**
+ * One chart: the drawn SVG plus the table of numbers behind it.
+ *
+ * The SVG's text is outlined paths, so nothing in the image is selectable or
+ * reachable by a screen reader. The table is not an extra, it is how those
+ * numbers stay readable, copyable and searchable.
+ *
+ * alt is required rather than optional, and a generated fallback is deliberately
+ * not offered: a sentence describing the table's dimensions tells a screen
+ * reader nothing about the chart. A page whose content is the figure plus its
+ * table passes alt="", which says the image adds nothing, instead of announcing
+ * something uninformative that cannot be skipped.
+ */
+import { asides, chart as findChart, chartSrc } from "../data/charts";
+
+interface Props {
+  experiment: string;
+  file: string;
+  alt: string;
+  caption?: string;
+}
+
+const { experiment, file, alt, caption } = Astro.props;
+const entry = findChart(experiment, file);
+
+const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+---
+
+<figure class="chart">
+  <img src={chartSrc(experiment, file)} alt={alt} loading="lazy" />
+  {caption && <figcaption>{caption}</figcaption>}
+  <details>
+    <summary>Numbers behind this chart</summary>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{entry.row_label}</th>
+            {entry.columns.map((column) => <th scope="col">{column}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {
+            entry.rows.map((row) => (
+              <tr>
+                <th scope="row">{row.label}</th>
+                {row.cells.map((cell) => (
+                  <td>
+                    {percent(cell.value)}
+                    <span class="count">
+                      {cell.count} of {cell.n}
+                      {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+  </details>
+</figure>

@@ -1,4 +1,4 @@
-"""Aggregate normalized answers into the small JSON the site reads.
+"""Aggregate normalized answers into the small JSON the chart step reads.
 
 Reads an experiment's normalized Parquet and, per question and schema variant and
 language, computes the distribution over canonical categories and the refusal
@@ -29,10 +29,13 @@ import polars as pl
 
 from llmango.config import AGG_DIR
 from llmango.lang_detect import detect_language, primary_subtag
-from llmango.registry import ExperimentSpec, get_experiment, resolve_experiment_id
+from llmango.registry import (
+    OTHER_CATEGORY,
+    ExperimentSpec,
+    get_experiment,
+    resolve_experiment_id,
+)
 from llmango.storage import normalized_path, read_normalized
-
-_OTHER = "other"
 
 DetectFn = Callable[[str, tuple[str, ...]], str | None]
 
@@ -51,8 +54,8 @@ class Answer:
 
 
 @dataclass(frozen=True)
-class AnalyzeOutcome:
-    """The aggregated JSON files one analysis run wrote."""
+class AggregateOutcome:
+    """The aggregated JSON files one aggregation run wrote."""
 
     paths: list[Path]
 
@@ -61,11 +64,11 @@ Head = dict[str, list[Answer]]
 Metric = Callable[[Head], Mapping[str, object]]
 
 
-def analyze_experiment(
+def aggregate_experiment(
     experiment_id: str,
     *,
     detect: DetectFn = detect_language,
-) -> AnalyzeOutcome:
+) -> AggregateOutcome:
     """Aggregate an experiment's normalized answers into the committed JSON files.
 
     The detector is injectable so tests can run offline; by default it uses the
@@ -100,7 +103,7 @@ def analyze_experiment(
         _write_json(experiment_id, name, _nest(heads, metric))
         for name, metric in metrics.items()
     ]
-    return AnalyzeOutcome(paths=paths)
+    return AggregateOutcome(paths=paths)
 
 
 def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
@@ -169,7 +172,7 @@ def _distribution(answers: list[Answer]) -> dict[str, object]:
     return {
         "n": total,
         "counts": dict(counts),
-        "other_share": _rate(counts.get(_OTHER, 0), total),
+        "other_share": _rate(counts.get(OTHER_CATEGORY, 0), total),
     }
 
 

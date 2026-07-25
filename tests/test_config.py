@@ -17,7 +17,7 @@ def test_paths_live_under_repo_root_and_exist() -> None:
         config.AGG_DIR,
         config.NORMALIZATION_DIR,
         config.RUNS_DIR,
-        config.RESULTS_DIR,
+        config.CHARTS_DIR,
     ]
     for path in paths:
         assert config.REPO_ROOT in path.parents

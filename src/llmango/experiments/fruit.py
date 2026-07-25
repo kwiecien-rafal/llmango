@@ -11,7 +11,13 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from llmango.registry import ExperimentSpec, SchemaVariant, register_experiment
+from llmango.registry import (
+    FREE_TEXT_VARIANT,
+    OTHER_CATEGORY,
+    ExperimentSpec,
+    SchemaVariant,
+    register_experiment,
+)
 from llmango.schemas import LLMResponse
 
 EXPERIMENT_ID = "001_fruit"
@@ -96,13 +102,14 @@ register_experiment(
         schema_variants={
             "en": SchemaVariant(schema=FruitChoice, field="fruit"),
             "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
-            "none": SchemaVariant(schema=None, field=None),
+            FREE_TEXT_VARIANT: SchemaVariant(schema=None, field=None),
         },
         to_row=to_row,
         normalization_schema=FruitNormalization,
         preprocess=preprocess,
         raw_column="fruit_raw",
         canonical_column="fruit_canonical",
-        canonical_values=frozenset(member.value for member in FruitEnum) | {"other"},
+        canonical_values=frozenset(member.value for member in FruitEnum)
+        | {OTHER_CATEGORY},
     )
 )

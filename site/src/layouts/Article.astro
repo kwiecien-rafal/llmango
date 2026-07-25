@@ -1,0 +1,32 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="site">
+        <a class="brand" href="/">llmango</a>
+        <a href="/charts">charts</a>
+        <a href="https://github.com/rafalkwiecien/llmango">source</a>
+      </header>
+      <main>
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>

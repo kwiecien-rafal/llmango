@@ -2,10 +2,15 @@
 
 An experiment registers a lightweight ExperimentSpec describing its response
 schema variants and a few optional hooks. The runner, storage, normalize and
-analyze code stay experiment-agnostic and are driven entirely by the registered
+aggregate code stay experiment-agnostic and are driven entirely by the registered
 spec. One experiment holds several questions (001a, 001b, ...); questions are
 filesystem entities resolved in questions.py, while the spec here carries the
 code-level schema and normalization shared across an experiment's questions.
+
+FREE_TEXT_VARIANT and OTHER_CATEGORY are the two engine-wide names every stage
+shares. They live here rather than in each stage so that normalize, aggregate and
+charts agree on them by construction instead of by three matching string
+literals.
 """
 
 import hashlib
@@ -15,6 +20,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from pydantic import BaseModel
+
+FREE_TEXT_VARIANT = "none"
+OTHER_CATEGORY = "other"
 
 _NUMBER_PREFIX = re.compile(r"^(\d+)")
 
@@ -120,7 +128,7 @@ def get_experiment(experiment_id: str) -> ExperimentSpec:
     """Return the registered spec for experiment_id, or raise if unknown.
 
     Ensures every experiment is registered first, so any caller that reaches the
-    registry (the runner, normalize, analyze) sees a populated table.
+    registry (the runner, normalize, aggregate) sees a populated table.
     """
     _ensure_registered()
     try:

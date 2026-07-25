@@ -8,6 +8,4 @@ from pydantic import BaseModel, ConfigDict
 
 
 class LLMResponse(BaseModel):
-    """Base class for structured LLM response schemas."""
-
     model_config = ConfigDict(extra="forbid")

@@ -1,9 +1,6 @@
 """Pricing reference for computing the cost of one generation.
 
-Prices live in a committed pricing.json, updated manually just before a run.
-Cost is computed post-hoc from token usage times the pinned price, so a raw
-dataset stays cost-attributable and reproducible even after prices change.
-"""
+Prices live in data/pricing.json, updated manually."""
 
 import re
 from dataclasses import dataclass
@@ -20,11 +17,7 @@ _SIGNIFICANT_DIGITS = 10
 
 
 class PricingEntry(BaseModel):
-    """Per-million-token prices for one model and the date they were recorded.
-
-    batch_discount is the fraction of the sync price a batched request bills at,
-    so a batch run is not costed as if it had been sent one call at a time.
-    """
+    """Per-million-token prices for one model and the date they were recorded."""
 
     input: float
     output: float
@@ -80,23 +73,12 @@ def resolve_entry(
 
 
 def round_usd(value: float) -> float:
-    """Round a cost to ten significant digits.
-
-    Ten digits snap the noise binary floating point leaves in the low bits, so a
-    stored cost reads as 0.000213 rather than 0.00021299999999999998, while every
-    digit a price and a token count can genuinely carry survives.
-    """
+    """Round a cost to ten significant digits."""
     return float(f"{value:.{_SIGNIFICANT_DIGITS}g}")
 
 
 def compute_cost(entry: PricingEntry, usage: Usage, *, batched: bool = False) -> Cost:
-    """Compute the cost of one generation from its token usage and a pricing entry.
-
-    Cached prompt tokens are billed at the discounted cached rate; the rest of the
-    prompt tokens at the input rate. Reasoning tokens are already counted inside
-    completion_tokens, so they are not billed a second time. A batched generation
-    bills at the entry's batch discount.
-    """
+    """Compute the cost of one generation from its token usage and a pricing entry."""
     cached_rate = entry.cached_input if entry.cached_input is not None else entry.input
     non_cached = usage.prompt_tokens - usage.cached_tokens
     discount = entry.batch_discount if batched else 1.0
