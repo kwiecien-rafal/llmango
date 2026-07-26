@@ -31,7 +31,7 @@ def _detect(text: str, languages: tuple[str, ...]) -> str | None:
 
 @pytest.fixture
 def pipeline(data_dirs: Path) -> Path:
-    directory = data_dirs / "normalization" / _EXPERIMENT
+    directory = data_dirs / "mappings" / _EXPERIMENT
     directory.mkdir(parents=True)
     (directory / "normalization_cache.json").write_text(
         json.dumps(_CACHE), encoding="utf-8"

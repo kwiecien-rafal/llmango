@@ -15,7 +15,7 @@ def test_paths_live_under_repo_root_and_exist() -> None:
         config.PROMPTS_DIR,
         config.RAW_DIR,
         config.AGG_DIR,
-        config.NORMALIZATION_DIR,
+        config.MAPPINGS_DIR,
         config.RUNS_DIR,
         config.CHARTS_DIR,
     ]

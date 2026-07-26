@@ -224,9 +224,7 @@ def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
     monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
     monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
-    monkeypatch.setattr(
-        normalize_module, "NORMALIZATION_DIR", tmp_path / "normalization"
-    )
+    monkeypatch.setattr(normalize_module, "MAPPINGS_DIR", tmp_path / "mappings")
     monkeypatch.setattr(aggregate_module, "AGG_DIR", tmp_path / "aggregated")
     monkeypatch.setattr(charts_module, "AGG_DIR", tmp_path / "aggregated")
     monkeypatch.setattr(charts_module, "CHARTS_DIR", tmp_path / "charts")

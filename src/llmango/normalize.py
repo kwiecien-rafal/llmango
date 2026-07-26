@@ -26,7 +26,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 from llmango.backends.base import GenerationBackend, GenRequest
-from llmango.config import NORMALIZATION_DIR
+from llmango.config import MAPPINGS_DIR
 from llmango.questions import (
     SamplingParams,
     experiment_dir,
@@ -105,7 +105,7 @@ def normalize_experiment(
 
     frame = _read_experiment_raw(experiment_id)
 
-    directory = NORMALIZATION_DIR / experiment_id
+    directory = MAPPINGS_DIR / experiment_id
     mapping = _load_mapping(directory, spec, experiment_id)
     cache = _load_cache(directory)
     pairs = _distinct_pairs(frame, spec)

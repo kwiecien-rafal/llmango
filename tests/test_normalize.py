@@ -25,7 +25,7 @@ _EXPERIMENT = "001_fruit"
 @pytest.fixture
 def env(data_dirs: Path) -> Path:
     """Redirect outputs into tmp_path; the prompt tree stays the real one."""
-    (data_dirs / "normalization" / _EXPERIMENT).mkdir(parents=True)
+    (data_dirs / "mappings" / _EXPERIMENT).mkdir(parents=True)
     return data_dirs
 
 
@@ -204,7 +204,7 @@ def test_added_columns_sit_next_to_the_raw_answer(env: Path) -> None:
 def test_cache_hit_skips_the_llm(env: Path) -> None:
     cache = {"en": {"kiwi": {"canonical": "kiwi", "is_fruit": True, "multiple": False}}}
     (
-        normalize_module.NORMALIZATION_DIR / _EXPERIMENT / "normalization_cache.json"
+        normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
     ).write_text(json.dumps(cache), encoding="utf-8")
     _write_raw([_raw_row("en", "kiwi")])
 
@@ -235,7 +235,7 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     assert frame["fruit_raw"].to_list() == ["banana and apple"]
 
     cache_path = (
-        normalize_module.NORMALIZATION_DIR / _EXPERIMENT / "normalization_cache.json"
+        normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
     )
     cache = json.loads(cache_path.read_text(encoding="utf-8"))
     assert cache["en"]["banana and apple"]["canonical"] == "banana"
@@ -261,7 +261,7 @@ def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
 
 
 def test_mapping_values_must_be_canonical(env: Path) -> None:
-    (normalize_module.NORMALIZATION_DIR / _EXPERIMENT / "mapping.yaml").write_text(
+    (normalize_module.MAPPINGS_DIR / _EXPERIMENT / "mapping.yaml").write_text(
         "starfruit: notafruit\n", encoding="utf-8"
     )
     _write_raw([_raw_row("en", "apple")])
