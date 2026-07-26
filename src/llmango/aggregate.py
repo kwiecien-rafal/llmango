@@ -1,15 +1,13 @@
 """Aggregate normalized answers into the small JSON the chart step reads.
 
 Reads an experiment's normalized Parquet and, per question and schema variant and
-language, computes the distribution over canonical categories and the refusal
-rate. Each metric is written as a compact JSON file under
-data/aggregated/<experiment_id>/, nested question -> schema_variant -> language.
-The share that fell into 'other' is reported alongside the distribution as a
-first-class number, not hidden.
+language, computes the distribution over canonical categories. Each metric is
+written as a compact JSON file under data/aggregated/<experiment_id>/, nested
+question -> schema_variant -> language. The share that fell into 'other' is
+reported alongside the distribution as a first-class number, not hidden.
 
-A call that errored is not a refusal. Errored rows are counted and reported on
-their own, and left out of the refusal rate's denominator, so an API failure
-never inflates a number that describes how the model behaved.
+Answers that named no category, whether the call errored or the model declined,
+are simply absent from the distribution. Their share is not measured here.
 
 Experiments whose answers carry enough free text to detect drift can opt into an
 output language-match rate by setting detect_language_drift on their spec. When
@@ -50,7 +48,6 @@ class Answer:
     raw: str
     canonical: str
     is_fruit: bool
-    is_error: bool
 
 
 @dataclass(frozen=True)
@@ -89,9 +86,6 @@ def aggregate_experiment(
         "distributions.json": lambda head: {
             lang: _distribution(subset) for lang, subset in head.items()
         },
-        "refusal_rate.json": lambda head: {
-            lang: _refusal(subset) for lang, subset in head.items()
-        },
     }
     if spec.detect_language_drift:
         metrics["language_match.json"] = lambda head: {
@@ -117,7 +111,6 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             spec.raw_column,
             spec.canonical_column,
             "is_fruit",
-            "error",
         )
     }
     return [
@@ -128,16 +121,14 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             raw=_text(raw),
             canonical=_text(canonical),
             is_fruit=bool(fruit),
-            is_error=error is not None,
         )
-        for question_id, schema_variant, lang, raw, canonical, fruit, error in zip(
+        for question_id, schema_variant, lang, raw, canonical, fruit in zip(
             columns["question_id"],
             columns["schema_variant"],
             columns["lang"],
             columns[spec.raw_column],
             columns[spec.canonical_column],
             columns["is_fruit"],
-            columns["error"],
             strict=True,
         )
     ]
@@ -173,24 +164,6 @@ def _distribution(answers: list[Answer]) -> dict[str, object]:
         "n": total,
         "counts": dict(counts),
         "other_share": _rate(counts.get(OTHER_CATEGORY, 0), total),
-    }
-
-
-def _refusal(answers: list[Answer]) -> dict[str, object]:
-    """The share of one group's completed calls that refused or did not answer.
-
-    Errored calls never reached the model's judgement, so they are reported
-    separately and excluded from the rate rather than counted as refusals.
-    """
-    errors = sum(1 for answer in answers if answer.is_error)
-    refusals = sum(
-        1 for answer in answers if not answer.is_error and not answer.is_fruit
-    )
-    return {
-        "total": len(answers),
-        "errors": errors,
-        "refusals": refusals,
-        "rate": _rate(refusals, len(answers) - errors),
     }
 
 

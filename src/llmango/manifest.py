@@ -70,9 +70,9 @@ class UsageTotals(BaseModel):
     when it is only covering the rows that answered.
 
     provider_refusals counts only rows where the provider set its own refusal
-    field. It is deliberately not the experiment's refusal rate, which also
-    covers answers that decline in plain language and cannot be known until
-    normalization has run. Aggregate owns that metric.
+    field. It is run provenance, not a reported metric: nothing downstream
+    measures a refusal rate, and an answer that declines in plain language never
+    reaches this count at all.
     """
 
     rows: int = 0

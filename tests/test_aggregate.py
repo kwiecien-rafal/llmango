@@ -1,4 +1,4 @@
-"""Tests for aggregation: distributions, refusal rate, drift and 'other' share."""
+"""Tests for aggregation: distributions, drift and the 'other' share."""
 
 import json
 from dataclasses import replace
@@ -109,29 +109,26 @@ def test_distributions_count_valid_answers_and_report_other(aggregated: Path) ->
     }
 
 
-def test_refusals_are_excluded_from_distribution_but_counted(aggregated: Path) -> None:
-    distribution = _read_langs(aggregated, "distributions.json")
-    refusal = _read_langs(aggregated, "refusal_rate.json")
-
-    assert "" not in distribution["en"]["counts"]
-    assert refusal["en"] == {"total": 3, "errors": 0, "refusals": 1, "rate": 0.3333}
-    assert refusal["pl"] == {"total": 3, "errors": 0, "refusals": 0, "rate": 0.0}
-
-
-def test_errored_calls_are_reported_apart_from_refusals(env: Path) -> None:
+def test_answers_that_name_no_category_stay_out_of_the_distribution(
+    env: Path,
+) -> None:
+    """A declined answer and a failed call are both absent, not an empty category."""
     _write_normalized(
         [
             _row("en", "apple", "apple", True),
             _row("en", "", "", False),
             _row("en", "", "", False, error="connection reset"),
-            _row("en", "", "", False, error="rate limited"),
         ]
     )
 
     aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
 
-    refusal = _read_langs(env, "refusal_rate.json")
-    assert refusal["en"] == {"total": 4, "errors": 2, "refusals": 1, "rate": 0.5}
+    distribution = _read_langs(env, "distributions.json")
+    assert distribution["en"] == {
+        "n": 1,
+        "counts": {"apple": 1},
+        "other_share": 0.0,
+    }
 
 
 def test_language_match_is_skipped_when_drift_detection_is_disabled(

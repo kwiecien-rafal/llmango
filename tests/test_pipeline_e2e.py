@@ -72,25 +72,21 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     aggregate_experiment("001", detect=_detect)
 
     distributions = _aggregate(pipeline, "distributions.json")
-    refusals = _aggregate(pipeline, "refusal_rate.json")
 
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
     assert distributions["pl"]["other_share"] == 0.3333
-    assert refusals["en"] == {"total": 4, "errors": 0, "refusals": 1, "rate": 0.25}
-    assert refusals["pl"] == {"total": 4, "errors": 0, "refusals": 1, "rate": 0.25}
     assert not (pipeline / "aggregated" / _EXPERIMENT / "language_match.json").exists()
 
-    for lang, distribution in distributions.items():
+    for distribution in distributions.values():
         counts: dict[str, int] = distribution["counts"]
         assert sum(counts.values()) == distribution["n"]
-        assert distribution["n"] + refusals[lang]["refusals"] == refusals[lang]["total"]
+        assert distribution["n"] == 3
 
     analyze_outcome = analyze_experiment("001")
 
     assert [chart.file for chart in analyze_outcome.charts] == [
         "001a__distribution.svg",
-        "refusal.svg",
     ]
     charts = pipeline / "charts" / _EXPERIMENT
     assert (charts / "001a__distribution.svg").read_text(encoding="utf-8").count("<svg")

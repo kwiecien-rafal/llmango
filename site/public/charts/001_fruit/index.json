@@ -79,56 +79,6 @@
           ]
         }
       ]
-    },
-    {
-      "metric": "refusal",
-      "question_id": null,
-      "file": "refusal.svg",
-      "title": "001_fruit: refusal rate by arm",
-      "row_label": "arm",
-      "arms": [
-        "001a en",
-        "001a ja",
-        "001a pl"
-      ],
-      "columns": [
-        "refusal rate"
-      ],
-      "rows": [
-        {
-          "label": "001a en",
-          "cells": [
-            {
-              "value": 0.0,
-              "count": 0,
-              "n": 5,
-              "errors": 0
-            }
-          ]
-        },
-        {
-          "label": "001a ja",
-          "cells": [
-            {
-              "value": 0.0,
-              "count": 0,
-              "n": 5,
-              "errors": 0
-            }
-          ]
-        },
-        {
-          "label": "001a pl",
-          "cells": [
-            {
-              "value": 0.0,
-              "count": 0,
-              "n": 5,
-              "errors": 0
-            }
-          ]
-        }
-      ]
     }
   ]
 }

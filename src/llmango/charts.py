@@ -131,13 +131,6 @@ class AnalyzeOutcome:
 
 _RATE_CHARTS = (
     RateChart(
-        metric="refusal",
-        source="refusal_rate.json",
-        file="refusal.svg",
-        title="refusal rate",
-        counts=("refusals", "total", "errors"),
-    ),
-    RateChart(
         metric="language_match",
         source="language_match.json",
         file="language_match.svg",

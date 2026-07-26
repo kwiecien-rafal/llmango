@@ -58,23 +58,12 @@ use: shares rather than counts, so arms of different size stay comparable, categ
 nobody picked dropped rather than drawn as empty rows, and the counts kept beside
 every share instead of hidden behind a tooltip.
 
-## Refusals are counted separately
+## What is left out
 
-A model that declines to choose is not a model that picked something. Refusals,
-empty answers and "no preference" are excluded from the distribution and reported on
-their own. A call that errored is not a refusal either: it never reached the model's
-judgement, so it is counted apart and left out of the rate's denominator.
-
-<Figure
-  experiment="001_fruit"
-  file="refusal.svg"
-  alt="Horizontal bar chart of refusal rate for every arm of experiment 001. All three arms of 001a sit at zero percent, with no refusals in five rows each."
-  caption="Every arm of every question in one chart, so a single-arm question contributes a bar rather than becoming a one-bar chart."
-/>
-
-Nothing refused in the smoke run, so every bar is zero. That is the honest picture
-of five clean calls, and it is what the chart should look like when there is nothing
-to report.
+An answer that names no fruit is not a choice. A model that declines, answers
+nothing, or says it has no preference is excluded from the distribution, as is a
+call that errored before it reached the model at all. Every share on this page is
+therefore a share of valid answers, and the count behind it sits in the table.
 
 ## How to reproduce this
 
