@@ -22,12 +22,6 @@ _ANSWERS = {
 
 _CACHE = {"pl": {"coś": {"canonical": "other", "is_fruit": True, "multiple": False}}}
 
-_DETECTED = {"apple": "en", "banana": "en", "jabłko": "pl", "banan": "pl", "coś": "pl"}
-
-
-def _detect(text: str, languages: tuple[str, ...]) -> str | None:
-    return _DETECTED.get(text)
-
 
 @pytest.fixture
 def pipeline(data_dirs: Path) -> Path:
@@ -69,14 +63,13 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     assert normalize_outcome.distinct == 7
     assert normalize_outcome.llm_calls == 0
 
-    aggregate_experiment("001", detect=_detect)
+    aggregate_experiment("001")
 
     distributions = _aggregate(pipeline, "distributions.json")
 
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
     assert distributions["pl"]["other_share"] == 0.3333
-    assert not (pipeline / "aggregated" / _EXPERIMENT / "language_match.json").exists()
 
     for distribution in distributions.values():
         counts: dict[str, int] = distribution["counts"]

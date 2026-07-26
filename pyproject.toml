@@ -17,7 +17,6 @@ dependencies = [
     "typer",
     "python-dotenv",
     "huggingface_hub",
-    "lingua-language-detector",
     "matplotlib",
 ]
 

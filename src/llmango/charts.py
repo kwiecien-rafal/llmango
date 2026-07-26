@@ -100,24 +100,13 @@ class Chart:
     """One written chart, and the numbers behind it the site puts in a table."""
 
     metric: str
-    question_id: str | None
+    question_id: str
     file: str
     title: str
     row_label: str
     arms: list[str]
     columns: list[str]
     rows: list[Row]
-
-
-@dataclass(frozen=True)
-class RateChart:
-    """How to draw one of the per-experiment rate metrics as a single bar chart."""
-
-    metric: str
-    source: str
-    file: str
-    title: str
-    counts: tuple[str, str, str]
 
 
 @dataclass(frozen=True)
@@ -129,23 +118,11 @@ class AnalyzeOutcome:
     index_path: Path
 
 
-_RATE_CHARTS = (
-    RateChart(
-        metric="language_match",
-        source="language_match.json",
-        file="language_match.svg",
-        title="in-language rate",
-        counts=("matched", "total", "undetermined"),
-    ),
-)
-
-
 def analyze_experiment(experiment_id: str) -> AnalyzeOutcome:
     """Draw an experiment's charts from its aggregates into site/public/charts.
 
     The distribution chart is per question, since each question asks its own
-    thing. The rate charts are per experiment, so a question with a single arm
-    contributes a bar to a comparison rather than becoming a one-bar chart.
+    thing.
     """
     experiment_id = resolve_experiment_id(experiment_id)
     distributions = _load(experiment_id, _DISTRIBUTIONS)
@@ -158,11 +135,6 @@ def analyze_experiment(experiment_id: str) -> AnalyzeOutcome:
         _write_distribution(experiment_id, question_id, arms)
         for question_id, arms in distributions.items()
     ]
-    for rate in _RATE_CHARTS:
-        metric = _load(experiment_id, rate.source)
-        if metric is not None:
-            charts.append(_write_rate(experiment_id, rate, metric))
-
     return AnalyzeOutcome(
         experiment_id=experiment_id,
         charts=charts,
@@ -495,63 +467,6 @@ def _distribution_figure(
     return figure, rows
 
 
-def _rate_figure(
-    rate: RateChart, metric: dict[str, dict[Arm, Cell]], names: list[str], title: str
-) -> tuple[Figure, list[Row]]:
-    """Draw one rate across every arm of every question as a single bar chart.
-
-    Every bar is labeled here, unlike the distribution chart: one series over
-    few bars leaves the labels room, and the rate is the point of the chart.
-    """
-    cells = [cell for arms in metric.values() for cell in arms.values()]
-    values = [float(cell["rate"]) for cell in cells]
-    part, whole, aside = rate.counts
-    texts = [
-        f"{value:.0%}  {int(cell[part])} of {int(cell[whole])}, "
-        f"{int(cell[aside])} {aside}"
-        for value, cell in zip(values, cells, strict=True)
-    ]
-    series = [
-        Series(
-            label=rate.title,
-            color=_ARM_COLORS[0],
-            values=values,
-            labels=list(texts),
-        )
-    ]
-    figure = _draw(
-        row_labels=names,
-        series=series,
-        title=title,
-        value_label=rate.title,
-        legend=False,
-    )
-    rows = [
-        {
-            "label": name,
-            "cells": [
-                {
-                    "value": value,
-                    "count": int(cell[part]),
-                    "n": int(cell[whole]),
-                    aside: int(cell[aside]),
-                }
-            ],
-        }
-        for name, value, cell in zip(names, values, cells, strict=True)
-    ]
-    return figure, rows
-
-
-def _arm_names(metric: dict[str, dict[Arm, Cell]]) -> list[str]:
-    """Name every arm of every question, so one chart can hold them all."""
-    return [
-        f"{question_id} {label}"
-        for question_id, arms in metric.items()
-        for label in _labels(list(arms))
-    ]
-
-
 def _write_distribution(
     experiment_id: str, question_id: str, arms: dict[Arm, Cell]
 ) -> Chart:
@@ -570,27 +485,6 @@ def _write_distribution(
         row_label="category",
         arms=labels,
         columns=labels,
-        rows=rows,
-    )
-
-
-def _write_rate(
-    experiment_id: str, rate: RateChart, metric: dict[str, dict[Arm, Cell]]
-) -> Chart:
-    """Draw one per-experiment rate and describe it for the index."""
-    names = _arm_names(metric)
-    title = f"{experiment_id}: {rate.title} by arm"
-    with matplotlib.rc_context(_STYLE):
-        figure, rows = _rate_figure(rate, metric, names, title)
-        _write_svg(experiment_id, rate.file, figure)
-    return Chart(
-        metric=rate.metric,
-        question_id=None,
-        file=rate.file,
-        title=title,
-        row_label="arm",
-        arms=names,
-        columns=[rate.title],
         rows=rows,
     )
 

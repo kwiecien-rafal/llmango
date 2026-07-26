@@ -88,7 +88,6 @@ class ExperimentSpec:
     raw_column: str = "raw"
     canonical_column: str = "canonical"
     canonical_values: frozenset[str] | None = None
-    detect_language_drift: bool = False
     default_variant: str = "en"
 
     @property

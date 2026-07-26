@@ -43,17 +43,6 @@ def _write_aggregate(
     _write_json(_EXPERIMENT, name, questions)
 
 
-def _match_cell(
-    total: int, matched: int, undetermined: int, rate: float
-) -> dict[str, object]:
-    return {
-        "total": total,
-        "matched": matched,
-        "undetermined": undetermined,
-        "rate": rate,
-    }
-
-
 def _charts(root: Path) -> Path:
     return root / "charts" / _EXPERIMENT
 
@@ -219,71 +208,25 @@ def test_only_a_series_peak_is_directly_labeled() -> None:
     assert _peak_labels([0.0, 0.0], ["a", "b"]) == [None, None]
 
 
-def test_a_rate_holds_every_arm_of_every_question_in_one_chart(
-    languages: Path,
-) -> None:
-    _write_aggregate(
-        "language_match.json",
-        {
-            "001a": {"en": {"en": _match_cell(5, 4, 0, 0.8)}},
-            "001b": {"en": {"en": _match_cell(4, 3, 1, 1.0)}},
-        },
-    )
-
-    analyze_experiment("001")
-
-    chart = _chart(languages, "language_match")
-    assert [row["label"] for row in chart["rows"]] == ["001a en", "001b en"]
-    assert chart["rows"][1]["cells"] == [
-        {"value": 1.0, "count": 3, "n": 4, "undetermined": 1}
-    ]
-
-
-def test_language_match_chart_appears_only_when_aggregated(languages: Path) -> None:
-    analyze_experiment("001")
-    assert not (_charts(languages) / "language_match.svg").exists()
-
-    _write_aggregate(
-        "language_match.json",
-        {"001a": {"en": {"en": _match_cell(4, 4, 0, 1.0)}}},
-    )
-    analyze_experiment("001")
-
-    assert (_charts(languages) / "language_match.svg").is_file()
-    assert _chart(languages, "language_match")["rows"][0]["cells"][0]["value"] == 1.0
-
-
 def test_index_lists_every_chart_with_its_file_and_arms(languages: Path) -> None:
-    _write_aggregate(
-        "language_match.json",
-        {"001a": {"en": {"en": _match_cell(4, 4, 0, 1.0)}}},
-    )
-
     outcome = analyze_experiment("001")
 
     index = _index(languages)
     assert index["experiment_id"] == _EXPERIMENT
     assert [(chart["metric"], chart["file"]) for chart in index["charts"]] == [
         ("distribution", "001a__distribution.svg"),
-        ("language_match", "language_match.svg"),
     ]
+    assert index["charts"][0]["question_id"] == "001a"
     assert index["charts"][0]["arms"] == ["en", "pl"]
-    assert index["charts"][1]["question_id"] is None
     assert outcome.index_path == _charts(languages) / "index.json"
 
 
 def test_every_chart_is_written_as_a_transparent_svg(languages: Path) -> None:
-    _write_aggregate(
-        "language_match.json",
-        {"001a": {"en": {"en": _match_cell(4, 4, 0, 1.0)}}},
-    )
-
     analyze_experiment("001")
 
-    for name in ("001a__distribution.svg", "language_match.svg"):
-        path = _charts(languages) / name
-        assert ElementTree.parse(path).getroot().tag == _SVG_ROOT
-        assert "dc:date" not in path.read_text(encoding="utf-8")
+    path = _charts(languages) / "001a__distribution.svg"
+    assert ElementTree.parse(path).getroot().tag == _SVG_ROOT
+    assert "dc:date" not in path.read_text(encoding="utf-8")
 
 
 def test_redrawing_unchanged_aggregates_rewrites_an_identical_file(

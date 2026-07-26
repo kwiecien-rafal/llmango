@@ -29,7 +29,6 @@ _TRACKED_PACKAGES = (
     "typer",
     "python-dotenv",
     "huggingface-hub",
-    "lingua-language-detector",
 )
 
 _CONTENT_EXCLUDE = {

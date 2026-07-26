@@ -1,40 +1,20 @@
-"""Tests for aggregation: distributions, drift and the 'other' share."""
+"""Tests for aggregation: distributions and the 'other' share."""
 
 import json
-from dataclasses import replace
 from pathlib import Path
 
 import polars as pl
 import pytest
 
-from llmango import aggregate as aggregate_module
 from llmango.aggregate import aggregate_experiment
-from llmango.lang_detect import detect_language
-from llmango.registry import get_experiment
 from llmango.storage import write_normalized
 
 _EXPERIMENT = "001_fruit"
-_DETECTED = {"apple": "en", "banana": "en", "jabłko": "pl", "coś dziwnego": "pl"}
-
-
-def _fake_detect(text: str, languages: tuple[str, ...]) -> str | None:
-    return _DETECTED.get(text)
 
 
 @pytest.fixture
 def env(data_dirs: Path) -> Path:
     return data_dirs
-
-
-@pytest.fixture
-def drift_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Turn on the language-match metric for the experiment under test.
-
-    The fruit experiment leaves drift detection off, so the tests that exercise
-    the metric's logic enable it on a copy of the spec.
-    """
-    spec = replace(get_experiment(_EXPERIMENT), detect_language_drift=True)
-    monkeypatch.setattr(aggregate_module, "get_experiment", lambda experiment_id: spec)
 
 
 def _row(
@@ -90,7 +70,7 @@ def aggregated(env: Path) -> Path:
             _row("pl", "coś dziwnego", "other", True),
         ]
     )
-    aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
+    aggregate_experiment(_EXPERIMENT)
     return env
 
 
@@ -121,7 +101,7 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
         ]
     )
 
-    aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
+    aggregate_experiment(_EXPERIMENT)
 
     distribution = _read_langs(env, "distributions.json")
     assert distribution["en"] == {
@@ -131,88 +111,13 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
     }
 
 
-def test_language_match_is_skipped_when_drift_detection_is_disabled(
-    aggregated: Path,
-) -> None:
-    assert not (
-        aggregated / "aggregated" / _EXPERIMENT / "language_match.json"
-    ).exists()
-
-
-def test_language_match_scores_in_and_out_of_language_answers(
-    env: Path, drift_enabled: None
-) -> None:
-    _write_normalized(
-        [
-            _row("en", "apple", "apple", True),
-            _row("en", "banana", "banana", True),
-            _row("en", "", "", False),
-            _row("pl", "jabłko", "apple", True),
-            _row("pl", "apple", "apple", True),
-            _row("pl", "coś dziwnego", "other", True),
-        ]
-    )
-
-    aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
-
-    languages = _read_langs(env, "language_match.json")
-
-    assert languages["en"] == {
-        "total": 2,
-        "matched": 2,
-        "undetermined": 0,
-        "rate": 1.0,
-    }
-    assert languages["pl"] == {
-        "total": 3,
-        "matched": 2,
-        "undetermined": 0,
-        "rate": 0.6667,
-    }
-
-
-def test_language_match_counts_undetermined_answers_apart(
-    env: Path, drift_enabled: None
-) -> None:
-    _write_normalized(
-        [
-            _row("en", "apple", "apple", True),
-            _row("en", "mango", "mango", True),
-            _row("pl", "jabłko", "apple", True),
-            _row("pl", "banan", "banana", True),
-        ]
-    )
-
-    aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
-
-    languages = _read_langs(env, "language_match.json")
-    assert languages["en"] == {
-        "total": 2,
-        "matched": 1,
-        "undetermined": 1,
-        "rate": 1.0,
-    }
-    assert languages["pl"] == {
-        "total": 2,
-        "matched": 1,
-        "undetermined": 1,
-        "rate": 1.0,
-    }
-
-
 def test_missing_normalized_parquet_raises(env: Path) -> None:
     with pytest.raises(FileNotFoundError, match="No normalized parquet"):
-        aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
+        aggregate_experiment(_EXPERIMENT)
 
 
 def test_empty_normalized_parquet_raises(env: Path) -> None:
     _write_normalized([])
 
     with pytest.raises(ValueError, match="no rows"):
-        aggregate_experiment(_EXPERIMENT, detect=_fake_detect)
-
-
-def test_detect_language_reads_obvious_sentences() -> None:
-    languages = ("en", "pl")
-    assert detect_language("this is an english sentence about fruit", languages) == "en"
-    assert detect_language("to jest polskie zdanie o owocach", languages) == "pl"
+        aggregate_experiment(_EXPERIMENT)
