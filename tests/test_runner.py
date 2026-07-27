@@ -1,4 +1,4 @@
-"""Tests for the runner: persistence, idempotency and refusal handling."""
+"""Tests for the runner: planning, persistence, idempotency and refusal handling."""
 
 import json
 from datetime import UTC, datetime
@@ -8,10 +8,10 @@ import pytest
 
 from conftest import FakeBackend
 from llmango import runner as runner_module
-from llmango.backends.base import GenRequest, GenResult
+from llmango.backends.base import Backend, GenRequest, GenResult
 from llmango.manifest import RunManifest, read_manifest
 from llmango.pricing import PricingTable
-from llmango.runner import fetch_batch, run, submit_batch
+from llmango.runner import RunOptions, RunPlan, fetch_batch, plan, run
 from llmango.storage import read_results
 
 
@@ -69,15 +69,58 @@ def _isolate_dirs(data_dirs: Path) -> None:
     """Redirect output directories into tmp_path for every runner test."""
 
 
+def _plan(
+    backend: Backend,
+    pricing_table: PricingTable,
+    question: str = "001a",
+    samples: int = 1,
+    languages: list[str] | None = None,
+    seed: int | None = None,
+    schema_variant: str | None = None,
+    batch: bool = False,
+) -> RunPlan:
+    """Plan a run for the backend under test, priced from an injected table."""
+    return plan(
+        question,
+        RunOptions(
+            backend_id=backend.backend_id,
+            samples=samples,
+            languages=languages,
+            seed=seed,
+            schema_variant=schema_variant,
+            batch=batch,
+        ),
+        pricing_table=pricing_table,
+    )
+
+
+def test_plan_builds_every_request_and_writes_nothing(
+    fake_backend: FakeBackend, pricing_table: PricingTable, data_dirs: Path
+) -> None:
+    planned = _plan(fake_backend, pricing_table, samples=2, languages=["en", "pl"])
+
+    assert len(planned.requests) == 4
+    assert [request.lang for request in planned.requests] == ["en", "en", "pl", "pl"]
+    assert all(request.prompt for request in planned.requests)
+    assert planned.pricing is not None
+    assert planned.duplicate is None
+    assert not (data_dirs / "runs").exists()
+    assert not (data_dirs / "raw").exists()
+
+
+def test_plan_rejects_a_language_the_question_has_no_template_for(
+    fake_backend: FakeBackend, pricing_table: PricingTable
+) -> None:
+    with pytest.raises(ValueError, match="no prompt template for xx"):
+        _plan(fake_backend, pricing_table, languages=["xx"])
+
+
 def test_run_writes_rows_and_manifest(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     outcome = run(
-        "001a",
+        _plan(fake_backend, pricing_table, samples=2, languages=["en", "pl"]),
         fake_backend,
-        samples=2,
-        languages=["en", "pl"],
-        pricing_table=pricing_table,
     )
 
     assert not outcome.skipped
@@ -97,13 +140,7 @@ def test_run_writes_rows_and_manifest(
 def test_run_records_provenance_tokens_and_cost(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    run(
-        "001a",
-        fake_backend,
-        samples=1,
-        languages=["en"],
-        pricing_table=pricing_table,
-    )
+    run(_plan(fake_backend, pricing_table, languages=["en"]), fake_backend)
 
     frame = read_results("*.parquet")
     assert frame["prompt"].to_list()[0]
@@ -119,22 +156,34 @@ def test_run_records_provenance_tokens_and_cost(
     assert cost > 0
 
 
+def test_run_refuses_a_model_the_pricing_file_does_not_cover(
+    fake_backend: FakeBackend,
+) -> None:
+    unpriced = PricingTable(currency="USD", unit="per_1m_tokens", models={})
+    planned = _plan(fake_backend, unpriced, languages=["en"])
+
+    assert planned.pricing is None
+    with pytest.raises(ValueError, match="No pricing for model"):
+        run(planned, fake_backend)
+
+
+def test_run_refuses_a_backend_the_plan_was_not_built_for(
+    fake_backend: FakeBackend, pricing_table: PricingTable
+) -> None:
+    planned = _plan(fake_backend, pricing_table, languages=["en"])
+
+    with pytest.raises(ValueError, match="built for backend 'fake'"):
+        run(planned, RefusingBackend())
+
+
 def test_rerun_with_same_config_adds_no_rows(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     first = run(
-        "001a",
-        fake_backend,
-        samples=2,
-        languages=["en"],
-        pricing_table=pricing_table,
+        _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
     )
     second = run(
-        "001a",
-        fake_backend,
-        samples=2,
-        languages=["en"],
-        pricing_table=pricing_table,
+        _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
     )
 
     assert not first.skipped
@@ -145,13 +194,8 @@ def test_rerun_with_same_config_adds_no_rows(
 
 
 def test_refusals_persist_with_an_empty_answer(pricing_table: PricingTable) -> None:
-    outcome = run(
-        "001a",
-        RefusingBackend(),
-        samples=1,
-        languages=["en"],
-        pricing_table=pricing_table,
-    )
+    backend = RefusingBackend()
+    outcome = run(_plan(backend, pricing_table, languages=["en"]), backend)
 
     frame = read_results("*.parquet")
     assert outcome.rows_written == 1
@@ -166,12 +210,7 @@ def test_run_tags_the_schema_variant_and_prompt_inputs(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     outcome = run(
-        "001a",
-        fake_backend,
-        samples=1,
-        languages=["en"],
-        seed=1,
-        pricing_table=pricing_table,
+        _plan(fake_backend, pricing_table, languages=["en"], seed=1), fake_backend
     )
 
     frame = read_results("*.parquet")
@@ -184,13 +223,16 @@ def test_run_tags_the_schema_variant_and_prompt_inputs(
 
 
 def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None:
+    backend = FreeTextBackend()
     outcome = run(
-        "001d",
-        FreeTextBackend(),
-        samples=1,
-        languages=["pl"],
-        schema_variant="none",
-        pricing_table=pricing_table,
+        _plan(
+            backend,
+            pricing_table,
+            question="001d",
+            languages=["pl"],
+            schema_variant="none",
+        ),
+        backend,
     )
 
     frame = read_results("*.parquet")
@@ -203,15 +245,14 @@ def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None
     assert frame["raw_json"].to_list() == ["jabłko"]
 
 
-def test_submit_batch_records_batch_id_without_writing_rows(
+def test_batch_run_records_batch_id_without_writing_rows(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    outcome = submit_batch(
-        "001a",
+    outcome = run(
+        _plan(
+            fake_backend, pricing_table, samples=2, languages=["en", "pl"], batch=True
+        ),
         fake_backend,
-        samples=2,
-        languages=["en", "pl"],
-        pricing_table=pricing_table,
     )
 
     assert not outcome.skipped
@@ -223,22 +264,14 @@ def test_submit_batch_records_batch_id_without_writing_rows(
     assert outcome.manifest.pricing is not None
 
 
-def test_submit_batch_is_idempotent(
+def test_batch_run_is_idempotent(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    first = submit_batch(
-        "001a",
-        fake_backend,
-        samples=1,
-        languages=["en"],
-        pricing_table=pricing_table,
+    first = run(
+        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
     )
-    second = submit_batch(
-        "001a",
-        fake_backend,
-        samples=1,
-        languages=["en"],
-        pricing_table=pricing_table,
+    second = run(
+        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
     )
 
     assert not first.skipped
@@ -250,12 +283,11 @@ def test_submit_batch_is_idempotent(
 def test_fetch_batch_writes_the_submitted_results(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    submitted = submit_batch(
-        "001a",
+    submitted = run(
+        _plan(
+            fake_backend, pricing_table, samples=2, languages=["en", "pl"], batch=True
+        ),
         fake_backend,
-        samples=2,
-        languages=["en", "pl"],
-        pricing_table=pricing_table,
     )
 
     fetched = fetch_batch(submitted.run_id, fake_backend)
@@ -271,12 +303,11 @@ def test_fetch_batch_writes_the_submitted_results(
 def test_fetch_batch_records_usage_in_the_manifest(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    submitted = submit_batch(
-        "001a",
+    submitted = run(
+        _plan(
+            fake_backend, pricing_table, samples=2, languages=["en", "pl"], batch=True
+        ),
         fake_backend,
-        samples=2,
-        languages=["en", "pl"],
-        pricing_table=pricing_table,
     )
     assert submitted.manifest.usage is None
 
@@ -289,15 +320,28 @@ def test_fetch_batch_records_usage_in_the_manifest(
     assert manifest.usage.by_language["pl"].rows == 2
 
 
+def test_fetch_batch_refuses_an_edited_template(
+    fake_backend: FakeBackend,
+    pricing_table: PricingTable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = run(
+        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
+    )
+    manifest = read_manifest(submitted.run_id)
+    manifest.template_sha256["en"] = "not-the-hash-that-was-submitted"
+    monkeypatch.setattr(runner_module, "read_manifest", lambda run_id: manifest)
+
+    with pytest.raises(ValueError, match="changed since submit"):
+        fetch_batch(submitted.run_id, fake_backend)
+
+
 def test_run_records_usage_in_total_and_per_language(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     outcome = run(
-        "001a",
+        _plan(fake_backend, pricing_table, samples=2, languages=["en", "pl"]),
         fake_backend,
-        samples=2,
-        languages=["en", "pl"],
-        pricing_table=pricing_table,
     )
 
     usage = outcome.manifest.usage
@@ -316,13 +360,8 @@ def test_run_records_usage_in_total_and_per_language(
 def test_usage_counts_provider_refusals_and_keeps_their_cost_null(
     pricing_table: PricingTable,
 ) -> None:
-    outcome = run(
-        "001a",
-        RefusingBackend(),
-        samples=2,
-        languages=["en"],
-        pricing_table=pricing_table,
-    )
+    backend = RefusingBackend()
+    outcome = run(_plan(backend, pricing_table, samples=2, languages=["en"]), backend)
 
     usage = outcome.manifest.usage
     assert usage is not None
@@ -332,7 +371,7 @@ def test_usage_counts_provider_refusals_and_keeps_their_cost_null(
     assert usage.total.total_cost_usd == 0.0
 
 
-def test_submit_batch_surfaces_batch_id_when_manifest_write_fails(
+def test_batch_run_surfaces_batch_id_when_manifest_write_fails(
     fake_backend: FakeBackend,
     pricing_table: PricingTable,
     monkeypatch: pytest.MonkeyPatch,
@@ -340,13 +379,8 @@ def test_submit_batch_surfaces_batch_id_when_manifest_write_fails(
     def _fail(manifest: RunManifest) -> Path:
         raise OSError("disk full")
 
+    planned = _plan(fake_backend, pricing_table, languages=["en"], batch=True)
     monkeypatch.setattr(runner_module, "write_manifest", _fail)
 
     with pytest.raises(RuntimeError, match="batch-xyz"):
-        submit_batch(
-            "001a",
-            fake_backend,
-            samples=1,
-            languages=["en"],
-            pricing_table=pricing_table,
-        )
+        run(planned, fake_backend)

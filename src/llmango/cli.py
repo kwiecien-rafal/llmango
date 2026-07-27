@@ -5,17 +5,16 @@ importing it pulls in matplotlib, which costs roughly half a second of startup
 that every other command would pay without ever drawing anything.
 """
 
-from typing import TYPE_CHECKING, Annotated, Any, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 
+from llmango import runner
 from llmango.aggregate import AggregateOutcome, aggregate_question
 from llmango.backends.openai import OpenAIBackend, backend_id
 from llmango.experiments import spec_for
 from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.questions import load_question
-from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
-from llmango.runner import run as run_experiment
 
 if TYPE_CHECKING:
     from llmango.charts import AnalyzeOutcome
@@ -66,43 +65,34 @@ def run(
     """Run one question across languages and persist raw results to Parquet.
 
     A question declaring several schema variants (e.g. 001d) runs once per
-    variant, each tagged with its schema language.
+    variant, each tagged with its schema language. Every run reports its plan
+    before executing it, so --dry-run is the same path stopped one step early.
     """
     count = _resolve_samples(samples, smoke, dry_run, force)
     try:
-        variants = load_question(question).schema_variants
-        for schema_variant in variants:
-            _run_variant(
-                question, schema_variant, count, model, lang, seed, batch, dry_run
+        for schema_variant in load_question(question).schema_variants:
+            plan = runner.plan(
+                question,
+                runner.RunOptions(
+                    backend_id=backend_id(batch),
+                    model=model,
+                    samples=count,
+                    languages=lang,
+                    seed=seed,
+                    schema_variant=schema_variant,
+                    batch=batch,
+                ),
             )
+            _report_plan(plan)
+            if dry_run:
+                continue
+            outcome = runner.run(plan, OpenAIBackend(batch=batch))
+            if batch:
+                _report_submit(outcome)
+            else:
+                _report_run(outcome)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
-
-
-def _run_variant(
-    question: str,
-    schema_variant: str,
-    samples: int,
-    model: str | None,
-    lang: list[str] | None,
-    seed: int | None,
-    batch: bool,
-    dry_run: bool,
-) -> None:
-    """Run or preview one question for a single schema variant."""
-    opts: dict[str, Any] = {
-        "model": model,
-        "samples": samples,
-        "languages": lang,
-        "seed": seed,
-        "schema_variant": schema_variant,
-    }
-    if dry_run:
-        _report_plan(plan_run(question, backend_id(batch), **opts))
-    elif batch:
-        _report_submit(submit_batch(question, OpenAIBackend(batch=True), **opts))
-    else:
-        _report_run(run_experiment(question, OpenAIBackend(), **opts))
 
 
 @app.command()
@@ -163,7 +153,7 @@ def batch_fetch(
 ) -> None:
     """Fetch a previously submitted batch and persist its results to Parquet."""
     try:
-        outcome = fetch_batch(run_id, OpenAIBackend(batch=True))
+        outcome = runner.fetch_batch(run_id, OpenAIBackend(batch=True))
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
@@ -206,7 +196,7 @@ def _die(message: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
-def _report_run(outcome: RunOutcome) -> None:
+def _report_run(outcome: runner.RunOutcome) -> None:
     if outcome.skipped:
         typer.echo(
             f"Skipped: an identical run already exists as {outcome.run_id}. "
@@ -227,9 +217,9 @@ def _report_run(outcome: RunOutcome) -> None:
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
-def _report_plan(plan: RunPlan) -> None:
+def _report_plan(plan: runner.RunPlan) -> None:
     manifest = plan.manifest
-    typer.echo(f"Dry run for {manifest.question_id} via {manifest.backend}:")
+    typer.echo(f"Plan for {plan.question_id} via {manifest.backend}:")
     typer.echo(f"  model:     {manifest.model}")
     schema = manifest.schema_name or "free text"
     typer.echo(f"  schema:    {manifest.schema_variant} ({schema})")
@@ -279,7 +269,7 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
     typer.echo(f"Index: {outcome.index_path}")
 
 
-def _report_submit(outcome: RunOutcome) -> None:
+def _report_submit(outcome: runner.RunOutcome) -> None:
     if outcome.skipped:
         typer.echo(
             f"Skipped: an identical run already exists as {outcome.run_id} "

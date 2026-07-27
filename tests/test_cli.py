@@ -31,7 +31,7 @@ def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
 
     expected_requests = len(load_question("001a").languages) * 3
     assert result.exit_code == 0
-    assert "Dry run for 001a" in result.output
+    assert "Plan for 001a" in result.output
     assert f"requests:  {expected_requests} total" in result.output
     assert not (data_dirs / "runs").exists()
 

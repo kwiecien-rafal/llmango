@@ -10,7 +10,7 @@ from llmango.aggregate import aggregate_question
 from llmango.backends.base import Backend
 from llmango.charts import analyze_question
 from llmango.normalize import normalize_question
-from llmango.runner import run
+from llmango.runner import RunOptions, plan, run
 from llmango.storage import read_results
 
 _QUESTION = "001a"
@@ -43,11 +43,15 @@ def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
 def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
+    backend: Backend = make_fake_backend(_ANSWERS)
     run_outcome = run(
-        _QUESTION,
-        make_fake_backend(_ANSWERS),
-        samples=4,
-        languages=["en", "pl"],
+        plan(
+            _QUESTION,
+            RunOptions(
+                backend_id=backend.backend_id, samples=4, languages=["en", "pl"]
+            ),
+        ),
+        backend,
     )
     assert not run_outcome.skipped
     assert run_outcome.rows_written == 8

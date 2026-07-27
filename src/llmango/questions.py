@@ -5,7 +5,8 @@ its spec names. Each question it owns is a subfolder with its own meta.yaml and
 one prompt template per language. A template's placeholders are filled per sample
 by the prompt inputs the question declares, so a rendered prompt is produced per
 sample rather than read once from a static file. Loading a question checks that
-its templates and its declared inputs name each other exactly.
+its templates and its declared inputs name each other exactly, and hands back the
+templates it read, so nothing downstream reads them from disk a second time.
 """
 
 from dataclasses import dataclass
@@ -58,18 +59,6 @@ class QuestionMeta(BaseModel):
 
 
 @dataclass(frozen=True)
-class QuestionConfig:
-    """A question resolved against its experiment, ready to run."""
-
-    question_id: str
-    languages: list[str]
-    schema_variants: list[str]
-    inputs: InputDeclarations
-    sampling: SamplingParams
-    model: str | None
-
-
-@dataclass(frozen=True)
 class PromptTemplate:
     """A loaded prompt template with its text and content hash."""
 
@@ -77,6 +66,23 @@ class PromptTemplate:
     path: Path
     text: str
     sha256: str
+
+
+@dataclass(frozen=True)
+class QuestionConfig:
+    """A question resolved against its experiment, ready to run.
+
+    templates holds one loaded template per declared language, keyed by language,
+    since loading the question had to read them all to validate them.
+    """
+
+    question_id: str
+    languages: list[str]
+    schema_variants: list[str]
+    inputs: InputDeclarations
+    sampling: SamplingParams
+    model: str | None
+    templates: dict[str, PromptTemplate]
 
 
 def load_experiment_config(folder: str) -> ExperimentConfig:
@@ -94,7 +100,8 @@ def load_question(question_id: str) -> QuestionConfig:
     Finds the spec that owns the question, reads its meta.yaml, and checks that
     every declared language has a template, that each template's placeholders
     match the declared prompt inputs, and that every schema variant is one the
-    experiment registers.
+    experiment registers. The loaded templates come back on the config, so a run
+    plans from what was validated rather than reading the same files again.
     """
     spec = spec_for(question_id)
     directory = question_dir(spec.folder, question_id)
@@ -104,17 +111,9 @@ def load_question(question_id: str) -> QuestionConfig:
 
     meta = QuestionMeta.model_validate(yaml.safe_load(meta_path.read_text("utf-8")))
     exp_config = load_experiment_config(spec.folder)
+    templates = _load_templates(spec.folder, question_id, meta.languages)
 
-    missing = [
-        lang for lang in meta.languages if not (directory / f"{lang}.md").is_file()
-    ]
-    if missing:
-        raise FileNotFoundError(
-            f"Missing prompt templates for {question_id}: {', '.join(missing)}"
-        )
-
-    for lang in meta.languages:
-        template = load_template(spec.folder, question_id, lang)
+    for lang, template in templates.items():
         validate_placeholders(template.text, meta.inputs, f"{question_id}/{lang}.md")
     _validate_schema_variants(meta.schema_variants, spec)
 
@@ -125,6 +124,7 @@ def load_question(question_id: str) -> QuestionConfig:
         inputs=meta.inputs,
         sampling=meta.sampling or exp_config.sampling,
         model=exp_config.model,
+        templates=templates,
     )
 
 
@@ -135,6 +135,19 @@ def load_template(folder: str, question_id: str, lang: str) -> PromptTemplate:
         raise FileNotFoundError(f"Missing prompt template: {path}")
     text = path.read_text(encoding="utf-8")
     return PromptTemplate(lang=lang, path=path, text=text, sha256=sha256_text(text))
+
+
+def _load_templates(
+    folder: str, question_id: str, languages: list[str]
+) -> dict[str, PromptTemplate]:
+    """Load one template per declared language, naming every missing one at once."""
+    directory = question_dir(folder, question_id)
+    missing = [lang for lang in languages if not (directory / f"{lang}.md").is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing prompt templates for {question_id}: {', '.join(missing)}"
+        )
+    return {lang: load_template(folder, question_id, lang) for lang in languages}
 
 
 def _validate_schema_variants(schema_variants: list[str], spec: ExperimentSpec) -> None:

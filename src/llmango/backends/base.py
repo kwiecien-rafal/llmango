@@ -20,11 +20,11 @@ class GenRequest:
     """One prompt to generate one response for.
 
     response_schema is None for a free-text request, which sends no structured
-    output. prompt_inputs and schema_variant are carried through unused by
-    backends so the runner can record them as provenance columns. prompt_inputs
-    is the JSON of what each of the question's prompt inputs resolved to for this
-    sample. Both are empty for a request that is not an arm of a question, such as
-    a normalization call, whose results never reach a raw parquet.
+    output. prompt_inputs is carried through unused by backends so the runner can
+    record it as a provenance column: it is the JSON of what each of the question's
+    prompt inputs resolved to for this sample. It is empty for a request that is
+    not an arm of a question, such as a normalization call, whose results never
+    reach a raw parquet.
 
     seed keys the per-sample prompt inputs and is provenance only. A backend must
     never forward it to a provider as a sampling seed, which would ask for repeatable
@@ -41,7 +41,6 @@ class GenRequest:
     sampling: SamplingParams
     response_schema: type[BaseModel] | None
     prompt_inputs: str = "{}"
-    schema_variant: str = ""
 
 
 @dataclass(frozen=True)
