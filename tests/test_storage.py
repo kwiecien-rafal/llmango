@@ -9,7 +9,7 @@ import pytest
 from llmango import storage as storage_module
 from llmango.storage import read_results, results_path, write_results
 
-_RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
+_RUN_ID = "001a__en__20260720T101500Z"
 
 
 def _row(sample_idx: int, fruit: str) -> dict[str, object]:
@@ -171,6 +171,25 @@ def test_result_file_is_named_after_its_run_and_model(
 
     assert path.name == f"{_RUN_ID}__vendor-model-1.parquet"
     assert path.name.startswith("001a__")
+
+
+def test_read_results_pools_every_run_of_one_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repeating a configuration is how a sample grows, so runs of it add up.
+
+    Each run writes its own file and a question's glob reads them all, so a
+    second run of the same arm is more samples of it rather than a replacement.
+    """
+    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
+    later = "001a__en__20260721T101500Z"
+
+    write_results([_row(0, "apple"), _row(1, "mango")], _RUN_ID, "gpt-5.6-luna")
+    write_results([_row(0, "pear")], later, "gpt-5.6-luna")
+
+    frame = read_results("001a__*.parquet")
+    assert frame.height == 3
+    assert frame["answer"].to_list() == ["apple", "mango", "pear"]
 
 
 def test_read_results_is_empty_when_no_files(

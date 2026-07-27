@@ -1,4 +1,4 @@
-"""Tests for the runner: planning, persistence, idempotency and refusal handling."""
+"""Tests for the runner: planning, persistence, batching and refusal handling."""
 
 import json
 from datetime import UTC, datetime
@@ -103,7 +103,6 @@ def test_plan_builds_every_request_and_writes_nothing(
     assert [request.lang for request in planned.requests] == ["en", "en", "pl", "pl"]
     assert all(request.prompt for request in planned.requests)
     assert planned.pricing is not None
-    assert planned.duplicate is None
     assert not (data_dirs / "runs").exists()
     assert not (data_dirs / "raw").exists()
 
@@ -123,7 +122,6 @@ def test_run_writes_rows_and_manifest(
         fake_backend,
     )
 
-    assert not outcome.skipped
     assert outcome.rows_written == 4
     assert outcome.parquet_path.exists()
     assert outcome.manifest_path.exists()
@@ -176,20 +174,26 @@ def test_run_refuses_a_backend_the_plan_was_not_built_for(
         run(planned, RefusingBackend())
 
 
-def test_rerun_with_same_config_adds_no_rows(
+def test_rerun_within_the_same_second_is_refused(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
+    """Repeating a config is allowed and pools; colliding on a run id is not.
+
+    Two runs of the same arm are more samples of it, not a duplicate, so nothing
+    stops a rerun. A run id is stamped to the second, though, so a repeat inside
+    that second would land on the same files, which fails instead of overwriting.
+    """
     first = run(
         _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
     )
-    second = run(
-        _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
-    )
 
-    assert not first.skipped
-    assert second.skipped
-    assert second.rows_written == 0
-    assert second.run_id == first.run_id
+    with pytest.raises(ValueError, match="already exists"):
+        run(
+            _plan(fake_backend, pricing_table, samples=2, languages=["en"]),
+            fake_backend,
+        )
+
+    assert first.rows_written == 2
     assert read_results("*.parquet").height == 2
 
 
@@ -255,29 +259,12 @@ def test_batch_run_records_batch_id_without_writing_rows(
         fake_backend,
     )
 
-    assert not outcome.skipped
     assert outcome.rows_written == 0
     assert outcome.batch_id == "batch-xyz"
     assert outcome.manifest_path.exists()
     assert not outcome.parquet_path.exists()
     assert outcome.manifest.batch_id == "batch-xyz"
     assert outcome.manifest.pricing is not None
-
-
-def test_batch_run_is_idempotent(
-    fake_backend: FakeBackend, pricing_table: PricingTable
-) -> None:
-    first = run(
-        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
-    )
-    second = run(
-        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
-    )
-
-    assert not first.skipped
-    assert second.skipped
-    assert second.run_id == first.run_id
-    assert len(fake_backend.submitted) == 1
 
 
 def test_fetch_batch_writes_the_submitted_results(

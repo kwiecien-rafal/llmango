@@ -6,11 +6,13 @@ from templates and the question's prompt inputs, which the experiment builds, so
 what varies per sample is the experiment's to decide.
 
 The work is split in two. plan reads everything a run needs, builds every request
-and its manifest, resolves the price and looks for an identical earlier run, all
-without touching the network, so a dry run is the same code path stopped before
-execution. run then picks one of the backend's two transports, generating inline
-or submitting a batch to fetch later. Reruns of the same configuration are skipped
-by matching the manifest content hash, so results are never duplicated.
+and its manifest and resolves the price, all without touching the network, so a
+dry run is the same code path stopped before execution. run then picks one of the
+backend's two transports, generating inline or submitting a batch to fetch later.
+
+Running the same configuration twice is deliberate, not an accident to guard
+against: every run of a question lands in its own Parquet file and normalize
+pools them all, so a repeat is simply more samples of the same arm.
 """
 
 import json
@@ -32,7 +34,6 @@ from llmango.manifest import (
     RunUsage,
     UsageTotals,
     build_run_id,
-    find_manifest_by_content_hash,
     manifest_path,
     read_manifest,
     write_manifest,
@@ -74,7 +75,6 @@ class RunOptions:
     seed: int | None = None
     schema_variant: str | None = None
     batch: bool = False
-    run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,15 +86,13 @@ class RunPlan:
     fails while the run is still being priced, not partway through paying for it.
 
     pricing is None when the model has no entry in the pricing file, which a dry
-    run reports and a real run refuses. duplicate is the manifest of an identical
-    earlier run, if one exists, which run skips instead of regenerating.
+    run reports and a real run refuses.
     """
 
     spec: ExperimentSpec
     manifest: RunManifest
     requests: list[GenRequest]
     pricing: PricingEntry | None
-    duplicate: RunManifest | None
     batch: bool
 
     @property
@@ -105,14 +103,13 @@ class RunPlan:
 
 @dataclass(frozen=True)
 class RunOutcome:
-    """The result of a run: what was written, or that it was skipped."""
+    """The result of a run: what was written, and where."""
 
     run_id: str
     manifest: RunManifest
     parquet_path: Path
     manifest_path: Path
     rows_written: int
-    skipped: bool
     batch_id: str | None = None
 
 
@@ -132,16 +129,15 @@ def plan(
     options: RunOptions,
     pricing_table: PricingTable | None = None,
 ) -> RunPlan:
-    """Build one run from disk: its manifest, its requests, its price and its twin.
+    """Build one run from disk: its manifest, its requests and its price.
 
     Everything a run depends on is read here once, in one place: the question's
     config and templates, the data behind each prompt input, every rendered
-    request, the price of the model and any earlier run of the same configuration.
-    Nothing reaches the network, so this is what --dry-run reports and what a real
-    run then executes.
+    request and the price of the model. Nothing reaches the network, so this is
+    what --dry-run reports and what a real run then executes.
 
-    The run id is derived from the finished manifest, since it embeds the
-    configuration's content hash, so it is filled in once the rest is known.
+    The run id is derived from the finished manifest, so it is filled in once the
+    rest is known.
     """
     spec = spec_for(question_id)
     config = load_question(question_id)
@@ -174,14 +170,13 @@ def plan(
         template_sha256={lang: template.sha256 for lang, template in templates.items()},
         input_sha256={name: source.sha256 for name, source in sources.items()},
     )
-    manifest.run_id = options.run_id or build_run_id(manifest)
+    manifest.run_id = build_run_id(manifest)
 
     return RunPlan(
         spec=spec,
         manifest=manifest,
         requests=_build_requests(manifest, spec, templates, sources),
         pricing=_price(model, pricing_table),
-        duplicate=find_manifest_by_content_hash(manifest.content_hash()),
         batch=options.batch,
     )
 
@@ -189,9 +184,8 @@ def plan(
 def run(plan: RunPlan, backend: Backend) -> RunOutcome:
     """Execute a planned run through one of the backend's two transports.
 
-    An identical earlier run is skipped and nothing is regenerated. Otherwise the
-    price is pinned into the manifest before anything is generated, so a run never
-    proceeds without a known cost, and the model snapshot is resolved so the
+    The price is pinned into the manifest before anything is generated, so a run
+    never proceeds without a known cost, and the model snapshot is resolved so the
     manifest records exactly which revision answered.
 
     Batched, the requests are submitted and only the manifest is written; its
@@ -202,8 +196,6 @@ def run(plan: RunPlan, backend: Backend) -> RunOutcome:
     for that rather than wrapped in a second retry layer here.
     """
     manifest = plan.manifest
-    if plan.duplicate is not None:
-        return _outcome(plan.duplicate, rows_written=0, skipped=True)
     if plan.pricing is None:
         raise ValueError(
             f"No pricing for model '{manifest.model}' in the pricing file. Add it "
@@ -213,6 +205,11 @@ def run(plan: RunPlan, backend: Backend) -> RunOutcome:
         raise ValueError(
             f"This plan was built for backend '{manifest.backend}' but was handed "
             f"'{backend.backend_id}'. Plan and run the same one."
+        )
+    if manifest_path(manifest.run_id).exists():
+        raise ValueError(
+            f"Run {manifest.run_id} already exists. Run ids are stamped to the "
+            f"second, so this run would overwrite it; try again in a moment."
         )
 
     manifest.pricing = plan.pricing
@@ -235,8 +232,7 @@ def fetch_batch(run_id: str, backend: Backend) -> RunOutcome:
     """Fetch a submitted batch's results and persist them to Parquet.
 
     The manifest is rewritten with the usage and cost the batch turned out to
-    consume, which submit time could not know; its configuration, and so its
-    content hash, is untouched.
+    consume, which submit time could not know; its configuration is untouched.
     """
     manifest = read_manifest(run_id)
     if manifest.batch_id is None:
@@ -286,7 +282,6 @@ def _plan_from_manifest(manifest: RunManifest) -> RunPlan:
         manifest=manifest,
         requests=_build_requests(manifest, spec, templates, sources),
         pricing=manifest.pricing,
-        duplicate=None,
         batch=True,
     )
 
@@ -376,9 +371,7 @@ def _write_submitted_manifest(manifest: RunManifest) -> None:
         ) from error
 
 
-def _outcome(
-    manifest: RunManifest, rows_written: int, skipped: bool = False
-) -> RunOutcome:
+def _outcome(manifest: RunManifest, rows_written: int) -> RunOutcome:
     """Describe a finished run, whose files are named by its run id and model."""
     return RunOutcome(
         run_id=manifest.run_id,
@@ -386,7 +379,6 @@ def _outcome(
         parquet_path=results_path(manifest.run_id, manifest.model),
         manifest_path=manifest_path(manifest.run_id),
         rows_written=rows_written,
-        skipped=skipped,
         batch_id=manifest.batch_id,
     )
 

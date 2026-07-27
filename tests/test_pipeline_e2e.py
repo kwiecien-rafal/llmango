@@ -53,7 +53,6 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         ),
         backend,
     )
-    assert not run_outcome.skipped
     assert run_outcome.rows_written == 8
 
     raw = read_results("*.parquet")

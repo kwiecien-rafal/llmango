@@ -30,8 +30,8 @@ def env(data_dirs: Path) -> Path:
     return data_dirs
 
 
-_RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
-_SIBLING_RUN_ID = "001b__en__20260720T101500Z__c3f9a1"
+_RUN_ID = "001a__en__20260720T101500Z"
+_SIBLING_RUN_ID = "001b__en__20260720T101500Z"
 
 _SHOWN = '{"fruit_list": ["mango", "apple", "banana"]}'
 

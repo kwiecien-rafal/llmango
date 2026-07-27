@@ -1,13 +1,11 @@
-"""Run manifest for traceability and idempotency.
+"""Run manifest for traceability.
 
 Every run writes a manifest capturing the model, its resolved snapshot, the
 backend, sampling params, per-language prompt and schema hashes, what the run
-consumed, and package versions. The content hash covers only the run
-configuration, so re-running the same config produces the same hash and the
-runner can skip duplicate work; measured outcomes are excluded from it.
+consumed, and package versions, so any row can be traced back to the exact
+configuration that produced it.
 """
 
-import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from importlib import metadata
@@ -15,7 +13,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, computed_field
 
-from llmango.config import RUNS_DIR, sha256_text
+from llmango.config import RUNS_DIR
 from llmango.inputs import InputDeclarations
 from llmango.pricing import PricingEntry
 from llmango.questions import SamplingParams
@@ -31,21 +29,7 @@ _TRACKED_PACKAGES = (
     "huggingface-hub",
 )
 
-_CONTENT_EXCLUDE = {
-    "run_id",
-    "created_at",
-    "model_snapshot",
-    "batch_id",
-    "package_versions",
-    "pricing",
-    "schema_name",
-    "total_requests",
-    "usage",
-}
-
 _RUN_ID_TIMESTAMP = "%Y%m%dT%H%M%SZ"
-
-_RUN_ID_HASH_CHARS = 6
 
 
 def collect_package_versions(
@@ -136,12 +120,6 @@ class RunManifest(BaseModel):
         """How many generations the run covers, across every language."""
         return self.samples_per_language * len(self.languages)
 
-    def content_hash(self) -> str:
-        """Hash the run configuration, ignoring run id, timestamp and environment."""
-        payload = self.model_dump(mode="json", exclude=_CONTENT_EXCLUDE)
-        encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-        return sha256_text(encoded)
-
 
 def build_run_id(manifest: RunManifest) -> str:
     """Build a run id that sorts usefully in a folder listing.
@@ -149,12 +127,10 @@ def build_run_id(manifest: RunManifest) -> str:
     Question and schema variant first keep every run of one arm together, and let
     the raw parquet still be found by its question prefix. The timestamp is in
     basic ISO form, which sorts chronologically and contains no character a file
-    name rejects. The trailing content hash both prevents collisions and makes
-    two runs of the same configuration visibly related.
+    name rejects.
     """
     stamp = manifest.created_at.astimezone(UTC).strftime(_RUN_ID_TIMESTAMP)
-    digest = manifest.content_hash()[:_RUN_ID_HASH_CHARS]
-    return f"{manifest.question_id}__{manifest.schema_variant}__{stamp}__{digest}"
+    return f"{manifest.question_id}__{manifest.schema_variant}__{stamp}"
 
 
 def manifest_path(run_id: str) -> Path:
@@ -165,20 +141,12 @@ def manifest_path(run_id: str) -> Path:
 def write_manifest(manifest: RunManifest) -> Path:
     """Write a manifest to runs/<run_id>.json and return its path.
 
-    Refuses to replace the record of a differently configured run, so a run id
-    collision fails loudly instead of orphaning a parquet file. Rewriting the
-    same run to add its measured usage is allowed, since that leaves the
-    configuration untouched.
+    A batch is written twice, once at submit and once at fetch to add the usage
+    it turned out to consume, so an existing file for the same run id is the
+    expected case and is replaced.
     """
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     path = manifest_path(manifest.run_id)
-    if path.is_file():
-        existing = RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
-        if existing.content_hash() != manifest.content_hash():
-            raise ValueError(
-                f"Manifest {path.name} already records a different run "
-                f"configuration. Refusing to overwrite it."
-            )
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     return path
 
@@ -189,14 +157,3 @@ def read_manifest(run_id: str) -> RunManifest:
     if not path.is_file():
         raise FileNotFoundError(f"No manifest for run: {run_id}")
     return RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def find_manifest_by_content_hash(target_hash: str) -> RunManifest | None:
-    """Return the first existing manifest whose content hash matches, if any."""
-    if not RUNS_DIR.is_dir():
-        return None
-    for path in sorted(RUNS_DIR.glob("*.json")):
-        manifest = RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
-        if manifest.content_hash() == target_hash:
-            return manifest
-    return None

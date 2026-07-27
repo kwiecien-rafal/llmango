@@ -197,12 +197,6 @@ def _die(message: str) -> NoReturn:
 
 
 def _report_run(outcome: runner.RunOutcome) -> None:
-    if outcome.skipped:
-        typer.echo(
-            f"Skipped: an identical run already exists as {outcome.run_id}. "
-            f"Results at {outcome.parquet_path}."
-        )
-        return
     typer.echo(
         f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
         f"wrote {outcome.rows_written} rows."
@@ -238,13 +232,6 @@ def _report_plan(plan: runner.RunPlan) -> None:
             f"  price:     no entry for {manifest.model}; add it to "
             f"data/pricing.json before running."
         )
-    if plan.duplicate is not None:
-        typer.echo(
-            f"  duplicate: run {plan.duplicate.run_id} already covers this; "
-            f"it would be skipped."
-        )
-    else:
-        typer.echo("  duplicate: none; results would be generated and written.")
 
 
 def _report_normalize(outcome: NormalizeOutcome) -> None:
@@ -270,12 +257,6 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
 
 
 def _report_submit(outcome: runner.RunOutcome) -> None:
-    if outcome.skipped:
-        typer.echo(
-            f"Skipped: an identical run already exists as {outcome.run_id} "
-            f"(batch {outcome.batch_id})."
-        )
-        return
     typer.echo(
         f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
         f"submitted batch {outcome.batch_id}."
