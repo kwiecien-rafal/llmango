@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 import typer
 
 from llmango.aggregate import AggregateOutcome, aggregate_question
-from llmango.backends.openai_backend import OpenAIBackend
-from llmango.backends.openai_batch import OpenAIBatchBackend
+from llmango.backends.openai import OpenAIBackend, backend_id
 from llmango.experiments import spec_for
 from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.questions import load_question
@@ -99,10 +98,9 @@ def _run_variant(
         "schema_variant": schema_variant,
     }
     if dry_run:
-        backend = OpenAIBatchBackend if batch else OpenAIBackend
-        _report_plan(plan_run(question, backend.backend_id, **opts))
+        _report_plan(plan_run(question, backend_id(batch), **opts))
     elif batch:
-        _report_submit(submit_batch(question, OpenAIBatchBackend(), **opts))
+        _report_submit(submit_batch(question, OpenAIBackend(batch=True), **opts))
     else:
         _report_run(run_experiment(question, OpenAIBackend(), **opts))
 
@@ -165,7 +163,7 @@ def batch_fetch(
 ) -> None:
     """Fetch a previously submitted batch and persist its results to Parquet."""
     try:
-        outcome = fetch_batch(run_id, OpenAIBatchBackend())
+        outcome = fetch_batch(run_id, OpenAIBackend(batch=True))
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")

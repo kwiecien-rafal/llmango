@@ -6,7 +6,6 @@ touching them.
 """
 
 from abc import abstractmethod
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, Self
@@ -106,8 +105,14 @@ class GenResult:
         )
 
 
-class GenerationBackend(Protocol):
-    """The single interface every generation backend implements."""
+class Backend(Protocol):
+    """The single interface every generation backend implements.
+
+    A provider is reached two ways: generate_many synchronously, or submit and
+    fetch through an asynchronous batch job. Both belong to one backend because a
+    run picks between them with a flag, so they are two transports of one provider
+    rather than two providers.
+    """
 
     backend_id: str
 
@@ -117,23 +122,8 @@ class GenerationBackend(Protocol):
         ...
 
     @abstractmethod
-    def generate(self, request: GenRequest) -> GenResult:
-        """Turn one request into one validated result."""
-        ...
-
-    def generate_many(self, requests: Iterable[GenRequest]) -> list[GenResult]:
-        """Generate results for many requests, sequentially by default."""
-        return [self.generate(request) for request in requests]
-
-
-class BatchBackend(Protocol):
-    """Interface for a backend that generates through an asynchronous batch job."""
-
-    backend_id: str
-
-    @abstractmethod
-    def resolve_model_snapshot(self, model: str) -> str:
-        """Return the exact model snapshot or revision id that will be used."""
+    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
+        """Turn many requests into validated results, one per request in order."""
         ...
 
     @abstractmethod

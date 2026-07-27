@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 
 from llmango import normalize as normalize_module
-from llmango.backends.base import GenerationBackend, GenRequest, GenResult
+from llmango.backends.base import GenRequest, GenResult
 from llmango.experiments.fruit import FruitNormalization
 from llmango.normalize import normalize_question
 from llmango.storage import normalized_path, write_results
@@ -79,7 +79,7 @@ def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
     }
 
 
-class ExplodingBackend(GenerationBackend):
+class ExplodingBackend:
     """Backend that fails the test if the LLM layer ever calls it."""
 
     backend_id = "boom"
@@ -87,11 +87,11 @@ class ExplodingBackend(GenerationBackend):
     def resolve_model_snapshot(self, model: str) -> str:
         return model
 
-    def generate(self, request: GenRequest) -> GenResult:
+    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         raise AssertionError("the LLM layer should not have been called")
 
 
-class StubBackend(GenerationBackend):
+class StubBackend:
     """Backend that answers every request with a fixed normalization."""
 
     backend_id = "stub"
@@ -103,7 +103,10 @@ class StubBackend(GenerationBackend):
     def resolve_model_snapshot(self, model: str) -> str:
         return model
 
-    def generate(self, request: GenRequest) -> GenResult:
+    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
+        return [self._generate(request) for request in requests]
+
+    def _generate(self, request: GenRequest) -> GenResult:
         self.calls += 1
         return GenResult(
             request=request,
@@ -126,10 +129,10 @@ class FlakyBackend(StubBackend):
         super().__init__(result)
         self._failing = failing
 
-    def generate(self, request: GenRequest) -> GenResult:
+    def _generate(self, request: GenRequest) -> GenResult:
         if self._failing in request.prompt:
             return GenResult.failed(request, "rate limited", datetime.now(UTC))
-        return super().generate(request)
+        return super()._generate(request)
 
 
 def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:

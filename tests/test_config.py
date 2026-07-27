@@ -1,6 +1,4 @@
-"""Tests for repo-root-anchored paths and API key access."""
-
-import pytest
+"""Tests for repo-root-anchored paths and content hashing."""
 
 from llmango import config
 
@@ -33,18 +31,3 @@ def test_prompt_tree_helpers_nest_a_question_under_its_experiment() -> None:
     experiment = config.experiment_dir("001_fruit")
     assert experiment == config.PROMPTS_DIR / "001_fruit"
     assert config.question_dir("001_fruit", "001a") == experiment / "001a"
-
-
-def test_require_openai_key_returns_the_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config, "load_env", lambda: None)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    assert config.require_openai_key() == "sk-test"
-
-
-def test_require_openai_key_raises_when_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(config, "load_env", lambda: None)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(RuntimeError):
-        config.require_openai_key()

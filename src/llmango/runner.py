@@ -14,8 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from llmango.backends.base import (
-    BatchBackend,
-    GenerationBackend,
+    Backend,
     GenRequest,
     GenResult,
     Usage,
@@ -334,7 +333,7 @@ def _pin_pricing(
 
 def run(
     question_id: str,
-    backend: GenerationBackend,
+    backend: Backend,
     *,
     model: str | None = None,
     samples: int = 1,
@@ -378,7 +377,7 @@ def run(
     requests = _build_requests(
         manifest, prepared.spec, prepared.templates, prepared.sources
     )
-    results = [backend.generate(request) for request in requests]
+    results = backend.generate_many(requests)
     rows = [
         _result_to_row(
             result,
@@ -443,7 +442,7 @@ def _preview_pricing(model: str) -> PricingEntry | None:
 
 def submit_batch(
     question_id: str,
-    backend: BatchBackend,
+    backend: Backend,
     *,
     model: str | None = None,
     samples: int = 1,
@@ -500,7 +499,7 @@ def submit_batch(
     )
 
 
-def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
+def fetch_batch(run_id: str, backend: Backend) -> RunOutcome:
     """Fetch a submitted batch's results and persist them to Parquet.
 
     Rebuilds the exact requests from the stored manifest, verifying the templates

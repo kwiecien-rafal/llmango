@@ -1,14 +1,13 @@
-"""Repo-root-anchored paths, content hashing, environment loading and API key access.
+"""Repo-root-anchored paths and content hashing.
 
 The prompt tree's shape and the way any piece of content is hashed live here so
-that every stage agrees on both without importing each other.
+that every stage agrees on both without importing each other. Secrets are not
+here: the API key is the OpenAI backend's business, so a stage that only wants a
+path never imports the code that reads one.
 """
 
 import hashlib
-import os
 from pathlib import Path
-
-from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,20 +36,3 @@ def experiment_dir(folder: str) -> Path:
 def question_dir(folder: str, question_id: str) -> Path:
     """Return one question's folder under its experiment's."""
     return experiment_dir(folder) / question_id
-
-
-def load_env() -> None:
-    """Load environment variables from the repo-root .env file."""
-    load_dotenv(REPO_ROOT / ".env")
-
-
-def require_openai_key() -> str:
-    """Load .env and return the OpenAI API key."""
-    load_env()
-    key = os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not set. Add it to the .env file at the repo root "
-            "or export it in your environment."
-        )
-    return key

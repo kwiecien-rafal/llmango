@@ -30,7 +30,7 @@ import polars as pl
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from llmango.backends.base import GenerationBackend, GenRequest
+from llmango.backends.base import Backend, GenRequest
 from llmango.config import MAPPINGS_DIR, experiment_dir
 from llmango.experiments import spec_for
 from llmango.questions import SamplingParams, load_experiment_config
@@ -83,7 +83,7 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
 def normalize_question(
     question_id: str,
     *,
-    make_backend: Callable[[], GenerationBackend] | None = None,
+    make_backend: Callable[[], Backend] | None = None,
     model: str | None = None,
     max_llm_calls: int | None = None,
     dry_run: bool = False,
@@ -185,7 +185,7 @@ def _resolve_online(
     unresolved: list[tuple[str, str]],
     spec: ExperimentSpec,
     response_schema: type[BaseModel],
-    make_backend: Callable[[], GenerationBackend] | None,
+    make_backend: Callable[[], Backend] | None,
     model: str | None,
     max_llm_calls: int | None,
     cache: dict[str, dict[str, dict[str, object]]],

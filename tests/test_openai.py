@@ -1,15 +1,32 @@
-"""Tests for the OpenAI Batch backend, with the client faked so nothing hits network."""
+"""Tests for the OpenAI backend, with the client faked so nothing hits network.
+
+Both transports are exercised here because both are the same backend: the sync
+path through generate, the batch path through submit and fetch.
+"""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import cast
+from datetime import datetime
+from typing import Protocol, cast
 
+import pytest
 from openai import OpenAI
 
+from llmango.backends import openai as openai_module
 from llmango.backends.base import GenRequest
-from llmango.backends.openai_batch import OpenAIBatchBackend, build_jsonl
+from llmango.backends.openai import OpenAIBackend, backend_id, build_jsonl
 from llmango.experiments.fruit import FruitChoice
 from llmango.questions import SamplingParams
+
+
+class FakeClient(Protocol):
+    """Structural type for the faked OpenAI client the sync tests inspect."""
+
+    calls: list[dict[str, object]]
+
+
+FakeClientFactory = Callable[..., FakeClient]
 
 
 def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> GenRequest:
@@ -24,6 +41,166 @@ def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> Gen
         sampling=SamplingParams(temperature=0.5, seed=seed),
         response_schema=FruitChoice,
     )
+
+
+def test_backend_id_names_the_transport() -> None:
+    assert backend_id(batch=False) == "openai"
+    assert backend_id(batch=True) == "openai-batch"
+
+
+def test_the_batch_flag_sets_the_backend_id(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    client = cast(OpenAI, make_openai_client())
+
+    assert OpenAIBackend(client=client).backend_id == "openai"
+    assert OpenAIBackend(client=client, batch=True).backend_id == "openai-batch"
+
+
+def test_require_openai_key_returns_the_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(openai_module, "load_env", lambda: None)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert openai_module.require_openai_key() == "sk-test"
+
+
+def test_require_openai_key_raises_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(openai_module, "load_env", lambda: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        openai_module.require_openai_key()
+
+
+def test_generate_parses_the_structured_response(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(
+        parsed=parsed,
+        content=parsed.model_dump_json(),
+        model="gpt-5.6-luna-2026-01-01",
+    )
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(_request())
+
+    assert result.parsed == parsed
+    assert result.raw_json == parsed.model_dump_json()
+    assert result.model_snapshot == "gpt-5.6-luna-2026-01-01"
+    assert result.finish_reason == "stop"
+    assert result.refusal is None
+    assert result.error is None
+    assert isinstance(result.created_at, datetime)
+
+
+def test_generate_many_answers_every_request_in_order(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    requests = [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)]
+    results = backend.generate_many(requests)
+
+    assert [result.request for result in results] == requests
+    assert len(client.calls) == 2
+
+
+def test_generate_captures_provenance_and_usage(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(_request())
+
+    assert result.response_id == "chatcmpl-fake"
+    assert result.system_fingerprint == "fp_fake"
+    assert result.service_tier == "default"
+    assert result.provider_created_at is not None
+    assert result.response_envelope is not None
+    assert "chatcmpl-fake" in result.response_envelope
+
+    assert result.request_envelope is not None
+    assert "Pick one random fruit" in result.request_envelope
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 12
+    assert result.usage.completion_tokens == 3
+    assert result.usage.total_tokens == 15
+    assert result.usage.cached_tokens == 4
+    assert result.usage.reasoning_tokens == 1
+
+
+def test_generate_captures_a_refusal(make_openai_client: FakeClientFactory) -> None:
+    client = make_openai_client(
+        parsed=None,
+        content=None,
+        refusal="I can't help with that.",
+    )
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(_request())
+
+    assert result.parsed is None
+    assert result.refusal == "I can't help with that."
+    assert result.raw_json is None
+    assert result.error is None
+
+
+def test_generate_forwards_the_sampling_params(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    parsed = FruitChoice(fruit="apple")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    backend.generate(_request())
+
+    call = client.calls[0]
+    assert call["model"] == "gpt-5.6-luna"
+    assert call["temperature"] == 0.5
+    assert call["response_format"] is FruitChoice
+
+
+def test_generate_never_sends_the_seed(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    """The seed keys the option order only; sending it would ask for repeatable
+    answers and flatten the distribution the run measures."""
+    parsed = FruitChoice(fruit="apple")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    backend.generate(_request())
+
+    assert _request().seed == 7
+    assert "seed" not in client.calls[0]
+
+
+def test_generate_free_text_sends_no_response_format(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    client = make_openai_client(parsed=None, content="banana")
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(replace(_request(), response_schema=None))
+
+    assert result.parsed is None
+    assert result.raw_json == "banana"
+    assert "response_format" not in client.calls[0]
+
+
+def test_resolve_model_snapshot_reads_the_client(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    client = make_openai_client(model="gpt-5.6-luna-2026-01-01")
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    assert backend.resolve_model_snapshot("gpt-5.6-luna") == "gpt-5.6-luna-2026-01-01"
 
 
 @dataclass
@@ -105,14 +282,15 @@ def _output_line(custom_id: str, fruit: str) -> str:
     return json.dumps(record)
 
 
-def _client(
+def _batch_backend(
     *,
     content_text: str = "",
     status: str = "completed",
     output_file_id: str | None = "file-output",
     error_file_id: str | None = None,
-) -> FakeBatchClient:
-    return FakeBatchClient(
+) -> tuple[OpenAIBackend, FakeBatchClient]:
+    """Build a batch-flagged backend over a fake client, returning both."""
+    client = FakeBatchClient(
         files=FakeFiles(content_text=content_text),
         batches=FakeBatches(
             batch=FakeBatch(
@@ -123,6 +301,7 @@ def _client(
             )
         ),
     )
+    return OpenAIBackend(client=cast(OpenAI, client), batch=True), client
 
 
 def test_build_jsonl_encodes_each_request() -> None:
@@ -184,9 +363,26 @@ def test_build_jsonl_omits_response_format_for_free_text() -> None:
     assert "response_format" not in body
 
 
+def test_the_batch_body_matches_what_the_sync_call_sends(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    """One request body serves both transports, so they cannot drift apart."""
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+    request = _request()
+
+    result = backend.generate(request)
+
+    assert result.request_envelope is not None
+    assert (
+        json.loads(result.request_envelope)
+        == json.loads(build_jsonl([request]))["body"]
+    )
+
+
 def test_submit_uploads_the_jsonl_and_creates_a_batch() -> None:
-    client = _client()
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, client = _batch_backend()
 
     batch_id = backend.submit([_request()])
 
@@ -203,8 +399,7 @@ def test_fetch_parses_output_lines_back_to_requests() -> None:
     content = "\n".join(
         [_output_line("pl::1", "banan"), _output_line("en::0", "mango")]
     )
-    client = _client(content_text=content)
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(content_text=content)
 
     results = backend.fetch("batch-1", requests)
 
@@ -246,8 +441,7 @@ def test_fetch_captures_provenance_and_usage() -> None:
         },
         "error": None,
     }
-    client = _client(content_text=json.dumps(record))
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(content_text=json.dumps(record))
 
     result = backend.fetch("batch-1", [_request()])[0]
 
@@ -282,8 +476,7 @@ def test_fetch_captures_a_refusal() -> None:
         },
         "error": None,
     }
-    client = _client(content_text=json.dumps(record))
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(content_text=json.dumps(record))
 
     result = backend.fetch("batch-1", [_request()])[0]
 
@@ -293,8 +486,7 @@ def test_fetch_captures_a_refusal() -> None:
 
 
 def test_fetch_marks_missing_lines_as_errors() -> None:
-    client = _client(content_text=_output_line("en::0", "mango"))
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(content_text=_output_line("en::0", "mango"))
 
     results = backend.fetch(
         "batch-1",
@@ -307,15 +499,10 @@ def test_fetch_marks_missing_lines_as_errors() -> None:
 
 
 def test_fetch_raises_when_the_batch_is_not_complete() -> None:
-    client = _client(status="in_progress", output_file_id=None)
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(status="in_progress", output_file_id=None)
 
-    try:
+    with pytest.raises(RuntimeError, match="in_progress"):
         backend.fetch("batch-1", [_request()])
-    except RuntimeError as error:
-        assert "in_progress" in str(error)
-    else:
-        raise AssertionError("fetch should raise when the batch is not complete")
 
 
 def test_fetch_captures_unparseable_content_without_aborting() -> None:
@@ -336,8 +523,7 @@ def test_fetch_captures_unparseable_content_without_aborting() -> None:
         "error": None,
     }
     content = "\n".join([json.dumps(truncated), _output_line("pl::1", "mango")])
-    client = _client(content_text=content)
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
+    backend, _ = _batch_backend(content_text=content)
 
     results = backend.fetch(
         "batch-1",
@@ -355,12 +541,11 @@ def test_fetch_reads_errored_requests_from_the_error_file() -> None:
         "response": None,
         "error": {"code": "rate_limit_exceeded", "message": "slow down"},
     }
-    client = _client(
+    backend, _ = _batch_backend(
         content_text=json.dumps(error_record),
         output_file_id=None,
         error_file_id="file-error",
     )
-    backend = OpenAIBatchBackend(client=cast(OpenAI, client))
 
     result = backend.fetch("batch-1", [_request()])[0]
 

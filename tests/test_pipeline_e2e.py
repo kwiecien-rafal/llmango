@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from llmango.aggregate import aggregate_question
-from llmango.backends.base import GenerationBackend
+from llmango.backends.base import Backend
 from llmango.charts import analyze_question
 from llmango.normalize import normalize_question
 from llmango.runner import run
@@ -41,7 +41,7 @@ def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
 
 
 def test_pipeline_generates_normalizes_aggregates_and_charts(
-    pipeline: Path, make_fake_backend: Callable[..., GenerationBackend]
+    pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
     run_outcome = run(
         _QUESTION,

@@ -14,7 +14,7 @@ from llmango import charts as charts_module
 from llmango import manifest as manifest_module
 from llmango import normalize as normalize_module
 from llmango import storage as storage_module
-from llmango.backends.base import GenerationBackend, GenRequest, GenResult, Usage
+from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.experiments.fruit import FruitChoice
 from llmango.pricing import PricingEntry, PricingTable
 
@@ -142,22 +142,35 @@ def build_fake_openai_client(
     )
 
 
-class FakeBackend(GenerationBackend):
+class FakeBackend(Backend):
     """Deterministic backend that answers with a scripted fruit per lang and sample.
 
     Answers are read as answers[lang][sample_idx]; an unscripted language falls
     back to "apple", so the zero-argument default still answers every request.
+    Both transports are backed by the same script and submitted batches are
+    recorded, so a batch run fetches exactly what a sync run would have generated.
     """
 
     backend_id = "fake"
 
     def __init__(self, answers: dict[str, list[str]] | None = None) -> None:
         self._answers = answers or {}
+        self.submitted: list[list[GenRequest]] = []
 
     def resolve_model_snapshot(self, model: str) -> str:
         return f"{model}-fake"
 
-    def generate(self, request: GenRequest) -> GenResult:
+    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
+        return [self._generate(request) for request in requests]
+
+    def submit(self, requests: list[GenRequest]) -> str:
+        self.submitted.append(requests)
+        return "batch-xyz"
+
+    def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
+        return self.generate_many(requests)
+
+    def _generate(self, request: GenRequest) -> GenResult:
         scripted = self._answers.get(request.lang)
         fruit = scripted[request.sample_idx] if scripted else "apple"
         parsed = FruitChoice(fruit=fruit)
