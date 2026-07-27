@@ -155,11 +155,8 @@ def normalize_question(
 
 def _distinct_pairs(frame: pl.DataFrame) -> list[tuple[str, str]]:
     """Return the sorted, deduped (lang, answer) pairs from the raw frame."""
-    langs = frame.get_column("lang").to_list()
-    answers = frame.get_column("answer").to_list()
-    return sorted(
-        {(str(lang), str(answer)) for lang, answer in zip(langs, answers, strict=True)}
-    )
+    pairs = frame.select("lang", "answer").unique().sort("lang", "answer")
+    return [(str(lang), str(answer)) for lang, answer in pairs.iter_rows()]
 
 
 def _resolve_offline(

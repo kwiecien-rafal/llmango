@@ -23,10 +23,11 @@ def _row(
     canonical: str,
     is_valid: bool,
     error: str | None = None,
+    schema_variant: str = "en",
 ) -> dict[str, object]:
     return {
         "question_id": "001a",
-        "schema_variant": "en",
+        "schema_variant": schema_variant,
         "lang": lang,
         "answer": answer,
         "canonical": canonical,
@@ -108,6 +109,39 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
         "counts": {"apple": 1},
         "other_share": 0.0,
     }
+
+
+def test_each_arm_is_counted_under_its_own_schema_variant(env: Path) -> None:
+    """Two arms of the same question nest schema variant over language."""
+    _write_normalized(
+        [
+            _row("pl", "jabłko", "apple", True, schema_variant="pl"),
+            _row("pl", "banan", "banana", True, schema_variant="pl"),
+            _row("pl", "jabłko", "apple", True, schema_variant="none"),
+        ]
+    )
+
+    aggregate_question(_QUESTION)
+
+    assert _read_langs(env, "pl")["pl"]["counts"] == {"apple": 1, "banana": 1}
+    assert _read_langs(env, "none")["pl"]["counts"] == {"apple": 1}
+
+
+def test_an_arm_that_named_nothing_has_no_entry(env: Path) -> None:
+    """A variant whose answers all declined leaves no empty distribution behind."""
+    _write_normalized(
+        [
+            _row("en", "apple", "apple", True),
+            _row("en", "", "", False, schema_variant="none"),
+        ]
+    )
+
+    aggregate_question(_QUESTION)
+
+    payload = json.loads(
+        (env / "aggregated" / f"{_QUESTION}.json").read_text(encoding="utf-8")
+    )
+    assert list(payload["distributions"]) == ["en"]
 
 
 def test_missing_normalized_parquet_raises(env: Path) -> None:
