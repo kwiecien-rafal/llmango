@@ -1,4 +1,4 @@
-"""Tests for the pricing reference: loading, resolution and cost computation."""
+"""Tests for the pricing reference: loading and cost computation."""
 
 import json
 from pathlib import Path
@@ -8,23 +8,15 @@ import pytest
 from llmango.backends.base import Usage
 from llmango.pricing import (
     PricingEntry,
-    PricingTable,
     compute_cost,
     load_pricing,
-    resolve_entry,
     round_usd,
 )
 
 
-def _table() -> PricingTable:
-    return PricingTable(
-        currency="USD",
-        unit="per_1m_tokens",
-        models={
-            "gpt-5.6-luna": PricingEntry(
-                input=0.05, cached_input=0.005, output=0.4, last_updated="2026-07-24"
-            )
-        },
+def _entry() -> PricingEntry:
+    return PricingEntry(
+        input=0.05, cached_input=0.005, output=0.4, last_updated="2026-07-24"
     )
 
 
@@ -38,30 +30,15 @@ def _usage(cached: int = 4) -> Usage:
     )
 
 
-def test_resolve_entry_matches_the_model_id() -> None:
-    entry = resolve_entry(_table(), "gpt-5.6-luna", None)
-    assert entry.input == 0.05
-
-
-def test_resolve_entry_falls_back_to_the_snapshot_base() -> None:
-    entry = resolve_entry(_table(), "gpt-5.6-luna-alias", "gpt-5.6-luna-2026-01-01")
-    assert entry.output == 0.4
-
-
-def test_resolve_entry_raises_for_an_unknown_model() -> None:
-    with pytest.raises(KeyError):
-        resolve_entry(_table(), "unknown-model", None)
-
-
 def test_compute_cost_applies_the_cached_discount() -> None:
-    cost = compute_cost(resolve_entry(_table(), "gpt-5.6-luna", None), _usage())
+    cost = compute_cost(_entry(), _usage())
     assert cost.input_cost_usd == pytest.approx(4.2e-7)
     assert cost.output_cost_usd == pytest.approx(1.2e-6)
     assert cost.total_cost_usd == pytest.approx(1.62e-6)
 
 
 def test_compute_cost_applies_the_batch_discount() -> None:
-    entry = resolve_entry(_table(), "gpt-5.6-luna", None)
+    entry = _entry()
 
     sync = compute_cost(entry, _usage())
     batched = compute_cost(entry, _usage(), batched=True)

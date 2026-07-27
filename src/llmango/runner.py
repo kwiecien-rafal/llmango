@@ -43,7 +43,6 @@ from llmango.pricing import (
     PricingTable,
     compute_cost,
     load_pricing,
-    resolve_entry,
     round_usd,
 )
 from llmango.questions import (
@@ -344,16 +343,18 @@ def _build_requests(
 
 
 def _price(model: str, pricing_table: PricingTable | None) -> PricingEntry | None:
-    """Resolve a model's price, tolerating an absent file so a plan can report it.
+    """Look up a model's price, tolerating an absent file so a plan can report it.
 
     A plan is built before a run is authorized, so a missing price is information
-    here rather than a failure; run refuses to generate without one.
+    here rather than a failure; run refuses to generate without one. The lookup is
+    the configured model id exactly: a price guessed from a similar id is worse
+    than a refusal to run.
     """
     try:
         table = pricing_table if pricing_table is not None else load_pricing()
-        return resolve_entry(table, model, None)
-    except (FileNotFoundError, KeyError):
+    except FileNotFoundError:
         return None
+    return table.models.get(model)
 
 
 def _write_submitted_manifest(manifest: RunManifest) -> None:
