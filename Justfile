@@ -1,7 +1,7 @@
 # Task shortcuts over the llmango CLI.
 #
-# `run` takes a question (001a, 001b, ...); `normalize`, `aggregate` and `analyze`
-# take an experiment by its number (001) or full id (001_fruit).
+# Every recipe takes a question id (001a, 001b, ...). Nothing takes an experiment:
+# a question id is the only identifier the pipeline resolves.
 set shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 # List available recipes.
@@ -21,23 +21,23 @@ batch-fetch run_id:
     uv run llmango batch-fetch {{ run_id }}
 
 # Map raw answers to canonical categories.
-normalize exp *args:
-    uv run llmango normalize {{ exp }} {{ args }}
+normalize question *args:
+    uv run llmango normalize {{ question }} {{ args }}
 
 # Aggregate normalized answers into the committed JSON the charts read.
-aggregate exp:
-    uv run llmango aggregate {{ exp }}
+aggregate question:
+    uv run llmango aggregate {{ question }}
 
-# Draw the charts the site embeds, under site/public/charts/<experiment_id>/.
-analyze exp:
-    uv run llmango analyze {{ exp }}
+# Draw the charts the site embeds, under site/public/charts/.
+analyze question:
+    uv run llmango analyze {{ question }}
 
-# Run a question, then normalize, aggregate and chart it: `just all 001a 001 --smoke`.
-all question exp *args:
+# Run a question, then normalize, aggregate and chart it: `just all 001a --smoke`.
+all question *args:
     just run {{ question }} {{ args }}
-    just normalize {{ exp }}
-    just aggregate {{ exp }}
-    just analyze {{ exp }}
+    just normalize {{ question }}
+    just aggregate {{ question }}
+    just analyze {{ question }}
 
 # Serve the site with hot reload; charts refresh as `just analyze` rewrites them.
 site:

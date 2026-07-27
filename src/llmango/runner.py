@@ -21,6 +21,7 @@ from llmango.backends.base import (
     Usage,
 )
 from llmango.config import sha256_text
+from llmango.experiments import spec_for
 from llmango.inputs import InputSource, load_input_sources, render, resolve
 from llmango.manifest import (
     RunManifest,
@@ -46,7 +47,7 @@ from llmango.questions import (
     load_question,
     load_template,
 )
-from llmango.registry import ExperimentSpec, SchemaVariant, get_experiment
+from llmango.spec import ExperimentSpec, SchemaVariant
 from llmango.storage import COST_COLUMNS, USAGE_COLUMNS, results_path, write_results
 
 
@@ -221,7 +222,7 @@ class _PreparedRun:
 
 
 def _prepare(
-    question_ref: str,
+    question_id: str,
     backend_id: str,
     model: str | None,
     samples: int,
@@ -238,31 +239,27 @@ def _prepare(
     The run id is derived from the finished manifest, since it embeds the
     configuration's content hash, so it is filled in once the rest is known.
     """
-    config = load_question(question_ref)
-    spec = get_experiment(config.experiment_id)
+    config = load_question(question_id)
+    spec = spec_for(question_id)
     schema_variant = schema_variant or next(iter(spec.schema_variants))
     variant = spec.variant(schema_variant)
 
     model = model or config.model
     if not model:
         raise ValueError(
-            f"No model given and none set in experiment.yaml for {config.experiment_id}"
+            f"No model given and none set in experiment.yaml for {spec.folder}"
         )
 
     languages = languages or config.languages
     effective_seed = seed if seed is not None else config.sampling.seed
     templates = {
-        lang: load_template(config.experiment_id, config.question_id, lang)
-        for lang in languages
+        lang: load_template(spec.folder, config.question_id, lang) for lang in languages
     }
-    sources = load_input_sources(
-        config.experiment_id, config.question_id, list(config.inputs)
-    )
+    sources = load_input_sources(spec.folder, config.question_id, list(config.inputs))
     _check_inputs_build(spec, config, sources, languages[0], effective_seed)
 
     manifest = RunManifest(
         run_id="",
-        experiment_id=config.experiment_id,
         question_id=config.question_id,
         backend=backend_id,
         model=model,
@@ -304,7 +301,7 @@ def _check_inputs_build(
         lang,
         0,
         seed,
-        config.experiment_id,
+        config.question_id,
     )
 
 
@@ -336,7 +333,7 @@ def _pin_pricing(
 
 
 def run(
-    question: str,
+    question_id: str,
     backend: GenerationBackend,
     *,
     model: str | None = None,
@@ -360,7 +357,7 @@ def run(
     for that rather than wrapped in a second retry layer here.
     """
     prepared = _prepare(
-        question,
+        question_id,
         backend.backend_id,
         model,
         samples,
@@ -411,7 +408,7 @@ def run(
 
 
 def plan_run(
-    question: str,
+    question_id: str,
     backend_id: str,
     *,
     model: str | None = None,
@@ -427,7 +424,7 @@ def plan_run(
     languages and model match what a run would use.
     """
     manifest = _prepare(
-        question, backend_id, model, samples, languages, seed, schema_variant, None
+        question_id, backend_id, model, samples, languages, seed, schema_variant, None
     ).manifest
     return RunPlan(
         manifest=manifest,
@@ -445,7 +442,7 @@ def _preview_pricing(model: str) -> PricingEntry | None:
 
 
 def submit_batch(
-    question: str,
+    question_id: str,
     backend: BatchBackend,
     *,
     model: str | None = None,
@@ -464,7 +461,7 @@ def submit_batch(
     into the manifest at submit time so fetch computes cost from the same price.
     """
     prepared = _prepare(
-        question,
+        question_id,
         backend.backend_id,
         model,
         samples,
@@ -516,7 +513,7 @@ def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
     if manifest.batch_id is None:
         raise ValueError(f"Run {run_id} has no batch to fetch.")
 
-    spec = get_experiment(manifest.experiment_id)
+    spec = spec_for(manifest.question_id)
     variant = spec.variant(manifest.schema_variant)
     requests = _requests_from_manifest(manifest, spec)
     results = backend.fetch(manifest.batch_id, requests)
@@ -553,7 +550,7 @@ def _requests_from_manifest(
 ) -> list[GenRequest]:
     """Rebuild a run's requests from its manifest, checking inputs still match."""
     templates = {
-        lang: load_template(manifest.experiment_id, manifest.question_id, lang)
+        lang: load_template(spec.folder, manifest.question_id, lang)
         for lang in manifest.languages
     }
     for lang, template in templates.items():
@@ -563,12 +560,12 @@ def _requests_from_manifest(
                 f"its hash no longer matches the manifest."
             )
     sources = load_input_sources(
-        manifest.experiment_id, manifest.question_id, list(manifest.inputs)
+        spec.folder, manifest.question_id, list(manifest.inputs)
     )
     for name, source in sources.items():
         if source.sha256 != manifest.input_sha256.get(name):
             raise ValueError(
-                f"Prompt input {name} for {manifest.experiment_id} changed since "
+                f"Prompt input {name} for {manifest.question_id} changed since "
                 f"submit; its hash no longer matches the manifest."
             )
     return _build_requests(manifest, spec, templates, sources)
@@ -593,7 +590,7 @@ def _build_requests(
                 lang,
                 sample_idx,
                 manifest.seed,
-                manifest.experiment_id,
+                manifest.question_id,
             )
             prompt = render(template.text, resolved)
             recorded = {

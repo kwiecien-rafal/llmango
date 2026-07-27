@@ -5,6 +5,10 @@ how the prompt language shifts that pick, and how requesting a structured
 response in a non-target language shifts it. The raw pick is preserved and
 normalized post-hoc to a canonical English category.
 
+QUESTIONS names the four questions this experiment owns. The spec declares them
+so a question id resolves to a spec, and the mapping seed reads the same constant
+to cover every fruit list any of them shows.
+
 The one prompt input is fruit_list, whose data file holds the canonical ids with
 their per-language labels. A question declares how that list is arranged, either
 a fixed permutation or a per-sample shuffle. Both live here rather than in the
@@ -25,15 +29,11 @@ from typing import Any, Literal, cast
 import polars as pl
 
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
-from llmango.registry import (
-    FREE_TEXT_VARIANT,
-    ExperimentSpec,
-    SchemaVariant,
-    register_experiment,
-)
 from llmango.schemas import LLMResponse
+from llmango.spec import FREE_TEXT_VARIANT, ExperimentSpec, SchemaVariant
 
-EXPERIMENT_ID = "001_fruit"
+FOLDER = "001_fruit"
+QUESTIONS = ("001a", "001b", "001c", "001d")
 FRUIT_LIST = "fruit_list"
 
 _ORDER_FIXED = "fixed"
@@ -116,14 +116,14 @@ def build_input(request: InputRequest) -> ResolvedInput:
     position be resolved later from a free-text answer.
     """
     if request.name != FRUIT_LIST:
-        raise ValueError(f"{EXPERIMENT_ID} has no prompt input {request.name!r}.")
+        raise ValueError(f"{FOLDER} has no prompt input {request.name!r}.")
     table = _table(request.data)
     shown = _shown_order(table, request.declaration, request.sample_idx, request.seed)
     labels = ", ".join(_label(table, canonical, request.lang) for canonical in shown)
     return ResolvedInput(text=labels, value=shown)
 
 
-def mapping_seed(question_ids: list[str]) -> dict[str, str]:
+def mapping_seed() -> dict[str, str]:
     """Map every fruit label in every language onto its canonical id.
 
     Seeds normalization so an answer that named one of the listed fruits resolves
@@ -133,8 +133,8 @@ def mapping_seed(question_ids: list[str]) -> dict[str, str]:
     file does not have.
     """
     mapping: dict[str, str] = {}
-    for question_id in [None, *question_ids]:
-        sources = load_input_sources(EXPERIMENT_ID, question_id, [FRUIT_LIST])
+    for question_id in [None, *QUESTIONS]:
+        sources = load_input_sources(FOLDER, question_id, [FRUIT_LIST])
         for canonical, labels in _table(sources[FRUIT_LIST].data).items():
             for label in labels.values():
                 mapping[label] = canonical
@@ -238,18 +238,17 @@ def _shuffled(ids: list[str], seed: int | None, sample_idx: int) -> list[str]:
     return shuffled
 
 
-register_experiment(
-    ExperimentSpec(
-        experiment_id=EXPERIMENT_ID,
-        schema_variants={
-            "en": SchemaVariant(schema=FruitChoice, field="fruit"),
-            "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
-            FREE_TEXT_VARIANT: SchemaVariant(schema=None, field=None),
-        },
-        normalization_schema=FruitNormalization,
-        preprocess=preprocess,
-        build_input=build_input,
-        mapping_seed=mapping_seed,
-        extra_normalized_columns=extra_normalized_columns,
-    )
+FRUIT = ExperimentSpec(
+    folder=FOLDER,
+    questions=QUESTIONS,
+    schema_variants={
+        "en": SchemaVariant(schema=FruitChoice, field="fruit"),
+        "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
+        FREE_TEXT_VARIANT: SchemaVariant(schema=None, field=None),
+    },
+    normalization_schema=FruitNormalization,
+    preprocess=preprocess,
+    build_input=build_input,
+    mapping_seed=mapping_seed,
+    extra_normalized_columns=extra_normalized_columns,
 )

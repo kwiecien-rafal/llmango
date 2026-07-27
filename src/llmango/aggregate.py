@@ -1,8 +1,9 @@
 """Aggregate normalized answers into the small JSON the chart step reads.
 
-Reads an experiment's normalized Parquet and, per question and schema variant and
-language, computes the distribution over canonical categories. It is written as a
-compact JSON file under data/aggregated/<experiment_id>/, nested question ->
+Takes a question id, reads the normalized Parquet of the experiment that owns it
+and, per question and schema variant and language, computes the distribution over
+canonical categories. It is written as a compact JSON file under
+data/aggregated/<folder>/, nested question ->
 schema_variant -> language. The share that fell into 'other' is reported
 alongside the distribution as a first-class number, not hidden.
 
@@ -19,7 +20,8 @@ from pathlib import Path
 import polars as pl
 
 from llmango.config import AGG_DIR
-from llmango.registry import OTHER_CATEGORY, resolve_experiment_id
+from llmango.experiments import spec_for
+from llmango.spec import OTHER_CATEGORY
 from llmango.storage import normalized_path, read_normalized
 
 
@@ -45,16 +47,16 @@ Head = dict[str, list[Answer]]
 Metric = Callable[[Head], Mapping[str, object]]
 
 
-def aggregate_experiment(experiment_id: str) -> AggregateOutcome:
+def aggregate_experiment(question_id: str) -> AggregateOutcome:
     """Aggregate an experiment's normalized answers into the committed JSON files."""
-    experiment_id = resolve_experiment_id(experiment_id)
-    if not normalized_path(experiment_id).is_file():
+    folder = spec_for(question_id).folder
+    if not normalized_path(folder).is_file():
         raise FileNotFoundError(
-            f"No normalized parquet for {experiment_id}. Run 'llmango normalize' first."
+            f"No normalized parquet for {folder}. Run 'llmango normalize' first."
         )
-    frame = read_normalized(experiment_id)
+    frame = read_normalized(folder)
     if frame.is_empty():
-        raise ValueError(f"Normalized results for {experiment_id} contain no rows.")
+        raise ValueError(f"Normalized results for {folder} contain no rows.")
 
     heads = _group_heads(_answers(frame))
     distributions = _nest(
@@ -62,7 +64,7 @@ def aggregate_experiment(experiment_id: str) -> AggregateOutcome:
         lambda head: {lang: _distribution(subset) for lang, subset in head.items()},
     )
     return AggregateOutcome(
-        paths=[_write_json(experiment_id, "distributions.json", distributions)]
+        paths=[_write_json(folder, "distributions.json", distributions)]
     )
 
 
@@ -135,12 +137,12 @@ def _rate(part: int, whole: int) -> float:
     return round(part / whole, 4) if whole else 0.0
 
 
-def _write_json(experiment_id: str, name: str, payload: Mapping[str, object]) -> Path:
-    """Write one metric to data/aggregated/<experiment_id>/<name> and return it."""
-    directory = AGG_DIR / experiment_id
+def _write_json(folder: str, name: str, payload: Mapping[str, object]) -> Path:
+    """Write one metric to data/aggregated/<folder>/<name> and return it."""
+    directory = AGG_DIR / folder
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
-    body = {"experiment_id": experiment_id, "questions": payload}
+    body = {"experiment_id": folder, "questions": payload}
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

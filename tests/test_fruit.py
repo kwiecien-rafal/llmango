@@ -8,7 +8,7 @@ import pytest
 
 from llmango import config as config_module
 from llmango.experiments.fruit import (
-    EXPERIMENT_ID,
+    FOLDER,
     FRUIT_LIST,
     FruitEnum,
     build_input,
@@ -17,7 +17,7 @@ from llmango.experiments.fruit import (
     preprocess,
 )
 from llmango.inputs import InputRequest, load_input_sources
-from llmango.questions import list_questions, load_question
+from llmango.questions import load_question
 
 _DATA: list[dict[str, Any]] = [
     {"canonical": "apple", "labels": {"en": "apple", "pl": "jabłko"}},
@@ -41,7 +41,7 @@ def prompts_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _question_data(question_id: str) -> Any:
     """Load the real fruit list a question runs against."""
-    return load_input_sources(EXPERIMENT_ID, question_id, [FRUIT_LIST])[FRUIT_LIST].data
+    return load_input_sources(FOLDER, question_id, [FRUIT_LIST])[FRUIT_LIST].data
 
 
 def _request(
@@ -124,7 +124,7 @@ def test_unknown_input_name_raises() -> None:
 
 
 def test_mapping_seed_covers_every_label_in_every_language() -> None:
-    seed = mapping_seed(list_questions(EXPERIMENT_ID))
+    seed = mapping_seed()
     assert seed["apple"] == "apple"
     assert seed["jabłko"] == "apple"
     assert seed["りんご"] == "apple"
@@ -132,12 +132,12 @@ def test_mapping_seed_covers_every_label_in_every_language() -> None:
 
 
 def test_mapping_seed_covers_a_questions_own_fruit_list(prompts_dir: Path) -> None:
-    experiment = prompts_dir / EXPERIMENT_ID
+    experiment = prompts_dir / FOLDER
     (experiment / "001b").mkdir(parents=True)
     (experiment / f"{FRUIT_LIST}.yaml").write_text(_SHARED_LIST, encoding="utf-8")
     (experiment / "001b" / f"{FRUIT_LIST}.yaml").write_text(_OWN_LIST, encoding="utf-8")
 
-    seed = mapping_seed(["001a", "001b"])
+    seed = mapping_seed()
 
     assert seed["jabłko"] == "apple"
     assert seed["wiśnia"] == "cherry"

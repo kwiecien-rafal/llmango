@@ -1,11 +1,10 @@
-"""Experiment registry.
+"""What one experiment declares to the shared pipeline.
 
-An experiment registers a lightweight ExperimentSpec describing its response
-schema variants and a few optional hooks. The runner, storage, normalize and
-aggregate code stay experiment-agnostic and are driven entirely by the registered
-spec. One experiment holds several questions (001a, 001b, ...); questions are
-filesystem entities resolved in questions.py, while the spec here carries the
-code-level schema and normalization shared across an experiment's questions.
+An experiment is a grouping, not an identifier. It owns a set of question ids and
+everything those questions share: a response schema per variant, a normalization
+schema, and a few hooks. Nobody types an experiment's name; every command, path
+and function takes a question id, and llmango.experiments maps each id onto the
+spec that owns it.
 
 FREE_TEXT_VARIANT and OTHER_CATEGORY are the two engine-wide names every stage
 shares. They live here rather than in each stage so that normalize, aggregate and
@@ -13,9 +12,7 @@ charts agree on them by construction instead of by three matching string
 literals.
 """
 
-import importlib
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -31,19 +28,6 @@ OTHER_CATEGORY = "other"
 ExtraRawColumns = Callable[[BaseModel | None, str], dict[str, object]]
 ExtraRawDtypes = dict[str, pl.DataType]
 ExtraNormalizedColumns = Callable[[pl.DataFrame], dict[str, pl.Series]]
-
-_NUMBER_PREFIX = re.compile(r"^(\d+)")
-
-
-class UnknownExperimentError(KeyError):
-    """Raised when an experiment reference cannot be resolved.
-
-    Subclasses KeyError so existing handlers still catch it, but renders its
-    message plainly rather than in KeyError's repr-quoted form.
-    """
-
-    def __str__(self) -> str:
-        return str(self.args[0]) if self.args else super().__str__()
 
 
 @dataclass(frozen=True)
@@ -86,7 +70,12 @@ class SchemaVariant:
 
 @dataclass(frozen=True)
 class ExperimentSpec:
-    """Everything the generic pipeline needs to run one experiment.
+    """Everything the generic pipeline needs to run one experiment's questions.
+
+    questions lists the ids the experiment owns, which is what lets one table map
+    a question id onto its spec. folder names the prompt tree and the mappings
+    directory the experiment keeps its shared files in; it is a location, never a
+    reference anyone types.
 
     The pipeline owns a fixed column vocabulary: answer, canonical, is_valid and
     multiple mean the same thing in every experiment and are never renamed, which
@@ -105,17 +94,18 @@ class ExperimentSpec:
     any per-sample randomization, is the experiment's own decision.
 
     mapping_seed offers normalization a label-to-canonical mapping the experiment
-    already has, sparing the LLM layer every answer that was on the prompt. It is
-    given the experiment's question ids, because a question may override an input
-    with its own data file and the seed has to cover every list actually shown.
+    already has, sparing the LLM layer every answer that was on the prompt. The
+    experiment covers each of its questions itself, since a question may override
+    an input with its own data file and the seed has to reach every list shown.
     """
 
-    experiment_id: str
+    folder: str
+    questions: tuple[str, ...]
     schema_variants: dict[str, SchemaVariant]
     normalization_schema: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
     build_input: BuildInput | None = None
-    mapping_seed: Callable[[list[str]], dict[str, str]] | None = None
+    mapping_seed: Callable[[], dict[str, str]] | None = None
     extra_raw_columns: ExtraRawColumns | None = None
     extra_raw_dtypes: ExtraRawDtypes = field(default_factory=ExtraRawDtypes)
     extra_normalized_columns: ExtraNormalizedColumns | None = None
@@ -127,71 +117,6 @@ class ExperimentSpec:
         except KeyError:
             known = ", ".join(sorted(self.schema_variants))
             raise ValueError(
-                f"Experiment {self.experiment_id} has no schema variant "
+                f"Experiment {self.folder} has no schema variant "
                 f"'{schema_variant}'. Known variants: {known}."
             ) from None
-
-
-_REGISTRY: dict[str, ExperimentSpec] = {}
-
-
-def register_experiment(spec: ExperimentSpec) -> ExperimentSpec:
-    """Register an experiment spec, keyed by its experiment_id."""
-    if spec.experiment_id in _REGISTRY:
-        raise ValueError(f"Experiment already registered: {spec.experiment_id}")
-    _REGISTRY[spec.experiment_id] = spec
-    return spec
-
-
-def get_experiment(experiment_id: str) -> ExperimentSpec:
-    """Return the registered spec for experiment_id, or raise if unknown.
-
-    Ensures every experiment is registered first, so any caller that reaches the
-    registry (the runner, normalize, aggregate) sees a populated table.
-    """
-    _ensure_registered()
-    try:
-        return _REGISTRY[experiment_id]
-    except KeyError:
-        raise UnknownExperimentError(f"Unknown experiment: {experiment_id}") from None
-
-
-def experiment_number(spec: ExperimentSpec) -> str | None:
-    """Return the leading number of an experiment's id, e.g. '001'."""
-    match = _NUMBER_PREFIX.match(spec.experiment_id)
-    return match.group(1) if match else None
-
-
-def resolve_experiment(ref: str) -> ExperimentSpec:
-    """Resolve an experiment reference to its registered spec.
-
-    Accepts the full id (001_fruit), just its number (001 or 1), or a question
-    reference (001a), all of which point at the same owning experiment. This is
-    the single front door that lets the CLI and Justfile refer to an experiment
-    however is convenient.
-    """
-    _ensure_registered()
-    ref = ref.strip()
-    if ref in _REGISTRY:
-        return _REGISTRY[ref]
-    match = _NUMBER_PREFIX.match(ref)
-    number = match.group(1) if match else ref
-    if number.isdecimal():
-        for spec in _REGISTRY.values():
-            spec_number = experiment_number(spec)
-            if spec_number and int(number) == int(spec_number):
-                return spec
-    known = ", ".join(sorted(_REGISTRY)) or "none registered"
-    raise UnknownExperimentError(
-        f"Unknown experiment: {ref!r}. Known experiments: {known}."
-    )
-
-
-def resolve_experiment_id(ref: str) -> str:
-    """Resolve any experiment or question reference to its experiment_id."""
-    return resolve_experiment(ref).experiment_id
-
-
-def _ensure_registered() -> None:
-    """Import the experiments package so every spec is registered."""
-    importlib.import_module("llmango.experiments")

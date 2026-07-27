@@ -78,20 +78,20 @@ def test_resolve_passes_the_declaration_through_untouched(prompts_dir: Path) -> 
 
     declarations = {"fruit_list": {"order": "swap", "pairs": [[1, 2]]}}
     sources = load_input_sources("001_fruit", "001a", ["fruit_list"])
-    resolved = resolve(build, sources, declarations, "pl", 3, 42, "001_fruit")
+    resolved = resolve(build, sources, declarations, "pl", 3, 42, "001a")
 
     assert resolved["fruit_list"].value == ["a", "b"]
     assert seen[0].declaration == {"order": "swap", "pairs": [[1, 2]]}
     assert (seen[0].lang, seen[0].sample_idx, seen[0].seed) == ("pl", 3, 42)
 
 
-def test_resolve_without_a_hook_names_the_experiment() -> None:
-    with pytest.raises(ValueError, match="registers no build_input hook"):
-        resolve(None, {}, {"fruit_list": {}}, "en", 0, 1, "001_fruit")
+def test_resolve_without_a_hook_names_the_question() -> None:
+    with pytest.raises(ValueError, match="Question 001a declares prompt input"):
+        resolve(None, {}, {"fruit_list": {}}, "en", 0, 1, "001a")
 
 
 def test_resolve_with_no_declared_inputs_is_empty() -> None:
-    assert resolve(None, {}, {}, "en", 0, 1, "001_fruit") == {}
+    assert resolve(None, {}, {}, "en", 0, 1, "001a") == {}
 
 
 def test_render_substitutes_every_input() -> None:

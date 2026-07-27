@@ -45,6 +45,15 @@ def test_dry_run_names_the_schema_behind_each_variant(data_dirs: Path) -> None:
     assert "schema:    none (free text)" in result.output
 
 
+def test_an_experiment_reference_is_not_a_question(data_dirs: Path) -> None:
+    """Only a question id resolves, and the error says which ones exist."""
+    result = runner.invoke(app, ["normalize", "001"])
+
+    assert result.exit_code == 1
+    assert "Unknown question: '001'" in result.output
+    assert "001a, 001b, 001c, 001d" in result.output
+
+
 def test_report_normalize_omits_parquet_on_dry_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

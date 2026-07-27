@@ -29,14 +29,14 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def experiment_dir(experiment_id: str) -> Path:
-    """Return an experiment's folder, holding its shared files and questions."""
-    return PROMPTS_DIR / experiment_id
+def experiment_dir(folder: str) -> Path:
+    """Return an experiment's prompt folder, holding its shared files and questions."""
+    return PROMPTS_DIR / folder
 
 
-def question_dir(experiment_id: str, question_id: str) -> Path:
-    """Return one question's folder under its experiment."""
-    return experiment_dir(experiment_id) / question_id
+def question_dir(folder: str, question_id: str) -> Path:
+    """Return one question's folder under its experiment's."""
+    return experiment_dir(folder) / question_id
 
 
 def load_env() -> None:

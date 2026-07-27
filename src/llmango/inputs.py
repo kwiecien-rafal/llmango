@@ -79,10 +79,10 @@ def placeholders(text: str) -> set[str]:
 
 
 def load_input_sources(
-    experiment_id: str, question_id: str | None, names: list[str]
+    folder: str, question_id: str | None, names: list[str]
 ) -> dict[str, InputSource]:
     """Load the data file behind each named input, question folder winning."""
-    return {name: _load_source(experiment_id, question_id, name) for name in names}
+    return {name: _load_source(folder, question_id, name) for name in names}
 
 
 def resolve(
@@ -92,15 +92,16 @@ def resolve(
     lang: str,
     sample_idx: int,
     seed: int | None,
-    experiment_id: str,
+    question_id: str,
 ) -> dict[str, ResolvedInput]:
     """Build every declared input for one sample through the experiment's hook."""
     if not declarations:
         return {}
     if build_input is None:
         raise ValueError(
-            f"Experiment {experiment_id} declares prompt input(s) "
-            f"{', '.join(sorted(declarations))} but registers no build_input hook."
+            f"Question {question_id} declares prompt input(s) "
+            f"{', '.join(sorted(declarations))} but its experiment registers no "
+            f"build_input hook."
         )
     return {
         name: build_input(
@@ -146,21 +147,19 @@ def validate_placeholders(
         )
 
 
-def _load_source(experiment_id: str, question_id: str | None, name: str) -> InputSource:
+def _load_source(folder: str, question_id: str | None, name: str) -> InputSource:
     """Read one input's YAML file, or record its absence."""
-    path = _find_file(experiment_id, question_id, name)
+    path = _find_file(folder, question_id, name)
     if path is None:
         return InputSource(data=None, sha256=sha256_text(""))
     text = path.read_text(encoding="utf-8")
     return InputSource(data=yaml.safe_load(text), sha256=sha256_text(text))
 
 
-def _find_file(experiment_id: str, question_id: str | None, name: str) -> Path | None:
+def _find_file(folder: str, question_id: str | None, name: str) -> Path | None:
     """Return the input's data file, preferring the question's own copy."""
     candidates = (
-        [question_dir(experiment_id, question_id) / f"{name}.yaml"]
-        if question_id
-        else []
+        [question_dir(folder, question_id) / f"{name}.yaml"] if question_id else []
     )
-    candidates.append(experiment_dir(experiment_id) / f"{name}.yaml")
+    candidates.append(experiment_dir(folder) / f"{name}.yaml")
     return next((path for path in candidates if path.is_file()), None)

@@ -1,9 +1,10 @@
 """Draw an experiment's aggregates as the SVG charts the site embeds.
 
-Reads the committed JSON under data/aggregated/<experiment_id>/ and writes one
-SVG per chart into site/public/charts/<experiment_id>/, which Astro serves
-verbatim, alongside an index carrying the numbers behind every chart so the site
-can render a table beside each image.
+Takes a question id, reads the committed JSON under data/aggregated/<folder>/ of
+the experiment that owns it, and writes one SVG per chart into
+site/public/charts/<folder>/, which Astro serves verbatim, alongside an index
+carrying the numbers behind every chart so the site can render a table beside
+each image.
 
 matplotlib draws the finished artwork here, so a chart is defined exactly once
 and the file opened locally is the file the site ships. The background is
@@ -37,7 +38,8 @@ from matplotlib.ticker import FixedLocator, PercentFormatter
 from matplotlib.typing import RcKeyType
 
 from llmango.config import AGG_DIR, CHARTS_DIR
-from llmango.registry import FREE_TEXT_VARIANT, OTHER_CATEGORY, resolve_experiment_id
+from llmango.experiments import spec_for
+from llmango.spec import FREE_TEXT_VARIANT, OTHER_CATEGORY
 
 _DISTRIBUTIONS = "distributions.json"
 _INDEX = "index.json"
@@ -118,33 +120,33 @@ class AnalyzeOutcome:
     index_path: Path
 
 
-def analyze_experiment(experiment_id: str) -> AnalyzeOutcome:
+def analyze_experiment(question_id: str) -> AnalyzeOutcome:
     """Draw an experiment's charts from its aggregates into site/public/charts.
 
-    The distribution chart is per question, since each question asks its own
-    thing.
+    Takes a question id and draws the experiment that owns it. The distribution
+    chart is per question, since each question asks its own thing.
     """
-    experiment_id = resolve_experiment_id(experiment_id)
-    distributions = _load(experiment_id, _DISTRIBUTIONS)
+    folder = spec_for(question_id).folder
+    distributions = _load(folder, _DISTRIBUTIONS)
     if distributions is None:
         raise FileNotFoundError(
-            f"No aggregates for {experiment_id}. Run 'llmango aggregate' first."
+            f"No aggregates for {folder}. Run 'llmango aggregate' first."
         )
 
     charts = [
-        _write_distribution(experiment_id, question_id, arms)
-        for question_id, arms in distributions.items()
+        _write_distribution(folder, question, arms)
+        for question, arms in distributions.items()
     ]
     return AnalyzeOutcome(
-        experiment_id=experiment_id,
+        experiment_id=folder,
         charts=charts,
-        index_path=_write_index(experiment_id, charts),
+        index_path=_write_index(folder, charts),
     )
 
 
-def _load(experiment_id: str, name: str) -> dict[str, dict[Arm, Cell]] | None:
+def _load(folder: str, name: str) -> dict[str, dict[Arm, Cell]] | None:
     """Read one aggregate file as question -> arm -> numbers, or None if absent."""
-    path = AGG_DIR / experiment_id / name
+    path = AGG_DIR / folder / name
     if not path.is_file():
         return None
     payload: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
@@ -467,16 +469,14 @@ def _distribution_figure(
     return figure, rows
 
 
-def _write_distribution(
-    experiment_id: str, question_id: str, arms: dict[Arm, Cell]
-) -> Chart:
+def _write_distribution(folder: str, question_id: str, arms: dict[Arm, Cell]) -> Chart:
     """Draw one question's distribution and describe it for the index."""
     labels = _labels(list(arms))
     title = _distribution_title(question_id, list(arms), labels)
     file = f"{question_id}__distribution.svg"
     with matplotlib.rc_context(_STYLE):
         figure, rows = _distribution_figure(arms, labels, title)
-        _write_svg(experiment_id, file, figure)
+        _write_svg(folder, file, figure)
     return Chart(
         metric="distribution",
         question_id=question_id,
@@ -489,36 +489,36 @@ def _write_distribution(
     )
 
 
-def _write_index(experiment_id: str, charts: list[Chart]) -> Path:
+def _write_index(folder: str, charts: list[Chart]) -> Path:
     """Write the index the site reads for its chart list and its table views.
 
     The Chart dataclass is serialized wholesale, so a field added to it reaches
     the site instead of being silently dropped from the index.
     """
     body = {
-        "experiment_id": experiment_id,
+        "experiment_id": folder,
         "charts": [asdict(chart) for chart in charts],
     }
-    path = _chart_dir(experiment_id) / _INDEX
+    path = _chart_dir(folder) / _INDEX
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return path
 
 
-def _write_svg(experiment_id: str, name: str, figure: Figure) -> Path:
+def _write_svg(folder: str, name: str, figure: Figure) -> Path:
     """Save one figure as the transparent, reproducible SVG the site embeds.
 
     The date matplotlib would otherwise stamp into the metadata is dropped, so
     redrawing unchanged aggregates rewrites an identical file instead of a diff.
     """
-    path = _chart_dir(experiment_id) / name
+    path = _chart_dir(folder) / name
     figure.savefig(path, format="svg", transparent=True, metadata={"Date": None})
     return path
 
 
-def _chart_dir(experiment_id: str) -> Path:
+def _chart_dir(folder: str) -> Path:
     """The served directory an experiment's charts are written into."""
-    directory = CHARTS_DIR / experiment_id
+    directory = CHARTS_DIR / folder
     directory.mkdir(parents=True, exist_ok=True)
     return directory

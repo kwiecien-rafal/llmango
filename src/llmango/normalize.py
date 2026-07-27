@@ -1,7 +1,8 @@
 """Post-hoc normalization of free-text answers to canonical categories.
 
-Runs per experiment: reads the raw answers of every question in the experiment
-and maps each onto a canonical English category in layers, cheapest first. The
+Takes a question id and runs across the experiment that owns it: reads the raw
+answers of every question it groups and maps each onto a canonical English
+category in layers, cheapest first. The
 experiment's own mapping seed resolves every answer it already has a label for;
 leftover strings (off-list or free-text) fall through to the mapping file and
 then an LLM. The answer column is never overwritten, so normalization can be
@@ -29,16 +30,9 @@ from pydantic import BaseModel, ConfigDict
 
 from llmango.backends.base import GenerationBackend, GenRequest
 from llmango.config import MAPPINGS_DIR, experiment_dir
-from llmango.questions import (
-    SamplingParams,
-    list_questions,
-    load_experiment_config,
-)
-from llmango.registry import (
-    ExperimentSpec,
-    get_experiment,
-    resolve_experiment_id,
-)
+from llmango.experiments import spec_for
+from llmango.questions import SamplingParams, load_experiment_config
+from llmango.spec import ExperimentSpec
 from llmango.storage import read_results, write_normalized
 
 _MAPPING_FILE = "mapping.yaml"
@@ -85,7 +79,7 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
 
 
 def normalize_experiment(
-    experiment_id: str,
+    question_id: str,
     *,
     make_backend: Callable[[], GenerationBackend] | None = None,
     model: str | None = None,
@@ -94,22 +88,22 @@ def normalize_experiment(
 ) -> NormalizeOutcome:
     """Add canonical categories to an experiment's raw answers and write them out.
 
-    Reads every question's raw results, resolves each distinct answer per language
-    through the deterministic layers and then the LLM for the rest, and writes a
+    Takes a question id and normalizes the experiment that owns it, reading every
+    sibling question's raw results, resolving each distinct answer per language
+    through the deterministic layers and then the LLM for the rest, and writing a
     normalized Parquet file that leaves the raw answers untouched. The backend is
     built lazily, so a run resolved entirely offline needs no API key. A dry run
     stops after the offline layers and reports how many answers the LLM would
     resolve, without calling it or writing anything.
     """
-    experiment_id = resolve_experiment_id(experiment_id)
-    spec = get_experiment(experiment_id)
+    spec = spec_for(question_id)
     normalization_schema = spec.normalization_schema
     if normalization_schema is None:
-        raise ValueError(f"Experiment {experiment_id} has no normalization schema.")
+        raise ValueError(f"Experiment {spec.folder} has no normalization schema.")
 
-    frame = _read_experiment_raw(experiment_id)
+    frame = _read_experiment_raw(spec)
 
-    directory = MAPPINGS_DIR / experiment_id
+    directory = MAPPINGS_DIR / spec.folder
     mapping = _load_mapping(directory, spec)
     cache = _load_cache(directory)
     pairs = _distinct_pairs(frame)
@@ -147,7 +141,7 @@ def normalize_experiment(
         _require_all_resolved(unresolved, resolutions)
 
     normalized = _join_resolutions(frame, resolutions, spec)
-    parquet_path = write_normalized(normalized, experiment_id)
+    parquet_path = write_normalized(normalized, spec.folder)
     return NormalizeOutcome(
         parquet_path=parquet_path,
         rows=frame.height,
@@ -156,15 +150,15 @@ def normalize_experiment(
     )
 
 
-def _read_experiment_raw(experiment_id: str) -> pl.DataFrame:
+def _read_experiment_raw(spec: ExperimentSpec) -> pl.DataFrame:
     """Read and concatenate every question's raw results for an experiment."""
     frames = [
         frame
-        for question_id in list_questions(experiment_id)
+        for question_id in spec.questions
         if not (frame := read_results(f"{question_id}__*.parquet")).is_empty()
     ]
     if not frames:
-        raise FileNotFoundError(f"No raw results to normalize for {experiment_id}.")
+        raise FileNotFoundError(f"No raw results to normalize for {spec.folder}.")
     return pl.concat(frames)
 
 
@@ -210,7 +204,7 @@ def _resolve_online(
     Only a parsed response becomes a resolution. Anything else is left out, so the
     caller can save what was paid for and then report what is missing.
     """
-    experiment_id = spec.experiment_id
+    folder = spec.folder
     if max_llm_calls is not None and len(unresolved) > max_llm_calls:
         raise ValueError(
             f"{len(unresolved)} answers need the LLM layer, above the smoke limit "
@@ -220,14 +214,14 @@ def _resolve_online(
         raise ValueError(
             f"{len(unresolved)} answers need the LLM layer but no backend given."
         )
-    resolved_model = model or _normalize_model(experiment_id)
+    resolved_model = model or _normalize_model(folder)
     if not resolved_model:
-        raise ValueError(f"No model given to normalize {experiment_id}.")
+        raise ValueError(f"No model given to normalize {folder}.")
 
-    template = _load_prompt(experiment_id)
+    template = _load_prompt(folder)
     requests = [
         GenRequest(
-            question_id=experiment_id,
+            question_id=folder,
             lang=lang,
             model=resolved_model,
             prompt=template.replace("{lang}", lang).replace("{raw}", answer),
@@ -317,9 +311,9 @@ def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
     return frame.select(kept[:cut] + added + kept[cut:])
 
 
-def _normalize_model(experiment_id: str) -> str | None:
+def _normalize_model(folder: str) -> str | None:
     """Return the configured normalization model, falling back to the run model."""
-    config = load_experiment_config(experiment_id)
+    config = load_experiment_config(folder)
     return config.normalize_model or config.model
 
 
@@ -367,12 +361,13 @@ def _canonical_values(spec: ExperimentSpec) -> frozenset[str] | None:
 def _seed_mapping(spec: ExperimentSpec) -> dict[str, str]:
     """Preprocess the experiment's label-to-canonical seed, empty when it has none.
 
-    The experiment is given its question ids, because a question may override an
-    input with its own data file while normalization spans every question at once.
+    The experiment covers each of its own questions, because a question may
+    override an input with its own data file while normalization spans every
+    question at once.
     """
     if spec.mapping_seed is None:
         return {}
-    seed = spec.mapping_seed(list_questions(spec.experiment_id))
+    seed = spec.mapping_seed()
     return {preprocess(label, spec): canonical for label, canonical in seed.items()}
 
 
@@ -394,8 +389,8 @@ def _save_cache(
     )
 
 
-def _load_prompt(experiment_id: str) -> str:
-    path = experiment_dir(experiment_id) / _PROMPT_FILE
+def _load_prompt(folder: str) -> str:
+    path = experiment_dir(folder) / _PROMPT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing normalization prompt: {path}")
     return path.read_text(encoding="utf-8")

@@ -1,9 +1,9 @@
 """Experiment and question config, and the prompt templates they name.
 
-An experiment is declared by experiment.yaml plus normalize.md. It contains
-questions (001a, 001b, ...), each a subfolder with its own meta.yaml and one
-prompt template per language. A template's placeholders are filled per sample by
-the prompt inputs the question declares, so a rendered prompt is produced per
+An experiment's shared files are experiment.yaml plus normalize.md, in the folder
+its spec names. Each question it owns is a subfolder with its own meta.yaml and
+one prompt template per language. A template's placeholders are filled per sample
+by the prompt inputs the question declares, so a rendered prompt is produced per
 sample rather than read once from a static file. Loading a question checks that
 its templates and its declared inputs name each other exactly.
 """
@@ -15,8 +15,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from llmango.config import experiment_dir, question_dir, sha256_text
+from llmango.experiments import spec_for
 from llmango.inputs import InputDeclarations, validate_placeholders
-from llmango.registry import get_experiment, resolve_experiment_id
+from llmango.spec import ExperimentSpec
 
 _EXPERIMENT_FILE = "experiment.yaml"
 _META_FILE = "meta.yaml"
@@ -36,7 +37,6 @@ class ExperimentConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    experiment_id: str
     model: str | None = None
     normalize_model: str | None = None
     sampling: SamplingParams = Field(default_factory=SamplingParams)
@@ -62,7 +62,6 @@ class QuestionConfig:
     """A question resolved against its experiment, ready to run."""
 
     question_id: str
-    experiment_id: str
     languages: list[str]
     schema_variants: list[str]
     inputs: InputDeclarations
@@ -80,54 +79,31 @@ class PromptTemplate:
     sha256: str
 
 
-def load_experiment_config(experiment_id: str) -> ExperimentConfig:
+def load_experiment_config(folder: str) -> ExperimentConfig:
     """Load and validate an experiment's experiment.yaml manifest."""
-    path = experiment_dir(experiment_id) / _EXPERIMENT_FILE
+    path = experiment_dir(folder) / _EXPERIMENT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing experiment manifest: {path}")
-
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    config = ExperimentConfig.model_validate(data)
-    if config.experiment_id != experiment_id:
-        raise ValueError(
-            f"experiment.yaml experiment_id '{config.experiment_id}' does not match "
-            f"requested '{experiment_id}'"
-        )
-    return config
+    return ExperimentConfig.model_validate(data)
 
 
-def list_questions(experiment_id: str) -> list[str]:
-    """Return the sorted question ids (subfolders with a meta.yaml) of an experiment."""
-    directory = experiment_dir(experiment_id)
-    if not directory.is_dir():
-        return []
-    return sorted(
-        child.name
-        for child in directory.iterdir()
-        if child.is_dir() and (child / _META_FILE).is_file()
-    )
+def load_question(question_id: str) -> QuestionConfig:
+    """Load and validate a question by its id (e.g. 001a).
 
-
-def load_question(ref: str) -> QuestionConfig:
-    """Load and validate a question by reference (e.g. 001a).
-
-    Resolves the owning experiment, reads the question's meta.yaml, and checks
-    that every declared language has a template, that each template's
-    placeholders match the declared prompt inputs, and that every schema variant
-    is registered.
+    Finds the spec that owns the question, reads its meta.yaml, and checks that
+    every declared language has a template, that each template's placeholders
+    match the declared prompt inputs, and that every schema variant is one the
+    experiment registers.
     """
-    experiment_id = resolve_experiment_id(ref)
-    question_id = ref.strip()
-    directory = question_dir(experiment_id, question_id)
+    spec = spec_for(question_id)
+    directory = question_dir(spec.folder, question_id)
     meta_path = directory / _META_FILE
     if not meta_path.is_file():
-        available = ", ".join(list_questions(experiment_id)) or "none"
-        raise FileNotFoundError(
-            f"Unknown question {ref!r} in {experiment_id}. Available: {available}."
-        )
+        raise FileNotFoundError(f"Missing question manifest: {meta_path}")
 
     meta = QuestionMeta.model_validate(yaml.safe_load(meta_path.read_text("utf-8")))
-    exp_config = load_experiment_config(experiment_id)
+    exp_config = load_experiment_config(spec.folder)
 
     missing = [
         lang for lang in meta.languages if not (directory / f"{lang}.md").is_file()
@@ -138,13 +114,12 @@ def load_question(ref: str) -> QuestionConfig:
         )
 
     for lang in meta.languages:
-        template = load_template(experiment_id, question_id, lang)
+        template = load_template(spec.folder, question_id, lang)
         validate_placeholders(template.text, meta.inputs, f"{question_id}/{lang}.md")
-    _validate_schema_variants(meta.schema_variants, experiment_id)
+    _validate_schema_variants(meta.schema_variants, spec)
 
     return QuestionConfig(
         question_id=question_id,
-        experiment_id=experiment_id,
         languages=meta.languages,
         schema_variants=meta.schema_variants,
         inputs=meta.inputs,
@@ -153,21 +128,21 @@ def load_question(ref: str) -> QuestionConfig:
     )
 
 
-def load_template(experiment_id: str, question_id: str, lang: str) -> PromptTemplate:
+def load_template(folder: str, question_id: str, lang: str) -> PromptTemplate:
     """Load one language's prompt template for a question."""
-    path = question_dir(experiment_id, question_id) / f"{lang}.md"
+    path = question_dir(folder, question_id) / f"{lang}.md"
     if not path.is_file():
         raise FileNotFoundError(f"Missing prompt template: {path}")
     text = path.read_text(encoding="utf-8")
     return PromptTemplate(lang=lang, path=path, text=text, sha256=sha256_text(text))
 
 
-def _validate_schema_variants(schema_variants: list[str], experiment_id: str) -> None:
-    """Check every declared schema variant is registered for the experiment."""
-    known = get_experiment(experiment_id).schema_variants
+def _validate_schema_variants(schema_variants: list[str], spec: ExperimentSpec) -> None:
+    """Check every declared schema variant is one the experiment registers."""
+    known = spec.schema_variants
     unknown = [variant for variant in schema_variants if variant not in known]
     if unknown:
         raise ValueError(
-            f"{experiment_id} has no schema variant(s): {', '.join(unknown)}. "
+            f"{spec.folder} has no schema variant(s): {', '.join(unknown)}. "
             f"Known: {', '.join(sorted(known))}."
         )

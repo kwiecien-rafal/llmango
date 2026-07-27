@@ -110,7 +110,6 @@ class RunManifest(BaseModel):
     """
 
     run_id: str
-    experiment_id: str
     question_id: str
     backend: str
     model: str

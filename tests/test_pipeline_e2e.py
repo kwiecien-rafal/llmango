@@ -13,7 +13,7 @@ from llmango.normalize import normalize_experiment
 from llmango.runner import run
 from llmango.storage import read_results
 
-_EXPERIMENT = "001_fruit"
+_FOLDER = "001_fruit"
 
 _ANSWERS = {
     "en": ["apple", "banana", "banana", ""],
@@ -25,7 +25,7 @@ _CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True, "multiple": Fa
 
 @pytest.fixture
 def pipeline(data_dirs: Path) -> Path:
-    directory = data_dirs / "mappings" / _EXPERIMENT
+    directory = data_dirs / "mappings" / _FOLDER
     directory.mkdir(parents=True)
     (directory / "normalization_cache.json").write_text(
         json.dumps(_CACHE), encoding="utf-8"
@@ -34,7 +34,7 @@ def pipeline(data_dirs: Path) -> Path:
 
 
 def _aggregate(tmp_path: Path, name: str) -> dict[str, dict[str, object]]:
-    path = tmp_path / "aggregated" / _EXPERIMENT / name
+    path = tmp_path / "aggregated" / _FOLDER / name
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload["questions"]["001a"]["en"]
 
@@ -58,12 +58,12 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         cost is not None and cost > 0 for cost in raw["total_cost_usd"].to_list()
     )
 
-    normalize_outcome = normalize_experiment("001")
+    normalize_outcome = normalize_experiment("001a")
     assert normalize_outcome.rows == 8
     assert normalize_outcome.distinct == 7
     assert normalize_outcome.llm_calls == 0
 
-    aggregate_experiment("001")
+    aggregate_experiment("001a")
 
     distributions = _aggregate(pipeline, "distributions.json")
 
@@ -76,12 +76,12 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         assert sum(counts.values()) == distribution["n"]
         assert distribution["n"] == 3
 
-    analyze_outcome = analyze_experiment("001")
+    analyze_outcome = analyze_experiment("001a")
 
     assert [chart.file for chart in analyze_outcome.charts] == [
         "001a__distribution.svg",
     ]
-    charts = pipeline / "charts" / _EXPERIMENT
+    charts = pipeline / "charts" / _FOLDER
     assert (charts / "001a__distribution.svg").read_text(encoding="utf-8").count("<svg")
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
     distribution = index["charts"][0]

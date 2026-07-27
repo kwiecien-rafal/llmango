@@ -14,7 +14,6 @@ from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
 from llmango.normalize import NormalizeOutcome, normalize_experiment
 from llmango.questions import load_question
-from llmango.registry import resolve_experiment_id
 from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
 from llmango.runner import run as run_experiment
 
@@ -26,9 +25,7 @@ app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 SMOKE_SAMPLES = 5
 SMOKE_SAMPLE_LIMIT = 25
 
-ExperimentArgument = Annotated[
-    str, typer.Argument(help="Experiment number or id (001 or 001_fruit).")
-]
+QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
 _PIPELINE_ERRORS = (OSError, RuntimeError, ValueError, KeyError)
 
@@ -40,9 +37,7 @@ def main() -> None:
 
 @app.command()
 def run(
-    question: Annotated[
-        str, typer.Argument(help="Question id (001a, 001b, ...).")
-    ] = "001a",
+    question: QuestionArgument = "001a",
     model: Annotated[
         str | None, typer.Option("--model", help="Override the experiment model.")
     ] = None,
@@ -113,7 +108,7 @@ def _run_variant(
 
 @app.command()
 def normalize(
-    experiment: ExperimentArgument = "001",
+    question: QuestionArgument = "001a",
     model: Annotated[
         str | None,
         typer.Option("--model", help="Override the normalization model."),
@@ -126,10 +121,9 @@ def normalize(
     ] = False,
 ) -> None:
     """Map raw answers to canonical categories and write a normalized Parquet file."""
-    experiment_id = _resolve(experiment)
     try:
         outcome = normalize_experiment(
-            experiment_id,
+            question,
             make_backend=OpenAIBackend,
             model=model,
             max_llm_calls=None if force else SMOKE_SAMPLE_LIMIT,
@@ -141,24 +135,22 @@ def normalize(
 
 
 @app.command()
-def aggregate(experiment: ExperimentArgument = "001") -> None:
+def aggregate(question: QuestionArgument = "001a") -> None:
     """Aggregate normalized answers into the committed JSON the charts read."""
-    experiment_id = _resolve(experiment)
     try:
-        outcome = aggregate_experiment(experiment_id)
+        outcome = aggregate_experiment(question)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     _report_aggregate(outcome)
 
 
 @app.command()
-def analyze(experiment: ExperimentArgument = "001") -> None:
+def analyze(question: QuestionArgument = "001a") -> None:
     """Draw the charts the site embeds from an experiment's aggregates."""
     from llmango.charts import analyze_experiment
 
-    experiment_id = _resolve(experiment)
     try:
-        outcome = analyze_experiment(experiment_id)
+        outcome = analyze_experiment(question)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     _report_analyze(outcome)
@@ -192,14 +184,6 @@ def _resolve_samples(
             f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
         )
     return count
-
-
-def _resolve(experiment: str) -> str:
-    """Resolve an experiment reference to its canonical experiment_id, or exit."""
-    try:
-        return resolve_experiment_id(experiment)
-    except KeyError as error:
-        _die(str(error))
 
 
 def _die(message: str) -> NoReturn:

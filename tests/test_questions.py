@@ -8,12 +8,11 @@ from llmango.questions import (
     load_template,
 )
 
-EXPERIMENT_ID = "001_fruit"
+FOLDER = "001_fruit"
 
 
 def test_load_experiment_config_reads_the_manifest() -> None:
-    config = load_experiment_config(EXPERIMENT_ID)
-    assert config.experiment_id == EXPERIMENT_ID
+    config = load_experiment_config(FOLDER)
     assert config.model == "gpt-5.6-luna"
     assert config.normalize_model == "gpt-5.4-mini"
 
@@ -21,7 +20,6 @@ def test_load_experiment_config_reads_the_manifest() -> None:
 def test_load_question_resolves_against_its_experiment() -> None:
     config = load_question("001a")
     assert config.question_id == "001a"
-    assert config.experiment_id == EXPERIMENT_ID
     assert config.languages == ["en", "pl", "ja"]
     assert config.schema_variants == ["en"]
     assert config.model == "gpt-5.6-luna"
@@ -45,16 +43,16 @@ def test_question_with_schema_variants() -> None:
 def test_every_declared_language_has_a_template() -> None:
     config = load_question("001a")
     for lang in config.languages:
-        template = load_template(EXPERIMENT_ID, "001a", lang)
+        template = load_template(FOLDER, "001a", lang)
         assert template.lang == lang
         assert "{fruit_list}" in template.text
 
 
 def test_load_question_unknown_raises() -> None:
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError, match="Unknown question"):
         load_question("001z")
 
 
 def test_load_template_missing_language_raises() -> None:
     with pytest.raises(FileNotFoundError):
-        load_template(EXPERIMENT_ID, "001a", "xx")
+        load_template(FOLDER, "001a", "xx")

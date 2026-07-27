@@ -23,7 +23,6 @@ from llmango.questions import SamplingParams
 def _manifest(**overrides: Any) -> RunManifest:
     base: dict[str, Any] = {
         "run_id": "run-001",
-        "experiment_id": "001_fruit",
         "question_id": "001a",
         "backend": "openai",
         "model": "gpt-5.6-luna",

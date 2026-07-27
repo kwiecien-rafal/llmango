@@ -18,7 +18,7 @@ from llmango.charts import (
     analyze_experiment,
 )
 
-_EXPERIMENT = "001_fruit"
+_FOLDER = "001_fruit"
 _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
 
 
@@ -40,11 +40,11 @@ def _write_aggregate(
     layout nothing produces, so the real writer builds it. It resolves AGG_DIR
     through the aggregate module, which data_dirs redirects into tmp_path.
     """
-    _write_json(_EXPERIMENT, name, questions)
+    _write_json(_FOLDER, name, questions)
 
 
 def _charts(root: Path) -> Path:
-    return root / "charts" / _EXPERIMENT
+    return root / "charts" / _FOLDER
 
 
 def _index(root: Path) -> dict[str, Any]:
@@ -58,7 +58,7 @@ def _chart(root: Path, metric: str) -> dict[str, Any]:
 
 def _figure(question_id: str) -> tuple[Figure, list[dict[str, Any]]]:
     """Draw one question straight from the fixture aggregates, without writing."""
-    questions = _load(_EXPERIMENT, "distributions.json")
+    questions = _load(_FOLDER, "distributions.json")
     assert questions is not None
     arms = questions[question_id]
     labels = _labels(list(arms))
@@ -84,7 +84,7 @@ def languages(data_dirs: Path) -> Path:
 
 
 def test_arms_that_differ_by_language_are_labeled_by_language(languages: Path) -> None:
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     chart = _chart(languages, "distribution")
     assert chart["columns"] == ["en", "pl"]
@@ -103,7 +103,7 @@ def test_arms_that_differ_by_schema_are_labeled_by_schema(data_dirs: Path) -> No
         },
     )
 
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     chart = _chart(data_dirs, "distribution")
     assert chart["columns"] == ["en schema", "no schema", "pl schema"]
@@ -121,7 +121,7 @@ def test_both_dimensions_varying_are_named_together(data_dirs: Path) -> None:
         },
     )
 
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     chart = _chart(data_dirs, "distribution")
     assert chart["columns"] == ["en / en schema", "pl / en schema", "pl / pl schema"]
@@ -129,7 +129,7 @@ def test_both_dimensions_varying_are_named_together(data_dirs: Path) -> None:
 
 
 def test_shares_and_counts_come_from_the_aggregate(languages: Path) -> None:
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     rows = _chart(languages, "distribution")["rows"]
     apple = next(row for row in rows if row["label"] == "apple")
@@ -140,7 +140,7 @@ def test_shares_and_counts_come_from_the_aggregate(languages: Path) -> None:
 
 
 def test_unpicked_categories_are_dropped_and_other_sorts_last(languages: Path) -> None:
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     labels = [row["label"] for row in _chart(languages, "distribution")["rows"]]
     assert "lychee" not in labels
@@ -177,7 +177,7 @@ def test_a_single_arm_needs_no_legend(data_dirs: Path) -> None:
     figure, _ = _figure("001b")
 
     assert figure.axes[0].get_legend() is None
-    analyze_experiment("001")
+    analyze_experiment("001a")
     assert _chart(data_dirs, "distribution")["title"] == (
         "001b: answer distribution (en)"
     )
@@ -199,7 +199,7 @@ def test_more_arms_than_the_palette_is_refused(data_dirs: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="palette"):
-        analyze_experiment("001")
+        analyze_experiment("001a")
 
 
 def test_only_a_series_peak_is_directly_labeled() -> None:
@@ -209,10 +209,10 @@ def test_only_a_series_peak_is_directly_labeled() -> None:
 
 
 def test_index_lists_every_chart_with_its_file_and_arms(languages: Path) -> None:
-    outcome = analyze_experiment("001")
+    outcome = analyze_experiment("001a")
 
     index = _index(languages)
-    assert index["experiment_id"] == _EXPERIMENT
+    assert index["experiment_id"] == _FOLDER
     assert [(chart["metric"], chart["file"]) for chart in index["charts"]] == [
         ("distribution", "001a__distribution.svg"),
     ]
@@ -222,7 +222,7 @@ def test_index_lists_every_chart_with_its_file_and_arms(languages: Path) -> None
 
 
 def test_every_chart_is_written_as_a_transparent_svg(languages: Path) -> None:
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     path = _charts(languages) / "001a__distribution.svg"
     assert ElementTree.parse(path).getroot().tag == _SVG_ROOT
@@ -233,14 +233,14 @@ def test_redrawing_unchanged_aggregates_rewrites_an_identical_file(
     languages: Path,
 ) -> None:
     """A rerun that churned bytes would put a meaningless diff in every commit."""
-    analyze_experiment("001")
+    analyze_experiment("001a")
     first = (_charts(languages) / "001a__distribution.svg").read_bytes()
 
-    analyze_experiment("001")
+    analyze_experiment("001a")
 
     assert (_charts(languages) / "001a__distribution.svg").read_bytes() == first
 
 
 def test_missing_aggregates_point_at_the_aggregate_command(data_dirs: Path) -> None:
     with pytest.raises(FileNotFoundError, match="llmango aggregate"):
-        analyze_experiment("001")
+        analyze_experiment("001a")
