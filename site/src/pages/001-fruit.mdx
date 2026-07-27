@@ -46,8 +46,8 @@ result. Read them as a worked example of the format, and wait for the full run.
 </p>
 
 <Figure
-  experiment="001_fruit"
-  file="001a__distribution.svg"
+  question="001a"
+  file="distribution.svg"
   alt="Horizontal grouped bar chart of the share of valid answers per fruit for question 001a, with one bar per language for English, Japanese and Polish. Lychee and pomegranate take almost every answer. The same numbers follow in the table below."
   caption="001a, five samples per language. Far too few to read as a distribution."
 />
@@ -71,9 +71,9 @@ Everything on this page is regenerated from a checkout by four commands:
 
 ```
 just run 001a --smoke     # generate raw responses
-just normalize 001        # map free text onto canonical categories
-just aggregate 001        # reduce to committed JSON
-just analyze 001          # draw the charts on this page
+just normalize 001a       # map free text onto canonical categories
+just aggregate 001a       # reduce to committed JSON
+just analyze 001a         # draw the charts on this page
 ```
 
 The raw responses go to Parquet and ship as an open dataset. The aggregated JSON and

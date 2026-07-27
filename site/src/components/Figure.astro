@@ -15,20 +15,20 @@
 import { asides, chart as findChart, chartSrc } from "../data/charts";
 
 interface Props {
-  experiment: string;
+  question: string;
   file: string;
   alt: string;
   caption?: string;
 }
 
-const { experiment, file, alt, caption } = Astro.props;
-const entry = findChart(experiment, file);
+const { question, file, alt, caption } = Astro.props;
+const entry = findChart(question, file);
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 ---
 
 <figure class="chart">
-  <img src={chartSrc(experiment, file)} alt={alt} loading="lazy" />
+  <img src={chartSrc(question, file)} alt={alt} loading="lazy" />
   {caption && <figcaption>{caption}</figcaption>}
   <details>
     <summary>Numbers behind this chart</summary>

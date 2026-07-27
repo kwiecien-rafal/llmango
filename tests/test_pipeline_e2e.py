@@ -6,13 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from llmango.aggregate import aggregate_experiment
+from llmango.aggregate import aggregate_question
 from llmango.backends.base import GenerationBackend
-from llmango.charts import analyze_experiment
-from llmango.normalize import normalize_experiment
+from llmango.charts import analyze_question
+from llmango.normalize import normalize_question
 from llmango.runner import run
 from llmango.storage import read_results
 
+_QUESTION = "001a"
 _FOLDER = "001_fruit"
 
 _ANSWERS = {
@@ -33,17 +34,17 @@ def pipeline(data_dirs: Path) -> Path:
     return data_dirs
 
 
-def _aggregate(tmp_path: Path, name: str) -> dict[str, dict[str, object]]:
-    path = tmp_path / "aggregated" / _FOLDER / name
+def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
+    path = tmp_path / "aggregated" / f"{_QUESTION}.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload["questions"]["001a"]["en"]
+    return payload["distributions"]["en"]
 
 
 def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., GenerationBackend]
 ) -> None:
     run_outcome = run(
-        "001a",
+        _QUESTION,
         make_fake_backend(_ANSWERS),
         samples=4,
         languages=["en", "pl"],
@@ -58,14 +59,14 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         cost is not None and cost > 0 for cost in raw["total_cost_usd"].to_list()
     )
 
-    normalize_outcome = normalize_experiment("001a")
+    normalize_outcome = normalize_question(_QUESTION)
     assert normalize_outcome.rows == 8
     assert normalize_outcome.distinct == 7
     assert normalize_outcome.llm_calls == 0
 
-    aggregate_experiment("001a")
+    aggregate_question(_QUESTION)
 
-    distributions = _aggregate(pipeline, "distributions.json")
+    distributions = _aggregate(pipeline)
 
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
@@ -76,13 +77,11 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         assert sum(counts.values()) == distribution["n"]
         assert distribution["n"] == 3
 
-    analyze_outcome = analyze_experiment("001a")
+    analyze_outcome = analyze_question(_QUESTION)
 
-    assert [chart.file for chart in analyze_outcome.charts] == [
-        "001a__distribution.svg",
-    ]
-    charts = pipeline / "charts" / _FOLDER
-    assert (charts / "001a__distribution.svg").read_text(encoding="utf-8").count("<svg")
+    assert [chart.file for chart in analyze_outcome.charts] == ["distribution.svg"]
+    charts = pipeline / "charts" / _QUESTION
+    assert (charts / "distribution.svg").read_text(encoding="utf-8").count("<svg")
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
     distribution = index["charts"][0]
     assert distribution["columns"] == ["en", "pl"]

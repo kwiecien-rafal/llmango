@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import typer
 
-from llmango.aggregate import AggregateOutcome, aggregate_experiment
+from llmango.aggregate import AggregateOutcome, aggregate_question
 from llmango.backends.openai_backend import OpenAIBackend
 from llmango.backends.openai_batch import OpenAIBatchBackend
-from llmango.normalize import NormalizeOutcome, normalize_experiment
+from llmango.experiments import spec_for
+from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.questions import load_question
 from llmango.runner import RunOutcome, RunPlan, fetch_batch, plan_run, submit_batch
 from llmango.runner import run as run_experiment
@@ -122,7 +123,7 @@ def normalize(
 ) -> None:
     """Map raw answers to canonical categories and write a normalized Parquet file."""
     try:
-        outcome = normalize_experiment(
+        outcome = normalize_question(
             question,
             make_backend=OpenAIBackend,
             model=model,
@@ -136,9 +137,10 @@ def normalize(
 
 @app.command()
 def aggregate(question: QuestionArgument = "001a") -> None:
-    """Aggregate normalized answers into the committed JSON the charts read."""
+    """Aggregate one question's normalized answers into the JSON the charts read."""
+    _check_question(question)
     try:
-        outcome = aggregate_experiment(question)
+        outcome = aggregate_question(question)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     _report_aggregate(outcome)
@@ -146,11 +148,12 @@ def aggregate(question: QuestionArgument = "001a") -> None:
 
 @app.command()
 def analyze(question: QuestionArgument = "001a") -> None:
-    """Draw the charts the site embeds from an experiment's aggregates."""
-    from llmango.charts import analyze_experiment
+    """Draw the charts the site embeds from one question's aggregates."""
+    from llmango.charts import analyze_question
 
+    _check_question(question)
     try:
-        outcome = analyze_experiment(question)
+        outcome = analyze_question(question)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     _report_analyze(outcome)
@@ -184,6 +187,19 @@ def _resolve_samples(
             f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
         )
     return count
+
+
+def _check_question(question: str) -> None:
+    """Reject an id no experiment declares, listing the ones that exist.
+
+    Aggregate and analyze read a question's own files and never need its spec, so
+    without this they would report a missing file for a question that was never a
+    question at all.
+    """
+    try:
+        spec_for(question)
+    except ValueError as error:
+        _die(str(error))
 
 
 def _die(message: str) -> NoReturn:
@@ -255,16 +271,13 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
 
 
 def _report_aggregate(outcome: AggregateOutcome) -> None:
-    typer.echo(f"Wrote {len(outcome.paths)} aggregate files:")
-    for path in outcome.paths:
-        typer.echo(f"  {path}")
+    typer.echo(f"Aggregate: {outcome.path}")
 
 
 def _report_analyze(outcome: "AnalyzeOutcome") -> None:
-    typer.echo(f"Drew {len(outcome.charts)} charts:")
+    typer.echo(f"Drew {len(outcome.charts)} charts for {outcome.question_id}:")
     for chart in outcome.charts:
-        subject = chart.question_id or outcome.experiment_id
-        typer.echo(f"  {chart.file}  {subject} {chart.metric}, {len(chart.arms)} arms")
+        typer.echo(f"  {chart.file}  {chart.metric}, {len(chart.arms)} arms")
     typer.echo(f"Index: {outcome.index_path}")
 
 

@@ -1,13 +1,15 @@
 """Post-hoc normalization of free-text answers to canonical categories.
 
-Takes a question id and runs across the experiment that owns it: reads the raw
-answers of every question it groups and maps each onto a canonical English
-category in layers, cheapest first. The
-experiment's own mapping seed resolves every answer it already has a label for;
-leftover strings (off-list or free-text) fall through to the mapping file and
-then an LLM. The answer column is never overwritten, so normalization can be
-re-run with better methods without regenerating anything. Every LLM result is
-cached and promoted, so reruns never pay for the same string twice.
+Takes a question id, reads that question's raw answers and maps each onto a
+canonical English category in layers, cheapest first. The experiment's own
+mapping seed resolves every answer it already has a label for; leftover strings
+(off-list or free-text) fall through to the mapping file and then an LLM. The
+answer column is never overwritten, so normalization can be re-run with better
+methods without regenerating anything.
+
+The mapping file and the LLM cache stay experiment-wide, in the folder the spec
+names, so a string one question paid to resolve is free for every sibling
+question that ever sees it again.
 
 The canonical, is_valid and multiple columns are the pipeline's own words for
 what normalization decides, so they are spelled the same way in the resolution,
@@ -78,7 +80,7 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
     return text
 
 
-def normalize_experiment(
+def normalize_question(
     question_id: str,
     *,
     make_backend: Callable[[], GenerationBackend] | None = None,
@@ -86,22 +88,23 @@ def normalize_experiment(
     max_llm_calls: int | None = None,
     dry_run: bool = False,
 ) -> NormalizeOutcome:
-    """Add canonical categories to an experiment's raw answers and write them out.
+    """Add canonical categories to one question's raw answers and write them out.
 
-    Takes a question id and normalizes the experiment that owns it, reading every
-    sibling question's raw results, resolving each distinct answer per language
-    through the deterministic layers and then the LLM for the rest, and writing a
-    normalized Parquet file that leaves the raw answers untouched. The backend is
-    built lazily, so a run resolved entirely offline needs no API key. A dry run
-    stops after the offline layers and reports how many answers the LLM would
-    resolve, without calling it or writing anything.
+    Reads every raw run of the question, resolves each distinct answer per
+    language through the deterministic layers and then the LLM for the rest, and
+    writes a normalized Parquet file that leaves the raw answers untouched. The
+    backend is built lazily, so a run resolved entirely offline needs no API key.
+    A dry run stops after the offline layers and reports how many answers the LLM
+    would resolve, without calling it or writing anything.
     """
     spec = spec_for(question_id)
     normalization_schema = spec.normalization_schema
     if normalization_schema is None:
         raise ValueError(f"Experiment {spec.folder} has no normalization schema.")
 
-    frame = _read_experiment_raw(spec)
+    frame = read_results(f"{question_id}__*.parquet")
+    if frame.is_empty():
+        raise FileNotFoundError(f"No raw results to normalize for {question_id}.")
 
     directory = MAPPINGS_DIR / spec.folder
     mapping = _load_mapping(directory, spec)
@@ -141,25 +144,13 @@ def normalize_experiment(
         _require_all_resolved(unresolved, resolutions)
 
     normalized = _join_resolutions(frame, resolutions, spec)
-    parquet_path = write_normalized(normalized, spec.folder)
+    parquet_path = write_normalized(normalized, question_id)
     return NormalizeOutcome(
         parquet_path=parquet_path,
         rows=frame.height,
         distinct=len(pairs),
         llm_calls=len(unresolved),
     )
-
-
-def _read_experiment_raw(spec: ExperimentSpec) -> pl.DataFrame:
-    """Read and concatenate every question's raw results for an experiment."""
-    frames = [
-        frame
-        for question_id in spec.questions
-        if not (frame := read_results(f"{question_id}__*.parquet")).is_empty()
-    ]
-    if not frames:
-        raise FileNotFoundError(f"No raw results to normalize for {spec.folder}.")
-    return pl.concat(frames)
 
 
 def _distinct_pairs(frame: pl.DataFrame) -> list[tuple[str, str]]:

@@ -1,6 +1,6 @@
 ---
 import Article from "../layouts/Article.astro";
-import { experiments } from "../data/charts";
+import { questions } from "../data/charts";
 ---
 
 <Article
@@ -31,7 +31,7 @@ import { experiments } from "../data/charts";
   </ul>
 
   <p class="meta">
-    {experiments.length} experiment{experiments.length === 1 ? "" : "s"} charted.
+    {questions.length} question{questions.length === 1 ? "" : "s"} charted.
     Raw responses ship as an open dataset; aggregates and charts are committed to
     the repository.
   </p>

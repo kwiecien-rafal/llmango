@@ -1,11 +1,11 @@
 """Aggregate normalized answers into the small JSON the chart step reads.
 
-Takes a question id, reads the normalized Parquet of the experiment that owns it
-and, per question and schema variant and language, computes the distribution over
-canonical categories. It is written as a compact JSON file under
-data/aggregated/<folder>/, nested question ->
-schema_variant -> language. The share that fell into 'other' is reported
-alongside the distribution as a first-class number, not hidden.
+Takes a question id, reads that question's normalized Parquet and, per schema
+variant and language, computes the distribution over canonical categories. It is
+written as one compact JSON file, data/aggregated/<question_id>.json, nested
+schema_variant -> language, so the question is the file name rather than a level
+inside it. The share that fell into 'other' is reported alongside the
+distribution as a first-class number, not hidden.
 
 Answers that named no category, whether the call errored or the model declined,
 are simply absent from the distribution. Their share is not measured here.
@@ -20,7 +20,6 @@ from pathlib import Path
 import polars as pl
 
 from llmango.config import AGG_DIR
-from llmango.experiments import spec_for
 from llmango.spec import OTHER_CATEGORY
 from llmango.storage import normalized_path, read_normalized
 
@@ -29,7 +28,6 @@ from llmango.storage import normalized_path, read_normalized
 class Answer:
     """One normalized answer, reduced to the fields aggregation needs."""
 
-    question_id: str
     schema_variant: str
     lang: str
     canonical: str
@@ -38,58 +36,47 @@ class Answer:
 
 @dataclass(frozen=True)
 class AggregateOutcome:
-    """The aggregated JSON files one aggregation run wrote."""
+    """The aggregated JSON file one aggregation run wrote."""
 
-    paths: list[Path]
+    path: Path
 
 
 Head = dict[str, list[Answer]]
 Metric = Callable[[Head], Mapping[str, object]]
 
 
-def aggregate_experiment(question_id: str) -> AggregateOutcome:
-    """Aggregate an experiment's normalized answers into the committed JSON files."""
-    folder = spec_for(question_id).folder
-    if not normalized_path(folder).is_file():
+def aggregate_question(question_id: str) -> AggregateOutcome:
+    """Aggregate one question's normalized answers into its committed JSON file."""
+    if not normalized_path(question_id).is_file():
         raise FileNotFoundError(
-            f"No normalized parquet for {folder}. Run 'llmango normalize' first."
+            f"No normalized parquet for {question_id}. Run 'llmango normalize' first."
         )
-    frame = read_normalized(folder)
+    frame = read_normalized(question_id)
     if frame.is_empty():
-        raise ValueError(f"Normalized results for {folder} contain no rows.")
+        raise ValueError(f"Normalized results for {question_id} contain no rows.")
 
     heads = _group_heads(_answers(frame))
     distributions = _nest(
         heads,
         lambda head: {lang: _distribution(subset) for lang, subset in head.items()},
     )
-    return AggregateOutcome(
-        paths=[_write_json(folder, "distributions.json", distributions)]
-    )
+    return AggregateOutcome(path=_write_aggregate(question_id, distributions))
 
 
 def _answers(frame: pl.DataFrame) -> list[Answer]:
     """Reduce the normalized frame to the answer records aggregation reads."""
     columns = {
         name: frame.get_column(name).to_list()
-        for name in (
-            "question_id",
-            "schema_variant",
-            "lang",
-            "canonical",
-            "is_valid",
-        )
+        for name in ("schema_variant", "lang", "canonical", "is_valid")
     }
     return [
         Answer(
-            question_id=str(question_id),
             schema_variant=str(schema_variant),
             lang=str(lang),
             canonical=_text(canonical),
             is_valid=bool(valid),
         )
-        for question_id, schema_variant, lang, canonical, valid in zip(
-            columns["question_id"],
+        for schema_variant, lang, canonical, valid in zip(
             columns["schema_variant"],
             columns["lang"],
             columns["canonical"],
@@ -104,21 +91,18 @@ def _text(value: object) -> str:
     return "" if value is None else str(value)
 
 
-def _group_heads(answers: list[Answer]) -> dict[tuple[str, str], Head]:
-    """Group answers by (question_id, schema_variant), then by language."""
-    heads: dict[tuple[str, str], Head] = {}
+def _group_heads(answers: list[Answer]) -> dict[str, Head]:
+    """Group answers by schema variant, then by language."""
+    heads: dict[str, Head] = {}
     for answer in answers:
-        head = heads.setdefault((answer.question_id, answer.schema_variant), {})
+        head = heads.setdefault(answer.schema_variant, {})
         head.setdefault(answer.lang, []).append(answer)
     return {key: heads[key] for key in sorted(heads)}
 
 
-def _nest(heads: dict[tuple[str, str], Head], metric: Metric) -> Mapping[str, object]:
-    """Apply a metric to each head, nested question -> schema_variant -> language."""
-    nested: dict[str, dict[str, object]] = {}
-    for (question_id, schema_variant), head in heads.items():
-        nested.setdefault(question_id, {})[schema_variant] = dict(metric(head))
-    return nested
+def _nest(heads: dict[str, Head], metric: Metric) -> Mapping[str, object]:
+    """Apply a metric to each head, nested schema_variant -> language."""
+    return {variant: dict(metric(head)) for variant, head in heads.items()}
 
 
 def _distribution(answers: list[Answer]) -> dict[str, object]:
@@ -137,12 +121,11 @@ def _rate(part: int, whole: int) -> float:
     return round(part / whole, 4) if whole else 0.0
 
 
-def _write_json(folder: str, name: str, payload: Mapping[str, object]) -> Path:
-    """Write one metric to data/aggregated/<folder>/<name> and return it."""
-    directory = AGG_DIR / folder
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / name
-    body = {"experiment_id": folder, "questions": payload}
+def _write_aggregate(question_id: str, distributions: Mapping[str, object]) -> Path:
+    """Write one question's numbers to data/aggregated/<question_id>.json."""
+    AGG_DIR.mkdir(parents=True, exist_ok=True)
+    path = AGG_DIR / f"{question_id}.json"
+    body = {"question_id": question_id, "distributions": distributions}
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

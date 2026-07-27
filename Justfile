@@ -9,12 +9,9 @@ default:
     @just --list
 
 # Generate raw responses for a question: `just run 001a --smoke`.
+# Submit through the OpenAI Batch API with `just run 001a --batch`.
 run question *args:
     uv run llmango run {{ question }} {{ args }}
-
-# Submit a question's run via the OpenAI Batch API.
-batch question *args:
-    uv run llmango run {{ question }} --batch {{ args }}
 
 # Fetch a previously submitted batch by run id.
 batch-fetch run_id:

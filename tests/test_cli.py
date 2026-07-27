@@ -45,9 +45,12 @@ def test_dry_run_names_the_schema_behind_each_variant(data_dirs: Path) -> None:
     assert "schema:    none (free text)" in result.output
 
 
-def test_an_experiment_reference_is_not_a_question(data_dirs: Path) -> None:
+@pytest.mark.parametrize("command", ["normalize", "aggregate", "analyze"])
+def test_an_experiment_reference_is_not_a_question(
+    data_dirs: Path, command: str
+) -> None:
     """Only a question id resolves, and the error says which ones exist."""
-    result = runner.invoke(app, ["normalize", "001"])
+    result = runner.invoke(app, [command, "001"])
 
     assert result.exit_code == 1
     assert "Unknown question: '001'" in result.output

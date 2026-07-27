@@ -1,10 +1,9 @@
-"""Draw an experiment's aggregates as the SVG charts the site embeds.
+"""Draw a question's aggregates as the SVG charts the site embeds.
 
-Takes a question id, reads the committed JSON under data/aggregated/<folder>/ of
-the experiment that owns it, and writes one SVG per chart into
-site/public/charts/<folder>/, which Astro serves verbatim, alongside an index
-carrying the numbers behind every chart so the site can render a table beside
-each image.
+Takes a question id, reads the committed data/aggregated/<question_id>.json, and
+writes one SVG per chart into site/public/charts/<question_id>/, which Astro
+serves verbatim, alongside an index carrying the numbers behind every chart so
+the site can render a table beside each image.
 
 matplotlib draws the finished artwork here, so a chart is defined exactly once
 and the file opened locally is the file the site ships. The background is
@@ -38,10 +37,9 @@ from matplotlib.ticker import FixedLocator, PercentFormatter
 from matplotlib.typing import RcKeyType
 
 from llmango.config import AGG_DIR, CHARTS_DIR
-from llmango.experiments import spec_for
 from llmango.spec import FREE_TEXT_VARIANT, OTHER_CATEGORY
 
-_DISTRIBUTIONS = "distributions.json"
+_DISTRIBUTION = "distribution.svg"
 _INDEX = "index.json"
 
 _ARM_COLORS = ("#3987e5", "#d95926", "#199e70")
@@ -115,49 +113,38 @@ class Chart:
 class AnalyzeOutcome:
     """The charts and the index one analysis run wrote."""
 
-    experiment_id: str
+    question_id: str
     charts: list[Chart]
     index_path: Path
 
 
-def analyze_experiment(question_id: str) -> AnalyzeOutcome:
-    """Draw an experiment's charts from its aggregates into site/public/charts.
-
-    Takes a question id and draws the experiment that owns it. The distribution
-    chart is per question, since each question asks its own thing.
-    """
-    folder = spec_for(question_id).folder
-    distributions = _load(folder, _DISTRIBUTIONS)
-    if distributions is None:
+def analyze_question(question_id: str) -> AnalyzeOutcome:
+    """Draw one question's charts from its aggregates into site/public/charts."""
+    arms = _load(question_id)
+    if arms is None:
         raise FileNotFoundError(
-            f"No aggregates for {folder}. Run 'llmango aggregate' first."
+            f"No aggregates for {question_id}. Run 'llmango aggregate' first."
         )
 
-    charts = [
-        _write_distribution(folder, question, arms)
-        for question, arms in distributions.items()
-    ]
+    charts = [_write_distribution(question_id, arms)]
     return AnalyzeOutcome(
-        experiment_id=folder,
+        question_id=question_id,
         charts=charts,
-        index_path=_write_index(folder, charts),
+        index_path=_write_index(question_id, charts),
     )
 
 
-def _load(folder: str, name: str) -> dict[str, dict[Arm, Cell]] | None:
-    """Read one aggregate file as question -> arm -> numbers, or None if absent."""
-    path = AGG_DIR / folder / name
+def _load(question_id: str) -> dict[Arm, Cell] | None:
+    """Read a question's aggregates as arm -> numbers, or None if absent."""
+    path = AGG_DIR / f"{question_id}.json"
     if not path.is_file():
         return None
     payload: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
-    questions = cast(dict[str, dict[str, dict[str, Cell]]], payload["questions"])
+    distributions = cast(dict[str, dict[str, Cell]], payload["distributions"])
     return {
-        question_id: {
-            Arm(schema_variant=schema_variant, lang=lang): cell
-            for schema_variant, langs in sorted(variants.items())
-            for lang, cell in sorted(langs.items())
-        }
-        for question_id, variants in sorted(questions.items())
+        Arm(schema_variant=schema_variant, lang=lang): cell
+        for schema_variant, langs in sorted(distributions.items())
+        for lang, cell in sorted(langs.items())
     }
 
 
@@ -469,18 +456,17 @@ def _distribution_figure(
     return figure, rows
 
 
-def _write_distribution(folder: str, question_id: str, arms: dict[Arm, Cell]) -> Chart:
+def _write_distribution(question_id: str, arms: dict[Arm, Cell]) -> Chart:
     """Draw one question's distribution and describe it for the index."""
     labels = _labels(list(arms))
     title = _distribution_title(question_id, list(arms), labels)
-    file = f"{question_id}__distribution.svg"
     with matplotlib.rc_context(_STYLE):
         figure, rows = _distribution_figure(arms, labels, title)
-        _write_svg(folder, file, figure)
+        _write_svg(question_id, _DISTRIBUTION, figure)
     return Chart(
         metric="distribution",
         question_id=question_id,
-        file=file,
+        file=_DISTRIBUTION,
         title=title,
         row_label="category",
         arms=labels,
@@ -489,36 +475,36 @@ def _write_distribution(folder: str, question_id: str, arms: dict[Arm, Cell]) ->
     )
 
 
-def _write_index(folder: str, charts: list[Chart]) -> Path:
+def _write_index(question_id: str, charts: list[Chart]) -> Path:
     """Write the index the site reads for its chart list and its table views.
 
     The Chart dataclass is serialized wholesale, so a field added to it reaches
     the site instead of being silently dropped from the index.
     """
     body = {
-        "experiment_id": folder,
+        "question_id": question_id,
         "charts": [asdict(chart) for chart in charts],
     }
-    path = _chart_dir(folder) / _INDEX
+    path = _chart_dir(question_id) / _INDEX
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return path
 
 
-def _write_svg(folder: str, name: str, figure: Figure) -> Path:
+def _write_svg(question_id: str, name: str, figure: Figure) -> Path:
     """Save one figure as the transparent, reproducible SVG the site embeds.
 
     The date matplotlib would otherwise stamp into the metadata is dropped, so
     redrawing unchanged aggregates rewrites an identical file instead of a diff.
     """
-    path = _chart_dir(folder) / name
+    path = _chart_dir(question_id) / name
     figure.savefig(path, format="svg", transparent=True, metadata={"Date": None})
     return path
 
 
-def _chart_dir(folder: str) -> Path:
-    """The served directory an experiment's charts are written into."""
-    directory = CHARTS_DIR / folder
+def _chart_dir(question_id: str) -> Path:
+    """The served directory a question's charts are written into."""
+    directory = CHARTS_DIR / question_id
     directory.mkdir(parents=True, exist_ok=True)
     return directory

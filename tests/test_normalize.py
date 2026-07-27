@@ -16,7 +16,7 @@ import pytest
 from llmango import normalize as normalize_module
 from llmango.backends.base import GenerationBackend, GenRequest, GenResult
 from llmango.experiments.fruit import FruitNormalization
-from llmango.normalize import normalize_experiment
+from llmango.normalize import normalize_question
 from llmango.storage import normalized_path, write_results
 
 _QUESTION = "001a"
@@ -31,6 +31,7 @@ def env(data_dirs: Path) -> Path:
 
 
 _RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
+_SIBLING_RUN_ID = "001b__en__20260720T101500Z__c3f9a1"
 
 _SHOWN = '{"fruit_list": ["mango", "apple", "banana"]}'
 
@@ -41,15 +42,17 @@ def _raw_row(
     sample_idx: int = 0,
     prompt_inputs: str = _SHOWN,
     error: str | None = None,
+    question_id: str = _QUESTION,
+    run_id: str = _RUN_ID,
 ) -> dict[str, object]:
     return {
-        "question_id": "001a",
+        "question_id": question_id,
         "lang": lang,
         "schema_variant": "en",
         "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
         "backend": "fake",
-        "run_id": _RUN_ID,
+        "run_id": run_id,
         "sample_idx": sample_idx,
         "seed": 0,
         "temperature": 1.0,
@@ -62,8 +65,8 @@ def _raw_row(
     }
 
 
-def _write_raw(rows: list[dict[str, object]]) -> None:
-    write_results(rows, _RUN_ID, "gpt-5.6-luna")
+def _write_raw(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
+    write_results(rows, run_id, "gpt-5.6-luna")
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
@@ -140,13 +143,13 @@ def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
         ]
     )
 
-    outcome = normalize_experiment(_QUESTION)
+    outcome = normalize_question(_QUESTION)
 
     assert outcome.rows == 5
     assert outcome.distinct == 4
     assert outcome.llm_calls == 0
 
-    frame = pl.read_parquet(normalized_path(_FOLDER))
+    frame = pl.read_parquet(normalized_path(_QUESTION))
     resolved = _resolved(frame)
     assert resolved[("en", "apple")] == "apple"
     assert resolved[("en", "Apple")] == "apple"
@@ -155,12 +158,32 @@ def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
     assert frame["is_valid"].to_list() == [True] * 5
 
 
+def test_only_the_question_asked_for_is_read(env: Path) -> None:
+    """A sibling question's answers belong to its own normalized file, not this one."""
+    _write_raw([_raw_row("en", "apple")])
+    _write_raw(
+        [_raw_row("en", "banana", question_id="001b", run_id=_SIBLING_RUN_ID)],
+        run_id=_SIBLING_RUN_ID,
+    )
+
+    outcome = normalize_question(_QUESTION)
+
+    assert outcome.rows == 1
+    assert pl.read_parquet(normalized_path(_QUESTION))["answer"].to_list() == ["apple"]
+    assert not normalized_path("001b").is_file()
+
+
+def test_a_question_with_no_raw_results_says_so(env: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="No raw results to normalize for 001a"):
+        normalize_question(_QUESTION)
+
+
 def test_a_refusal_names_no_category(env: Path) -> None:
     _write_raw([_raw_row("en", "")])
 
-    outcome = normalize_experiment(_QUESTION)
+    outcome = normalize_question(_QUESTION)
 
-    frame = pl.read_parquet(normalized_path(_FOLDER))
+    frame = pl.read_parquet(normalized_path(_QUESTION))
     assert outcome.llm_calls == 0
     assert frame["is_valid"].to_list() == [False]
     assert frame["canonical"].to_list() == [None]
@@ -170,9 +193,9 @@ def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
     """The pipeline's three columns first, then whatever the experiment appends."""
     _write_raw([_raw_row("en", "apple")])
 
-    normalize_experiment(_QUESTION)
+    normalize_question(_QUESTION)
 
-    columns = pl.read_parquet(normalized_path(_FOLDER)).columns
+    columns = pl.read_parquet(normalized_path(_QUESTION)).columns
     start = columns.index("answer")
     assert columns[start : start + 5] == [
         "answer",
@@ -190,9 +213,9 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
     )
     _write_raw([_raw_row("en", "kiwi")])
 
-    outcome = normalize_experiment(_QUESTION, make_backend=ExplodingBackend)
+    outcome = normalize_question(_QUESTION, make_backend=ExplodingBackend)
 
-    frame = pl.read_parquet(normalized_path(_FOLDER))
+    frame = pl.read_parquet(normalized_path(_QUESTION))
     assert outcome.llm_calls == 0
     assert frame["canonical"].to_list() == ["kiwi"]
 
@@ -204,14 +227,14 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
 
-    outcome = normalize_experiment(
+    outcome = normalize_question(
         _QUESTION, make_backend=lambda: backend, model="gpt-5.6-luna"
     )
 
     assert outcome.llm_calls == 1
     assert backend.calls == 1
 
-    frame = pl.read_parquet(normalized_path(_FOLDER))
+    frame = pl.read_parquet(normalized_path(_QUESTION))
     assert frame["canonical"].to_list() == ["banana"]
     assert frame["multiple"].to_list() == [True]
     assert frame["answer"].to_list() == ["banana and apple"]
@@ -230,11 +253,11 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) 
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
 
     with pytest.raises(ValueError, match="unparsed"):
-        normalize_experiment(
+        normalize_question(
             _QUESTION, make_backend=lambda: backend, model="gpt-5.6-luna"
         )
 
-    assert not normalized_path(_FOLDER).is_file()
+    assert not normalized_path(_QUESTION).is_file()
     cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8"))
     assert "starfruit" in cache["en"]
@@ -244,10 +267,10 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) 
 def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
     _write_raw([_raw_row("en", "apple!"), _raw_row("en", "  Apple.  ", sample_idx=1)])
 
-    outcome = normalize_experiment(_QUESTION)
+    outcome = normalize_question(_QUESTION)
 
     assert outcome.llm_calls == 0
-    frame = pl.read_parquet(normalized_path(_FOLDER))
+    frame = pl.read_parquet(normalized_path(_QUESTION))
     assert frame["canonical"].to_list() == ["apple", "apple"]
 
 
@@ -255,7 +278,7 @@ def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
     _write_raw([_raw_row("en", "starfruit")])
 
     with pytest.raises(ValueError, match="smoke limit"):
-        normalize_experiment(_QUESTION, make_backend=ExplodingBackend, max_llm_calls=0)
+        normalize_question(_QUESTION, make_backend=ExplodingBackend, max_llm_calls=0)
 
 
 def test_mapping_values_must_be_canonical(env: Path) -> None:
@@ -265,18 +288,16 @@ def test_mapping_values_must_be_canonical(env: Path) -> None:
     _write_raw([_raw_row("en", "apple")])
 
     with pytest.raises(ValueError, match="canonical set"):
-        normalize_experiment(_QUESTION)
+        normalize_question(_QUESTION)
 
 
 def test_dry_run_counts_llm_work_without_calling_or_writing(env: Path) -> None:
     _write_raw([_raw_row("en", "apple"), _raw_row("en", "starfruit", sample_idx=1)])
 
-    outcome = normalize_experiment(
-        _QUESTION, make_backend=ExplodingBackend, dry_run=True
-    )
+    outcome = normalize_question(_QUESTION, make_backend=ExplodingBackend, dry_run=True)
 
     assert outcome.parquet_path is None
     assert outcome.rows == 2
     assert outcome.distinct == 2
     assert outcome.llm_calls == 1
-    assert not normalized_path(_FOLDER).is_file()
+    assert not normalized_path(_QUESTION).is_file()

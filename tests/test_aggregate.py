@@ -6,11 +6,10 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from llmango.aggregate import aggregate_experiment
+from llmango.aggregate import aggregate_question
 from llmango.storage import write_normalized
 
 _QUESTION = "001a"
-_FOLDER = "001_fruit"
 
 
 @pytest.fixture
@@ -48,15 +47,14 @@ def _write_normalized(rows: list[dict[str, object]]) -> None:
         "multiple": pl.Boolean(),
         "error": pl.String(),
     }
-    write_normalized(pl.DataFrame(rows, schema=schema), _FOLDER)
+    write_normalized(pl.DataFrame(rows, schema=schema), _QUESTION)
 
 
-def _read_langs(
-    tmp_path: Path, name: str, schema_variant: str = "en"
-) -> dict[str, object]:
-    path = tmp_path / "aggregated" / _FOLDER / name
+def _read_langs(tmp_path: Path, schema_variant: str = "en") -> dict[str, object]:
+    path = tmp_path / "aggregated" / f"{_QUESTION}.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload["questions"]["001a"][schema_variant]
+    assert payload["question_id"] == _QUESTION
+    return payload["distributions"][schema_variant]
 
 
 @pytest.fixture
@@ -71,12 +69,12 @@ def aggregated(env: Path) -> Path:
             _row("pl", "coś dziwnego", "other", True),
         ]
     )
-    aggregate_experiment(_QUESTION)
+    aggregate_question(_QUESTION)
     return env
 
 
 def test_distributions_count_valid_answers_and_report_other(aggregated: Path) -> None:
-    languages = _read_langs(aggregated, "distributions.json")
+    languages = _read_langs(aggregated)
 
     assert languages["en"] == {
         "n": 2,
@@ -102,9 +100,9 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
         ]
     )
 
-    aggregate_experiment(_QUESTION)
+    aggregate_question(_QUESTION)
 
-    distribution = _read_langs(env, "distributions.json")
+    distribution = _read_langs(env)
     assert distribution["en"] == {
         "n": 1,
         "counts": {"apple": 1},
@@ -114,11 +112,11 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
 
 def test_missing_normalized_parquet_raises(env: Path) -> None:
     with pytest.raises(FileNotFoundError, match="No normalized parquet"):
-        aggregate_experiment(_QUESTION)
+        aggregate_question(_QUESTION)
 
 
 def test_empty_normalized_parquet_raises(env: Path) -> None:
     _write_normalized([])
 
     with pytest.raises(ValueError, match="no rows"):
-        aggregate_experiment(_QUESTION)
+        aggregate_question(_QUESTION)

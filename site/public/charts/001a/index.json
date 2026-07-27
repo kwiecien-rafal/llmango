@@ -1,10 +1,10 @@
 {
-  "experiment_id": "001_fruit",
+  "question_id": "001a",
   "charts": [
     {
       "metric": "distribution",
       "question_id": "001a",
-      "file": "001a__distribution.svg",
+      "file": "distribution.svg",
       "title": "001a: answer distribution by language",
       "row_label": "category",
       "arms": [

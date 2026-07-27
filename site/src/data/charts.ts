@@ -30,7 +30,7 @@ export type Chart = {
 };
 
 export type ChartIndex = {
-  experiment_id: string;
+  question_id: string;
   charts: Chart[];
 };
 
@@ -39,28 +39,28 @@ const modules = import.meta.glob<ChartIndex>("../../public/charts/*/index.json",
   import: "default",
 });
 
-export const experiments: ChartIndex[] = Object.values(modules).sort((a, b) =>
-  a.experiment_id.localeCompare(b.experiment_id),
+export const questions: ChartIndex[] = Object.values(modules).sort((a, b) =>
+  a.question_id.localeCompare(b.question_id),
 );
 
-export function experiment(id: string): ChartIndex {
-  const found = experiments.find((entry) => entry.experiment_id === id);
+export function question(id: string): ChartIndex {
+  const found = questions.find((entry) => entry.question_id === id);
   if (!found) {
-    throw new Error(`No charts for experiment ${id}. Run 'llmango analyze' first.`);
+    throw new Error(`No charts for question ${id}. Run 'llmango analyze' first.`);
   }
   return found;
 }
 
-export function chart(experimentId: string, file: string): Chart {
-  const found = experiment(experimentId).charts.find((entry) => entry.file === file);
+export function chart(questionId: string, file: string): Chart {
+  const found = question(questionId).charts.find((entry) => entry.file === file);
   if (!found) {
-    throw new Error(`No chart ${file} in experiment ${experimentId}.`);
+    throw new Error(`No chart ${file} for question ${questionId}.`);
   }
   return found;
 }
 
-export function chartSrc(experimentId: string, file: string): string {
-  return `/charts/${experimentId}/${file}`;
+export function chartSrc(questionId: string, file: string): string {
+  return `/charts/${questionId}/${file}`;
 }
 
 /** Everything in a cell beyond the plotted share, such as the error count. */
