@@ -194,6 +194,24 @@ def test_generate_free_text_sends_no_response_format(
     assert "response_format" not in client.calls[0]
 
 
+def test_generate_stores_the_verbatim_response_body(
+    make_openai_client: FakeClientFactory,
+) -> None:
+    """The envelope is the body the provider returned, not a re-serialization of
+    the SDK model, so the sync and batch transports record the same shape."""
+    parsed = FruitChoice(fruit="mango")
+    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
+    backend = OpenAIBackend(client=cast(OpenAI, client))
+
+    result = backend.generate(_request())
+
+    assert result.response_envelope is not None
+    body = json.loads(result.response_envelope)
+    assert body["id"] == "chatcmpl-fake"
+    assert body["choices"][0]["message"]["content"] == parsed.model_dump_json()
+    assert "parsed" not in body["choices"][0]["message"]
+
+
 def test_resolve_model_snapshot_reads_the_client(
     make_openai_client: FakeClientFactory,
 ) -> None:

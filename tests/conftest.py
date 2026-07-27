@@ -57,14 +57,32 @@ class FakeCompletion:
     created: int = 1_700_000_000
     usage: FakeUsage | None = None
 
-    def model_dump_json(self) -> str:
+    def response_body(self) -> str:
+        """The verbatim body a provider returns, which raw.text yields.
+
+        It carries no parsed field, because the provider sends none: parsing is
+        the SDK's, and the envelope records only what came back over the wire.
+        """
+        choice = self.choices[0]
         return json.dumps(
             {
                 "id": self.id,
+                "object": "chat.completion",
+                "created": self.created,
                 "model": self.model,
                 "system_fingerprint": self.system_fingerprint,
                 "service_tier": self.service_tier,
-                "created": self.created,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": choice.finish_reason,
+                        "message": {
+                            "role": "assistant",
+                            "content": choice.message.content,
+                            "refusal": choice.message.refusal,
+                        },
+                    }
+                ],
             }
         )
 
@@ -75,17 +93,41 @@ class FakeModelInfo:
 
 
 @dataclass
+class FakeRawResponse:
+    """The raw-response wrapper, holding both the body text and the parsed model."""
+
+    completion: FakeCompletion
+
+    @property
+    def text(self) -> str:
+        return self.completion.response_body()
+
+    def parse(self) -> FakeCompletion:
+        return self.completion
+
+
+@dataclass
+class FakeRawCompletions:
+    completion: FakeCompletion
+    calls: list[dict[str, object]]
+
+    def parse(self, **kwargs: object) -> FakeRawResponse:
+        self.calls.append(kwargs)
+        return FakeRawResponse(completion=self.completion)
+
+    def create(self, **kwargs: object) -> FakeRawResponse:
+        self.calls.append(kwargs)
+        return FakeRawResponse(completion=self.completion)
+
+
+@dataclass
 class FakeCompletions:
     completion: FakeCompletion
     calls: list[dict[str, object]]
 
-    def parse(self, **kwargs: object) -> FakeCompletion:
-        self.calls.append(kwargs)
-        return self.completion
-
-    def create(self, **kwargs: object) -> FakeCompletion:
-        self.calls.append(kwargs)
-        return self.completion
+    @property
+    def with_raw_response(self) -> FakeRawCompletions:
+        return FakeRawCompletions(completion=self.completion, calls=self.calls)
 
 
 @dataclass

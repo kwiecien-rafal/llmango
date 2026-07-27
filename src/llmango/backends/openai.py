@@ -1,14 +1,4 @@
-"""The OpenAI provider, in both of its transports.
-
-One provider reached two ways: the synchronous chat-completions API and the
-Batch API. The batch flag picks which, swapping generate_many for submit and
-fetch. Both build their request body with the same function in this one file, so
-the JSONL a batch uploads and the call a sync run makes cannot drift apart.
-
-The API key is read here rather than in a shared module, so a stage that only
-wants a repo path never imports the code that reads a secret. The key is never
-printed or logged.
-"""
+"""The OpenAI provider module."""
 
 import json
 import os
@@ -254,16 +244,7 @@ def _parse_line(line: _BatchLine, request: GenRequest) -> GenResult:
 
 
 class OpenAIBackend(Backend):
-    """The OpenAI provider, synchronous by default and batched on request.
-
-    Synchronously, each request is one structured-outputs parse call. Batched,
-    the same request bodies are uploaded as one JSONL job, submitted now and
-    fetched later. The flag decides which of those a run uses and which backend
-    id its manifest records; nothing else about the run changes.
-
-    Transient failures are the SDK's to retry: configure the client passed in
-    rather than wrapping it in a second retry layer here.
-    """
+    """The OpenAI provider, synchronous by default, batched on request."""
 
     def __init__(self, client: OpenAI | None = None, *, batch: bool = False) -> None:
         self._client = client or OpenAI(api_key=require_openai_key())
@@ -273,7 +254,12 @@ class OpenAIBackend(Backend):
         return self._client.models.retrieve(model).id
 
     def generate(self, request: GenRequest) -> GenResult:
-        """Generate one response inline, recording what was sent and returned."""
+        """Generate one response inline, recording what was sent and returned.
+
+        Both calls go through with_raw_response so the response envelope is the
+        body the provider actually returned, the same thing the batch path stores,
+        rather than a re-serialization of the SDK's own model.
+        """
         created_at = datetime.now(UTC)
         envelope = _request_envelope(request)
         messages: list[ChatCompletionMessageParam] = [
@@ -281,7 +267,7 @@ class OpenAIBackend(Backend):
         ]
         try:
             if request.response_schema is not None:
-                completion = self._client.chat.completions.parse(
+                raw = self._client.chat.completions.with_raw_response.parse(
                     model=request.model,
                     messages=messages,
                     response_format=request.response_schema,
@@ -289,16 +275,19 @@ class OpenAIBackend(Backend):
                     top_p=_given(request.sampling.top_p),
                     max_tokens=_given(request.sampling.max_tokens),
                 )
+                completion = raw.parse()
                 parsed = completion.choices[0].message.parsed
             else:
-                completion = self._client.chat.completions.create(
+                raw = self._client.chat.completions.with_raw_response.create(
                     model=request.model,
                     messages=messages,
                     temperature=request.sampling.temperature,
                     top_p=_given(request.sampling.top_p),
                     max_tokens=_given(request.sampling.max_tokens),
                 )
+                completion = raw.parse()
                 parsed = None
+            response_envelope = raw.text
         except Exception as error:
             return GenResult.failed(request, str(error), created_at, envelope)
 
@@ -318,7 +307,7 @@ class OpenAIBackend(Backend):
             service_tier=completion.service_tier,
             provider_created_at=datetime.fromtimestamp(completion.created, UTC),
             request_envelope=envelope,
-            response_envelope=completion.model_dump_json(),
+            response_envelope=response_envelope,
             usage=_usage_from_sdk(completion.usage),
         )
 
