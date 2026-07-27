@@ -120,18 +120,18 @@ def _ordered_columns(columns: Iterable[str]) -> list[str]:
 
 
 def write_results(rows: list[dict[str, object]], run_id: str, model: str) -> Path:
-    """Write result rows to a single Parquet file and return its path."""
+    """Write result rows to a single Parquet file and return its path.
+
+    Every row of a run carries the same columns, so the order is resolved once
+    from the first row rather than rebuilt for each one.
+    """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    ordered = [_reorder(row) for row in rows]
+    columns = _ordered_columns(rows[0]) if rows else []
+    ordered = [{column: row[column] for column in columns} for row in rows]
     frame = pl.DataFrame(ordered, schema_overrides=_SCHEMA_OVERRIDES)
     path = results_path(run_id, model)
     frame.write_parquet(path)
     return path
-
-
-def _reorder(row: dict[str, object]) -> dict[str, object]:
-    """Return the row with its columns in canonical order."""
-    return {column: row[column] for column in _ordered_columns(row.keys())}
 
 
 def read_results(pattern: str = "*.parquet") -> pl.DataFrame:

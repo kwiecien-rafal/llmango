@@ -23,7 +23,9 @@ import string
 import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import get_args
 
 import polars as pl
 import yaml
@@ -390,13 +392,34 @@ def _load_mapping(directory: Path, spec: ExperimentSpec) -> dict[str, str]:
     if path.is_file():
         raw_map: dict[str, str] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         mapping.update((preprocess(key, spec), value) for key, value in raw_map.items())
-    if spec.canonical_values is not None:
-        invalid = sorted(set(mapping.values()) - spec.canonical_values)
+    canonical_values = _canonical_values(spec)
+    if canonical_values is not None:
+        invalid = sorted(set(mapping.values()) - canonical_values)
         if invalid:
             raise ValueError(
                 f"mapping has values outside the canonical set: {', '.join(invalid)}"
             )
     return mapping
+
+
+def _canonical_values(spec: ExperimentSpec) -> frozenset[str] | None:
+    """Read the closed category set off the normalization schema's canonical field.
+
+    The schema the LLM layer fills already declares every category it may return,
+    as an enum, a literal or a union of both. Reading the set from that annotation
+    keeps the mapping file checked against the one declaration the model sees,
+    rather than a second list that could drift away from it.
+    """
+    if spec.normalization_schema is None:
+        return None
+    annotation = spec.normalization_schema.model_fields["canonical"].annotation
+    values: set[str] = set()
+    for member in get_args(annotation) or (annotation,):
+        if isinstance(member, type) and issubclass(member, Enum):
+            values.update(str(entry.value) for entry in member)
+        else:
+            values.update(str(literal) for literal in get_args(member))
+    return frozenset(values)
 
 
 def _seed_mapping(spec: ExperimentSpec) -> dict[str, str]:

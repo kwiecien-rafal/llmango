@@ -9,13 +9,13 @@ from llmango import config as config_module
 from llmango.experiments.fruit import (
     EXPERIMENT_ID,
     FRUIT_LIST,
+    FruitEnum,
     build_input,
     mapping_seed,
     preprocess,
 )
 from llmango.inputs import InputRequest, load_input_sources
 from llmango.questions import list_questions, load_question
-from llmango.registry import get_experiment
 
 _DATA: list[dict[str, Any]] = [
     {"canonical": "apple", "labels": {"en": "apple", "pl": "jabłko"}},
@@ -126,8 +126,7 @@ def test_mapping_seed_covers_every_label_in_every_language() -> None:
     assert seed["apple"] == "apple"
     assert seed["jabłko"] == "apple"
     assert seed["りんご"] == "apple"
-    canonical = get_experiment(EXPERIMENT_ID).canonical_values or set()
-    assert set(seed.values()) <= canonical
+    assert set(seed.values()) <= {member.value for member in FruitEnum}
 
 
 def test_mapping_seed_covers_a_questions_own_fruit_list(prompts_dir: Path) -> None:

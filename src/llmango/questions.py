@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from llmango.config import experiment_dir, question_dir, sha256_text
 from llmango.inputs import InputDeclarations, validate_placeholders
-from llmango.registry import get_experiment, resolve_experiment_id, resolve_schema
+from llmango.registry import get_experiment, resolve_experiment_id
 
 _EXPERIMENT_FILE = "experiment.yaml"
 _META_FILE = "meta.yaml"
@@ -34,10 +34,9 @@ class SamplingParams(BaseModel):
 class ExperimentConfig(BaseModel):
     """Parsed contents of an experiment's experiment.yaml manifest."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     experiment_id: str
-    schema_name: str = Field(alias="schema")
     model: str | None = None
     normalize_model: str | None = None
     sampling: SamplingParams = Field(default_factory=SamplingParams)
@@ -93,12 +92,6 @@ def load_experiment_config(experiment_id: str) -> ExperimentConfig:
         raise ValueError(
             f"experiment.yaml experiment_id '{config.experiment_id}' does not match "
             f"requested '{experiment_id}'"
-        )
-    registered = resolve_schema(experiment_id).__name__
-    if registered != config.schema_name:
-        raise ValueError(
-            f"experiment.yaml schema '{config.schema_name}' does not match registered "
-            f"schema '{registered}'"
         )
     return config
 

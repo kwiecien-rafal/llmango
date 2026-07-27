@@ -9,7 +9,6 @@ never duplicated. The batch path splits this into submit and fetch.
 """
 
 import json
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,7 +37,6 @@ from llmango.pricing import (
     PricingTable,
     compute_cost,
     load_pricing,
-    pricing_version,
     resolve_entry,
     round_usd,
 )
@@ -85,22 +83,6 @@ _TOKEN_FIELDS = (
 _COST_FIELDS = ("input_cost_usd", "output_cost_usd", "total_cost_usd")
 
 
-def _generate_with_retry(
-    backend: GenerationBackend,
-    request: GenRequest,
-    max_retries: int,
-    retry_backoff: float,
-) -> GenResult:
-    """Generate one result, retrying with linear backoff while it errors."""
-    result = backend.generate(request)
-    attempt = 0
-    while result.error is not None and attempt < max_retries:
-        attempt += 1
-        time.sleep(retry_backoff * attempt)
-        result = backend.generate(request)
-    return result
-
-
 def _usage_columns(usage: Usage | None) -> dict[str, object]:
     """Map token usage to its columns, all null when usage is missing."""
     if usage is None:
@@ -125,7 +107,7 @@ def _cost_columns(
         "input_cost_usd": cost.input_cost_usd,
         "output_cost_usd": cost.output_cost_usd,
         "total_cost_usd": cost.total_cost_usd,
-        "pricing_version": pricing_version(pricing_entry),
+        "pricing_version": pricing_entry.last_updated,
     }
 
 
@@ -174,21 +156,12 @@ def _result_to_row(
     }
 
 
-def _int(value: object) -> int:
-    """Read a token count, treating the null of an errored row as zero."""
-    return value if isinstance(value, int) else 0
-
-
-def _float(value: object) -> float:
-    """Read a cost, treating the null of an errored row as zero."""
-    return value if isinstance(value, float) else 0.0
-
-
 def _totals(rows: list[dict[str, object]]) -> UsageTotals:
     """Sum one group of rows into its token and cost totals in a single pass.
 
     Costs are summed from the values written to the parquet, already rounded, so
-    the manifest total and the file it describes cannot disagree.
+    the manifest total and the file it describes cannot disagree. A row that
+    errored or was refused carries null tokens and null cost, which count as zero.
     """
     tokens = dict.fromkeys(_TOKEN_FIELDS, 0)
     costs = dict.fromkeys(_COST_FIELDS, 0.0)
@@ -200,9 +173,11 @@ def _totals(rows: list[dict[str, object]]) -> UsageTotals:
         if row.get("refusal") is not None:
             provider_refusals += 1
         for field in _TOKEN_FIELDS:
-            tokens[field] += _int(row.get(field))
+            count = row.get(field)
+            tokens[field] += count if isinstance(count, int) else 0
         for field in _COST_FIELDS:
-            costs[field] += _float(row.get(field))
+            cost = row.get(field)
+            costs[field] += cost if isinstance(cost, float) else 0.0
     return UsageTotals(
         rows=len(rows),
         errors=errors,
@@ -254,15 +229,15 @@ def _prepare(
 ) -> _PreparedRun:
     """Load the question and build its manifest, ready for the idempotency check.
 
-    An unset schema variant falls back to the experiment's declared default, so
-    no caller has to name an arm that only some experiments happen to have.
+    An unset schema variant falls back to the experiment's first declared variant,
+    so no caller has to name an arm that only some experiments happen to have.
 
     The run id is derived from the finished manifest, since it embeds the
     configuration's content hash, so it is filled in once the rest is known.
     """
     config = load_question(question_ref)
     spec = get_experiment(config.experiment_id)
-    schema_variant = schema_variant or spec.default_variant
+    schema_variant = schema_variant or next(iter(spec.schema_variants))
     variant = spec.variant(schema_variant)
 
     model = model or config.model
@@ -367,9 +342,6 @@ def run(
     seed: int | None = None,
     schema_variant: str | None = None,
     run_id: str | None = None,
-    max_retries: int = 3,
-    retry_backoff: float = 1.0,
-    requests_per_minute: float | None = None,
     pricing_table: PricingTable | None = None,
 ) -> RunOutcome:
     """Generate responses for one question and persist them to Parquet.
@@ -379,7 +351,10 @@ def run(
     If a manifest with the same content hash already exists, the run is skipped
     and nothing is regenerated. The pricing table defaults to the committed
     pricing file and is pinned into the manifest so cost stays reproducible.
-    An unset schema variant uses the experiment's declared default.
+    An unset schema variant uses the experiment's first declared variant.
+
+    Transient failures are the OpenAI SDK's to retry; the client is configured
+    for that rather than wrapped in a second retry layer here.
     """
     prepared = _prepare(
         question,
@@ -400,13 +375,10 @@ def run(
     manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
     pricing_entry = _pin_pricing(manifest, pricing_table)
     variant = prepared.spec.variant(manifest.schema_variant)
-    results = _generate_all(
-        backend,
-        _build_requests(manifest, prepared.spec, prepared.templates, prepared.sources),
-        max_retries,
-        retry_backoff,
-        requests_per_minute,
+    requests = _build_requests(
+        manifest, prepared.spec, prepared.templates, prepared.sources
     )
+    results = [backend.generate(request) for request in requests]
     rows = [
         _result_to_row(
             result,
@@ -638,22 +610,3 @@ def _build_requests(
                 )
             )
     return requests
-
-
-def _generate_all(
-    backend: GenerationBackend,
-    requests: list[GenRequest],
-    max_retries: int,
-    retry_backoff: float,
-    requests_per_minute: float | None,
-) -> list[GenResult]:
-    """Generate every request in order, honoring retries and a rate cap."""
-    interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
-    results: list[GenResult] = []
-    for index, request in enumerate(requests):
-        if interval and index > 0:
-            time.sleep(interval)
-        results.append(
-            _generate_with_retry(backend, request, max_retries, retry_backoff)
-        )
-    return results

@@ -2,13 +2,11 @@
 
 import pytest
 
-from llmango.experiments.fruit import FruitChoice
 from llmango.questions import (
     load_experiment_config,
     load_question,
     load_template,
 )
-from llmango.registry import resolve_schema
 
 EXPERIMENT_ID = "001_fruit"
 
@@ -16,8 +14,8 @@ EXPERIMENT_ID = "001_fruit"
 def test_load_experiment_config_reads_the_manifest() -> None:
     config = load_experiment_config(EXPERIMENT_ID)
     assert config.experiment_id == EXPERIMENT_ID
-    assert config.schema_name == "FruitChoice"
     assert config.model == "gpt-5.6-luna"
+    assert config.normalize_model == "gpt-5.4-mini"
 
 
 def test_load_question_resolves_against_its_experiment() -> None:
@@ -50,12 +48,6 @@ def test_every_declared_language_has_a_template() -> None:
         template = load_template(EXPERIMENT_ID, "001a", lang)
         assert template.lang == lang
         assert "{fruit_list}" in template.text
-
-
-def test_schema_name_resolves_to_the_registered_schema() -> None:
-    config = load_experiment_config(EXPERIMENT_ID)
-    assert resolve_schema(EXPERIMENT_ID) is FruitChoice
-    assert resolve_schema(EXPERIMENT_ID).__name__ == config.schema_name
 
 
 def test_load_question_unknown_raises() -> None:

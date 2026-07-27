@@ -97,8 +97,3 @@ def compute_cost(entry: PricingEntry, usage: Usage, *, batched: bool = False) ->
         output_cost_usd=output_cost,
         total_cost_usd=round_usd(input_cost + output_cost),
     )
-
-
-def pricing_version(entry: PricingEntry) -> str:
-    """The version string tying a computed cost back to a frozen price."""
-    return entry.last_updated

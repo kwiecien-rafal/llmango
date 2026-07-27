@@ -13,6 +13,7 @@ charts agree on them by construction instead of by three matching string
 literals.
 """
 
+import importlib
 import json
 import re
 from collections.abc import Callable
@@ -114,18 +115,6 @@ class ExperimentSpec:
     raw_column: str = "raw"
     canonical_column: str = "canonical"
     valid_column: str = "is_valid"
-    canonical_values: frozenset[str] | None = None
-    default_variant: str = "en"
-
-    @property
-    def response_schema(self) -> type[BaseModel]:
-        """The default variant's response schema, used for name validation."""
-        variant = self.schema_variants[self.default_variant]
-        if variant.schema is None:
-            raise ValueError(
-                f"Experiment {self.experiment_id} has no default response schema."
-            )
-        return variant.schema
 
     def variant(self, schema_variant: str) -> SchemaVariant:
         """Return the registered schema variant a run asked for."""
@@ -161,11 +150,6 @@ def get_experiment(experiment_id: str) -> ExperimentSpec:
         return _REGISTRY[experiment_id]
     except KeyError:
         raise UnknownExperimentError(f"Unknown experiment: {experiment_id}") from None
-
-
-def resolve_schema(experiment_id: str) -> type[BaseModel]:
-    """Return the default response schema class registered for experiment_id."""
-    return get_experiment(experiment_id).response_schema
 
 
 def experiment_number(spec: ExperimentSpec) -> str | None:
@@ -206,6 +190,4 @@ def resolve_experiment_id(ref: str) -> str:
 
 def _ensure_registered() -> None:
     """Import the experiments package so every spec is registered."""
-    from llmango.experiments import ensure_registered
-
-    ensure_registered()
+    importlib.import_module("llmango.experiments")

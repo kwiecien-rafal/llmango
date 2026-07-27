@@ -10,7 +10,6 @@ from llmango.registry import (
     register_experiment,
     resolve_experiment,
     resolve_experiment_id,
-    resolve_schema,
 )
 from llmango.schemas import LLMResponse
 
@@ -30,7 +29,6 @@ def test_register_get_and_resolve() -> None:
     spec = _spec("throwaway")
     register_experiment(spec)
     assert get_experiment("throwaway") is spec
-    assert resolve_schema("throwaway") is ThrowawayResponse
 
 
 def test_register_rejects_duplicate() -> None:

@@ -11,7 +11,6 @@ from llmango.pricing import (
     PricingTable,
     compute_cost,
     load_pricing,
-    pricing_version,
     resolve_entry,
     round_usd,
 )
@@ -103,11 +102,6 @@ def test_compute_cost_defaults_cached_rate_to_input() -> None:
     )
     cost = compute_cost(entry, usage)
     assert cost.input_cost_usd == pytest.approx(1.0)
-
-
-def test_pricing_version_is_the_last_updated_date() -> None:
-    entry = resolve_entry(_table(), "gpt-5.6-luna", None)
-    assert pricing_version(entry) == "2026-07-24"
 
 
 def test_load_pricing_reads_and_validates(tmp_path: Path) -> None:

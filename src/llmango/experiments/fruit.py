@@ -23,7 +23,6 @@ from pydantic import BaseModel
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.registry import (
     FREE_TEXT_VARIANT,
-    OTHER_CATEGORY,
     ExperimentSpec,
     SchemaVariant,
     register_experiment,
@@ -223,7 +222,5 @@ register_experiment(
         raw_column="fruit_raw",
         canonical_column="fruit_canonical",
         valid_column="is_fruit",
-        canonical_values=frozenset(member.value for member in FruitEnum)
-        | {OTHER_CATEGORY},
     )
 )
