@@ -157,7 +157,7 @@ def test_rerun_with_same_config_adds_no_rows(
     assert read_results("*.parquet").height == 2
 
 
-def test_refusals_persist_with_empty_fruit_raw(pricing_table: PricingTable) -> None:
+def test_refusals_persist_with_an_empty_answer(pricing_table: PricingTable) -> None:
     outcome = run(
         "001a",
         RefusingBackend(),
@@ -168,7 +168,7 @@ def test_refusals_persist_with_empty_fruit_raw(pricing_table: PricingTable) -> N
 
     frame = read_results("*.parquet")
     assert outcome.rows_written == 1
-    assert frame["fruit_raw"].to_list() == [""]
+    assert frame["answer"].to_list() == [""]
     assert frame["raw_json"].to_list() == [None]
     assert frame["refusal"].to_list() == ["I can't help with that."]
     assert frame["total_cost_usd"].to_list() == [None]
@@ -212,7 +212,7 @@ def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None
     assert outcome.manifest.schema_sha256 is None
     assert frame["schema_variant"].to_list() == ["none"]
     assert frame["schema_name"].to_list() == [None]
-    assert frame["fruit_raw"].to_list() == ["jabłko"]
+    assert frame["answer"].to_list() == ["jabłko"]
     assert frame["raw_json"].to_list() == ["jabłko"]
 
 
@@ -280,7 +280,7 @@ def test_fetch_batch_writes_the_submitted_results(
     assert fetched.run_id == submitted.run_id
     frame = read_results("*.parquet")
     assert frame.height == 4
-    assert frame["fruit_raw"].to_list() == ["apple"] * 4
+    assert frame["answer"].to_list() == ["apple"] * 4
     assert frame["total_cost_usd"].to_list() == pytest.approx([0.81e-6] * 4)
 
 

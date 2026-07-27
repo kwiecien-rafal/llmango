@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+import polars as pl
 import pytest
 
 from llmango import config as config_module
@@ -11,6 +12,7 @@ from llmango.experiments.fruit import (
     FRUIT_LIST,
     FruitEnum,
     build_input,
+    extra_normalized_columns,
     mapping_seed,
     preprocess,
 )
@@ -143,3 +145,33 @@ def test_mapping_seed_covers_a_questions_own_fruit_list(prompts_dir: Path) -> No
 
 def test_preprocess_drops_articles_and_qualifiers() -> None:
     assert preprocess("a ripe apple") == "apple"
+
+
+def _normalized(rows: list[tuple[str, str | None]]) -> pl.DataFrame:
+    """Build the two normalized columns the chosen_position hook reads."""
+    return pl.DataFrame(
+        {
+            "prompt_inputs": [shown for shown, _ in rows],
+            "canonical": [canonical for _, canonical in rows],
+        },
+        schema={"prompt_inputs": pl.String(), "canonical": pl.String()},
+    )
+
+
+def test_chosen_position_reports_where_the_answer_was_shown() -> None:
+    shown = '{"fruit_list": ["mango", "apple", "banana"]}'
+    frame = _normalized([(shown, "mango"), (shown, "apple"), (shown, "banana")])
+
+    columns = extra_normalized_columns(frame)
+
+    assert columns["chosen_position"].to_list() == [1, 2, 3]
+
+
+def test_chosen_position_is_null_when_the_answer_was_not_shown() -> None:
+    """A refusal, an 'other' answer or an off-list fruit all sit at no position."""
+    shown = '{"fruit_list": ["mango", "apple"]}'
+    frame = _normalized([(shown, "kiwi"), (shown, "other"), (shown, None)])
+
+    columns = extra_normalized_columns(frame)
+
+    assert columns["chosen_position"].to_list() == [None, None, None]

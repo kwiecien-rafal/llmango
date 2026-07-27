@@ -17,8 +17,9 @@ import importlib
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import polars as pl
 from pydantic import BaseModel
 
 from llmango.config import sha256_text
@@ -26,6 +27,10 @@ from llmango.inputs import BuildInput
 
 FREE_TEXT_VARIANT = "none"
 OTHER_CATEGORY = "other"
+
+ExtraRawColumns = Callable[[BaseModel | None, str], dict[str, object]]
+ExtraRawDtypes = dict[str, pl.DataType]
+ExtraNormalizedColumns = Callable[[pl.DataFrame], dict[str, pl.Series]]
 
 _NUMBER_PREFIX = re.compile(r"^(\d+)")
 
@@ -83,11 +88,16 @@ class SchemaVariant:
 class ExperimentSpec:
     """Everything the generic pipeline needs to run one experiment.
 
-    raw_column, canonical_column and valid_column let an experiment name its own
-    columns in the experiment's own words. valid_column names two things at once:
-    the validity flag on the normalization schema, which the model sees, and the
-    column that flag lands in. The engine's own name for it is is_valid, so
-    normalize and aggregate never spell an experiment's vocabulary themselves.
+    The pipeline owns a fixed column vocabulary: answer, canonical, is_valid and
+    multiple mean the same thing in every experiment and are never renamed, which
+    is what lets one query read across the whole published corpus. An experiment
+    appends columns of its own through the two extra_ hooks and no more.
+
+    extra_raw_columns adds columns to the raw parquet from one response, and
+    extra_raw_dtypes pins their types so a parquet schema never varies with the
+    data a run happens to produce. extra_normalized_columns adds columns derived
+    from the normalized frame, which is where an experiment computes anything the
+    pipeline has no way to know how to compute.
 
     build_input turns one of the question's declared prompt inputs into the text
     that fills its placeholder. The engine finds and hashes the input's data file
@@ -98,23 +108,17 @@ class ExperimentSpec:
     already has, sparing the LLM layer every answer that was on the prompt. It is
     given the experiment's question ids, because a question may override an input
     with its own data file and the seed has to cover every list actually shown.
-
-    position_input names the input chosen_position indexes into. That input's
-    recorded value must be a list of canonical ids; leave it unset for an
-    experiment where position means nothing.
     """
 
     experiment_id: str
     schema_variants: dict[str, SchemaVariant]
-    to_row: Callable[[BaseModel | None, str], dict[str, object]] | None = None
     normalization_schema: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
     build_input: BuildInput | None = None
     mapping_seed: Callable[[list[str]], dict[str, str]] | None = None
-    position_input: str | None = None
-    raw_column: str = "raw"
-    canonical_column: str = "canonical"
-    valid_column: str = "is_valid"
+    extra_raw_columns: ExtraRawColumns | None = None
+    extra_raw_dtypes: ExtraRawDtypes = field(default_factory=ExtraRawDtypes)
+    extra_normalized_columns: ExtraNormalizedColumns | None = None
 
     def variant(self, schema_variant: str) -> SchemaVariant:
         """Return the registered schema variant a run asked for."""

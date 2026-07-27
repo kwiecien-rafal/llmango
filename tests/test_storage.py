@@ -28,7 +28,7 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
         "prompt": "Pick one random fruit from this list: apple, mango",
         "prompt_inputs": '{"fruit_list": ["apple", "mango"]}',
         "raw_json": f'{{"fruit": "{fruit}"}}',
-        "fruit_raw": fruit,
+        "answer": fruit,
         "model_snapshot": "gpt-5.6-luna-2026-01-01",
         "finish_reason": "stop",
         "refusal": None,
@@ -64,7 +64,7 @@ def test_write_then_read_round_trips(
 
     frame = read_results("*.parquet")
     assert frame.height == 2
-    assert frame["fruit_raw"].to_list() == ["apple", "mango"]
+    assert frame["answer"].to_list() == ["apple", "mango"]
 
 
 def test_columns_follow_the_canonical_order(
@@ -90,7 +90,7 @@ def test_columns_follow_the_canonical_order(
         "prompt",
         "prompt_inputs",
         "raw_json",
-        "fruit_raw",
+        "answer",
         "model_snapshot",
         "finish_reason",
         "refusal",
@@ -112,6 +112,32 @@ def test_columns_follow_the_canonical_order(
         "pricing_version",
         "created_at",
     ]
+
+
+def test_experiment_columns_sit_between_the_core_and_the_provenance_block(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An experiment appends columns in one slot, right after the shared answer."""
+    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
+    row = {**_row(0, "apple"), "ripeness": "ripe"}
+
+    write_results([row], _RUN_ID, "gpt-5.6-luna")
+
+    columns = read_results("*.parquet").columns
+    start = columns.index("answer")
+    assert columns[start : start + 3] == ["answer", "ripeness", "model_snapshot"]
+
+
+def test_extra_dtypes_pin_a_column_that_is_null_in_every_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Declared dtypes keep a parquet schema from varying with one run's data."""
+    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
+    row = {**_row(0, "apple"), "ripeness": None}
+
+    write_results([row], _RUN_ID, "gpt-5.6-luna", {"ripeness": pl.String()})
+
+    assert read_results("*.parquet").schema["ripeness"] == pl.String
 
 
 def test_column_dtypes_are_pinned(

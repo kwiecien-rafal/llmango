@@ -19,18 +19,18 @@ def env(data_dirs: Path) -> Path:
 
 def _row(
     lang: str,
-    raw: str,
+    answer: str,
     canonical: str,
-    is_fruit: bool,
+    is_valid: bool,
     error: str | None = None,
 ) -> dict[str, object]:
     return {
         "question_id": "001a",
         "schema_variant": "en",
         "lang": lang,
-        "fruit_raw": raw,
-        "fruit_canonical": canonical,
-        "is_fruit": is_fruit,
+        "answer": answer,
+        "canonical": canonical,
+        "is_valid": is_valid,
         "multiple": False,
         "error": error,
     }
@@ -41,9 +41,9 @@ def _write_normalized(rows: list[dict[str, object]]) -> None:
         "question_id": pl.String(),
         "schema_variant": pl.String(),
         "lang": pl.String(),
-        "fruit_raw": pl.String(),
-        "fruit_canonical": pl.String(),
-        "is_fruit": pl.Boolean(),
+        "answer": pl.String(),
+        "canonical": pl.String(),
+        "is_valid": pl.Boolean(),
         "multiple": pl.Boolean(),
         "error": pl.String(),
     }

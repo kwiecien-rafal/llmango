@@ -55,7 +55,7 @@ def _raw_row(
         "prompt_sha256": "x",
         "prompt_inputs": prompt_inputs,
         "raw_json": None,
-        "fruit_raw": fruit,
+        "answer": fruit,
         "error": error,
         "created_at": datetime(2026, 7, 20, tzinfo=UTC),
     }
@@ -67,11 +67,11 @@ def _write_raw(rows: list[dict[str, object]]) -> None:
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
     langs = frame.get_column("lang").to_list()
-    raws = frame.get_column("fruit_raw").to_list()
-    canonical = frame.get_column("fruit_canonical").to_list()
+    answers = frame.get_column("answer").to_list()
+    canonical = frame.get_column("canonical").to_list()
     return {
-        (lang, raw): canon
-        for lang, raw, canon in zip(langs, raws, canonical, strict=True)
+        (lang, answer): canon
+        for lang, answer, canon in zip(langs, answers, canonical, strict=True)
     }
 
 
@@ -151,75 +151,39 @@ def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
     assert resolved[("en", "Apple")] == "apple"
     assert resolved[("en", "ＭＡＮＧＯ")] == "mango"
     assert resolved[("pl", "jabłko")] == "apple"
-    assert frame["is_fruit"].to_list() == [True] * 5
+    assert frame["is_valid"].to_list() == [True] * 5
 
 
-def test_refusal_is_not_a_fruit(env: Path) -> None:
+def test_a_refusal_names_no_category(env: Path) -> None:
     _write_raw([_raw_row("en", "")])
 
     outcome = normalize_experiment(_EXPERIMENT)
 
     frame = pl.read_parquet(normalized_path(_EXPERIMENT))
     assert outcome.llm_calls == 0
-    assert frame["is_fruit"].to_list() == [False]
-    assert frame["fruit_canonical"].to_list() == [None]
-    assert frame["chosen_position"].to_list() == [None]
+    assert frame["is_valid"].to_list() == [False]
+    assert frame["canonical"].to_list() == [None]
 
 
-def test_chosen_position_reports_where_the_answer_was_shown(env: Path) -> None:
-    _write_raw(
-        [
-            _raw_row("en", "mango"),
-            _raw_row("pl", "jabłko", sample_idx=1),
-            _raw_row("en", "banana", sample_idx=2),
-        ]
-    )
-
-    normalize_experiment(_EXPERIMENT)
-
-    frame = pl.read_parquet(normalized_path(_EXPERIMENT)).sort("sample_idx")
-    assert frame["fruit_canonical"].to_list() == ["mango", "apple", "banana"]
-    assert frame["chosen_position"].to_list() == [1, 2, 3]
-
-
-def test_chosen_position_is_null_when_the_answer_was_not_shown(env: Path) -> None:
-    _write_raw(
-        [_raw_row("en", "kiwi", prompt_inputs='{"fruit_list": ["mango", "apple"]}')]
-    )
-
-    normalize_experiment(
-        _EXPERIMENT,
-        make_backend=lambda: StubBackend(
-            FruitNormalization(
-                raw="kiwi", canonical="kiwi", is_fruit=True, multiple=False
-            )
-        ),
-        model="gpt-5.6-luna",
-    )
-
-    frame = pl.read_parquet(normalized_path(_EXPERIMENT))
-    assert frame["fruit_canonical"].to_list() == ["kiwi"]
-    assert frame["chosen_position"].to_list() == [None]
-
-
-def test_added_columns_sit_next_to_the_raw_answer(env: Path) -> None:
+def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
+    """The pipeline's three columns first, then whatever the experiment appends."""
     _write_raw([_raw_row("en", "apple")])
 
     normalize_experiment(_EXPERIMENT)
 
     columns = pl.read_parquet(normalized_path(_EXPERIMENT)).columns
-    start = columns.index("fruit_raw")
+    start = columns.index("answer")
     assert columns[start : start + 5] == [
-        "fruit_raw",
-        "fruit_canonical",
-        "is_fruit",
+        "answer",
+        "canonical",
+        "is_valid",
         "multiple",
         "chosen_position",
     ]
 
 
 def test_cache_hit_skips_the_llm(env: Path) -> None:
-    cache = {"en": {"kiwi": {"canonical": "kiwi", "is_fruit": True, "multiple": False}}}
+    cache = {"en": {"kiwi": {"canonical": "kiwi", "is_valid": True, "multiple": False}}}
     (
         normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
     ).write_text(json.dumps(cache), encoding="utf-8")
@@ -229,12 +193,12 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
 
     frame = pl.read_parquet(normalized_path(_EXPERIMENT))
     assert outcome.llm_calls == 0
-    assert frame["fruit_canonical"].to_list() == ["kiwi"]
+    assert frame["canonical"].to_list() == ["kiwi"]
 
 
 def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     result = FruitNormalization(
-        raw="banana and apple", canonical="banana", is_fruit=True, multiple=True
+        raw="banana and apple", canonical="banana", is_valid=True, multiple=True
     )
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
@@ -247,21 +211,21 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     assert backend.calls == 1
 
     frame = pl.read_parquet(normalized_path(_EXPERIMENT))
-    assert frame["fruit_canonical"].to_list() == ["banana"]
+    assert frame["canonical"].to_list() == ["banana"]
     assert frame["multiple"].to_list() == [True]
-    assert frame["fruit_raw"].to_list() == ["banana and apple"]
+    assert frame["answer"].to_list() == ["banana and apple"]
 
     cache_path = (
         normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
     )
     cache = json.loads(cache_path.read_text(encoding="utf-8"))
     entry = cache["en"]["banana and apple"]
-    assert entry == {"canonical": "banana", "is_fruit": True, "multiple": True}
+    assert entry == {"canonical": "banana", "is_valid": True, "multiple": True}
 
 
 def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) -> None:
     result = FruitNormalization(
-        raw="starfruit", canonical="other", is_fruit=True, multiple=False
+        raw="starfruit", canonical="other", is_valid=True, multiple=False
     )
     backend = FlakyBackend(result, failing="durian")
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
@@ -287,7 +251,7 @@ def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
 
     assert outcome.llm_calls == 0
     frame = pl.read_parquet(normalized_path(_EXPERIMENT))
-    assert frame["fruit_canonical"].to_list() == ["apple", "apple"]
+    assert frame["canonical"].to_list() == ["apple", "apple"]
 
 
 def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:

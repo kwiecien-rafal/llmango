@@ -1,6 +1,13 @@
-"""Parquet storage for raw generation results."""
+"""Parquet storage for raw generation results.
 
-from collections.abc import Iterable
+The common core is byte-identical in every experiment and ends with answer, the
+one name every experiment's extracted answer goes by. An experiment's own columns
+sit in the single slot between that core and the fixed provenance, usage and cost
+blocks, so a consumer reading across experiments always finds the same columns in
+the same places.
+"""
+
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import polars as pl
@@ -22,6 +29,7 @@ COMMON_LEADING_COLUMNS = [
     "prompt",
     "prompt_inputs",
     "raw_json",
+    "answer",
 ]
 
 PROVENANCE_COLUMNS = [
@@ -71,6 +79,7 @@ _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "prompt": pl.String(),
     "prompt_inputs": pl.String(),
     "raw_json": pl.String(),
+    "answer": pl.String(),
     "model_snapshot": pl.String(),
     "finish_reason": pl.String(),
     "refusal": pl.String(),
@@ -105,30 +114,38 @@ def results_path(run_id: str, model: str) -> Path:
 
 
 def _ordered_columns(columns: Iterable[str]) -> list[str]:
-    """Order present columns: leading common, parsed, the fixed block, created_at."""
+    """Order present columns: the common core, extras, the fixed block, created_at."""
     present = set(columns)
     known = (
         set(COMMON_LEADING_COLUMNS)
         | set(FIXED_TRAILING_COLUMNS)
         | set(TRAILING_COLUMNS)
     )
-    parsed = [column for column in columns if column not in known]
+    extras = [column for column in columns if column not in known]
     ordered = (
-        COMMON_LEADING_COLUMNS + parsed + FIXED_TRAILING_COLUMNS + TRAILING_COLUMNS
+        COMMON_LEADING_COLUMNS + extras + FIXED_TRAILING_COLUMNS + TRAILING_COLUMNS
     )
     return [column for column in ordered if column in present]
 
 
-def write_results(rows: list[dict[str, object]], run_id: str, model: str) -> Path:
+def write_results(
+    rows: list[dict[str, object]],
+    run_id: str,
+    model: str,
+    extra_dtypes: Mapping[str, pl.DataType] | None = None,
+) -> Path:
     """Write result rows to a single Parquet file and return its path.
 
     Every row of a run carries the same columns, so the order is resolved once
-    from the first row rather than rebuilt for each one.
+    from the first row rather than rebuilt for each one. An experiment's extra
+    columns declare their dtypes here, so a column that happens to be null in
+    every row of one run still lands with the type it has in every other run.
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     columns = _ordered_columns(rows[0]) if rows else []
     ordered = [{column: row[column] for column in columns} for row in rows]
-    frame = pl.DataFrame(ordered, schema_overrides=_SCHEMA_OVERRIDES)
+    overrides = {**_SCHEMA_OVERRIDES, **(extra_dtypes or {})}
+    frame = pl.DataFrame(ordered, schema_overrides=overrides)
     path = results_path(run_id, model)
     frame.write_parquet(path)
     return path

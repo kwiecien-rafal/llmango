@@ -19,12 +19,7 @@ from pathlib import Path
 import polars as pl
 
 from llmango.config import AGG_DIR
-from llmango.registry import (
-    OTHER_CATEGORY,
-    ExperimentSpec,
-    get_experiment,
-    resolve_experiment_id,
-)
+from llmango.registry import OTHER_CATEGORY, resolve_experiment_id
 from llmango.storage import normalized_path, read_normalized
 
 
@@ -53,7 +48,6 @@ Metric = Callable[[Head], Mapping[str, object]]
 def aggregate_experiment(experiment_id: str) -> AggregateOutcome:
     """Aggregate an experiment's normalized answers into the committed JSON files."""
     experiment_id = resolve_experiment_id(experiment_id)
-    spec = get_experiment(experiment_id)
     if not normalized_path(experiment_id).is_file():
         raise FileNotFoundError(
             f"No normalized parquet for {experiment_id}. Run 'llmango normalize' first."
@@ -62,7 +56,7 @@ def aggregate_experiment(experiment_id: str) -> AggregateOutcome:
     if frame.is_empty():
         raise ValueError(f"Normalized results for {experiment_id} contain no rows.")
 
-    heads = _group_heads(_answers(frame, spec))
+    heads = _group_heads(_answers(frame))
     distributions = _nest(
         heads,
         lambda head: {lang: _distribution(subset) for lang, subset in head.items()},
@@ -72,7 +66,7 @@ def aggregate_experiment(experiment_id: str) -> AggregateOutcome:
     )
 
 
-def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
+def _answers(frame: pl.DataFrame) -> list[Answer]:
     """Reduce the normalized frame to the answer records aggregation reads."""
     columns = {
         name: frame.get_column(name).to_list()
@@ -80,8 +74,8 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             "question_id",
             "schema_variant",
             "lang",
-            spec.canonical_column,
-            spec.valid_column,
+            "canonical",
+            "is_valid",
         )
     }
     return [
@@ -96,8 +90,8 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             columns["question_id"],
             columns["schema_variant"],
             columns["lang"],
-            columns[spec.canonical_column],
-            columns[spec.valid_column],
+            columns["canonical"],
+            columns["is_valid"],
             strict=True,
         )
     ]

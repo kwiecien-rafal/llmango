@@ -10,6 +10,10 @@ their per-language labels. A question declares how that list is arranged, either
 a fixed permutation or a per-sample shuffle. Both live here rather than in the
 engine, because the arrangement is what this experiment varies; a later
 experiment arranges its own inputs its own way without touching shared code.
+
+001 appends one column of its own, chosen_position, for the same reason: only
+this experiment knows its prompt input is an ordered list a pick can sit inside.
+It adds nothing to the raw parquet, since the answer is already a core column.
 """
 
 import hashlib
@@ -18,7 +22,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel
+import polars as pl
 
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.registry import (
@@ -91,7 +95,7 @@ class FruitNormalization(LLMResponse):
 
     raw: str
     canonical: FruitEnum | Literal["other"]
-    is_fruit: bool
+    is_valid: bool
     multiple: bool
 
 
@@ -102,11 +106,6 @@ def preprocess(text: str) -> str:
     """Drop leading articles and qualifiers so answers match the mapping table."""
     tokens = [token for token in text.split() if token not in _QUALIFIERS]
     return " ".join(tokens)
-
-
-def to_row(parsed: BaseModel | None, raw_text: str) -> dict[str, object]:
-    """Map an extracted answer to its parsed column."""
-    return {"fruit_raw": raw_text}
 
 
 def build_input(request: InputRequest) -> ResolvedInput:
@@ -140,6 +139,40 @@ def mapping_seed(question_ids: list[str]) -> dict[str, str]:
             for label in labels.values():
                 mapping[label] = canonical
     return mapping
+
+
+def extra_normalized_columns(frame: pl.DataFrame) -> dict[str, pl.Series]:
+    """Add chosen_position: where the picked fruit sat in the list that row saw.
+
+    Only this experiment knows fruit_list resolves to an ordered list of canonical
+    ids, so the position of an answer within it is 001's own column rather than a
+    pipeline concept. It is computed after normalization because it takes a
+    canonical answer to locate, while the answer itself is free text in the
+    prompt's language.
+    """
+    shown = (
+        frame.get_column("prompt_inputs")
+        .str.json_decode(pl.Struct({FRUIT_LIST: pl.List(pl.String())}))
+        .struct.field(FRUIT_LIST)
+        .to_list()
+    )
+    canonicals = frame.get_column("canonical").to_list()
+    positions = [
+        _position(order, canonical)
+        for order, canonical in zip(shown, canonicals, strict=True)
+    ]
+    return {"chosen_position": pl.Series(positions, dtype=pl.Int64())}
+
+
+def _position(order: list[str] | None, canonical: str | None) -> int | None:
+    """Return the 1-based place of one canonical answer among the fruits shown.
+
+    Null whenever the answer is not one of them: a refusal, an 'other' answer, or
+    a fruit that exists but was not on this sample's list.
+    """
+    if order is None or canonical is None or canonical not in order:
+        return None
+    return order.index(canonical) + 1
 
 
 def _table(data: Any) -> dict[str, dict[str, str]]:
@@ -213,14 +246,10 @@ register_experiment(
             "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
             FREE_TEXT_VARIANT: SchemaVariant(schema=None, field=None),
         },
-        to_row=to_row,
         normalization_schema=FruitNormalization,
         preprocess=preprocess,
         build_input=build_input,
         mapping_seed=mapping_seed,
-        position_input=FRUIT_LIST,
-        raw_column="fruit_raw",
-        canonical_column="fruit_canonical",
-        valid_column="is_fruit",
+        extra_normalized_columns=extra_normalized_columns,
     )
 )

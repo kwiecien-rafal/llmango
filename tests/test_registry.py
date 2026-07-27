@@ -92,25 +92,13 @@ def test_unknown_experiment_error_renders_plainly() -> None:
     assert str(UnknownExperimentError("plain message")) == "plain message"
 
 
-def test_column_names_default_to_the_engine_vocabulary() -> None:
-    """An experiment that names no columns gets the generic ones, not fruit ones."""
+def test_column_hooks_are_optional() -> None:
+    """An experiment that appends no columns registers none of the extra hooks."""
     spec = _spec("plain_columns")
 
-    assert (spec.raw_column, spec.canonical_column, spec.valid_column) == (
-        "raw",
-        "canonical",
-        "is_valid",
-    )
-
-
-def test_an_experiment_can_name_its_own_columns() -> None:
-    spec = get_experiment("001_fruit")
-
-    assert (spec.raw_column, spec.canonical_column, spec.valid_column) == (
-        "fruit_raw",
-        "fruit_canonical",
-        "is_fruit",
-    )
+    assert spec.extra_raw_columns is None
+    assert spec.extra_raw_dtypes == {}
+    assert spec.extra_normalized_columns is None
 
 
 def test_prompt_input_hooks_are_optional() -> None:
@@ -119,7 +107,6 @@ def test_prompt_input_hooks_are_optional() -> None:
 
     assert spec.build_input is None
     assert spec.mapping_seed is None
-    assert spec.position_input is None
 
 
 def test_an_experiment_supplies_its_own_prompt_input_hooks() -> None:
@@ -127,4 +114,3 @@ def test_an_experiment_supplies_its_own_prompt_input_hooks() -> None:
 
     assert spec.build_input is not None
     assert spec.mapping_seed is not None
-    assert spec.position_input == "fruit_list"

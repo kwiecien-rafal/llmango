@@ -120,10 +120,12 @@ def _result_to_row(
     pricing_entry: PricingEntry | None,
     batched: bool = False,
 ) -> dict[str, object]:
-    """Combine the common columns, parsed fields, provenance, usage and cost."""
+    """Combine the common columns, the experiment's extras, provenance and cost."""
     request = result.request
-    raw_text = variant.extract(result.parsed, result.raw_json)
-    parsed_fields = spec.to_row(result.parsed, raw_text) if spec.to_row else {}
+    answer = variant.extract(result.parsed, result.raw_json)
+    extra = (
+        spec.extra_raw_columns(result.parsed, answer) if spec.extra_raw_columns else {}
+    )
     return {
         "question_id": request.question_id,
         "lang": request.lang,
@@ -139,7 +141,8 @@ def _result_to_row(
         "prompt": request.prompt,
         "prompt_inputs": request.prompt_inputs,
         "raw_json": result.raw_json,
-        **parsed_fields,
+        "answer": answer,
+        **extra,
         "model_snapshot": result.model_snapshot,
         "finish_reason": result.finish_reason,
         "refusal": result.refusal,
@@ -392,7 +395,9 @@ def run(
     ]
     manifest.usage = _run_usage(rows, manifest.languages)
 
-    parquet_path = write_results(rows, manifest.run_id, manifest.model)
+    parquet_path = write_results(
+        rows, manifest.run_id, manifest.model, prepared.spec.extra_raw_dtypes
+    )
     written_manifest_path = write_manifest(manifest)
 
     return RunOutcome(
@@ -529,7 +534,9 @@ def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
     ]
     manifest.usage = _run_usage(rows, manifest.languages)
 
-    parquet_path = write_results(rows, manifest.run_id, manifest.model)
+    parquet_path = write_results(
+        rows, manifest.run_id, manifest.model, spec.extra_raw_dtypes
+    )
     return RunOutcome(
         run_id=manifest.run_id,
         manifest=manifest,

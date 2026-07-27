@@ -20,7 +20,7 @@ _ANSWERS = {
     "pl": ["jabłko", "banan", "coś", ""],
 }
 
-_CACHE = {"pl": {"coś": {"canonical": "other", "is_fruit": True, "multiple": False}}}
+_CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True, "multiple": False}}}
 
 
 @pytest.fixture

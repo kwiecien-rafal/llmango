@@ -4,24 +4,20 @@ Runs per experiment: reads the raw answers of every question in the experiment
 and maps each onto a canonical English category in layers, cheapest first. The
 experiment's own mapping seed resolves every answer it already has a label for;
 leftover strings (off-list or free-text) fall through to the mapping file and
-then an LLM. Raw answers are never overwritten. Normalization
-only adds the canonical, validity, multiple and chosen_position columns and
-writes a separate normalized Parquet file. Every LLM result is cached and
-promoted, so reruns never pay for the same string twice.
+then an LLM. The answer column is never overwritten, so normalization can be
+re-run with better methods without regenerating anything. Every LLM result is
+cached and promoted, so reruns never pay for the same string twice.
 
-The engine calls the validity flag is_valid throughout; the column it lands in
-and the field the model fills are both named by the experiment's valid_column,
-so an experiment keeps its own wording without the engine adopting it.
-
-Position is resolved here rather than at generation time because it takes a
-canonical answer to locate: the raw answer is free text in the prompt's language,
-while prompt_inputs records what the question's inputs resolved to for that row.
+The canonical, is_valid and multiple columns are the pipeline's own words for
+what normalization decides, so they are spelled the same way in the resolution,
+in the cache on disk, on the schema the model fills and in the parquet. An
+experiment appends whatever else it can compute from the result.
 """
 
 import json
 import string
 import unicodedata
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -55,9 +51,9 @@ _PUNCTUATION = string.punctuation + "«»„“”‘’¿¡… "
 class Resolution(BaseModel):
     """The canonical category a raw answer resolves to.
 
-    is_valid is the engine's name for the flag saying the answer named a category
-    at all. An experiment spells the same flag its own way, so a resolution is
-    read from and written back to the experiment's field names.
+    Reads straight off a normalization response or a cache entry, both of which
+    spell these three fields the pipeline's way. Any other field the schema
+    carries, such as the echoed answer, is ignored.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -88,30 +84,6 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
     return text
 
 
-def _read_resolution(fields: Mapping[str, object], spec: ExperimentSpec) -> Resolution:
-    """Read a resolution from fields keyed the experiment's way.
-
-    Both the model's normalization response and the cache on disk spell the
-    validity flag with the experiment's valid_column, so it is renamed to the
-    engine's is_valid before validation. Any other field, such as the echoed raw
-    answer, is ignored.
-    """
-    payload = dict(fields)
-    payload["is_valid"] = payload.get(spec.valid_column)
-    return Resolution.model_validate(payload)
-
-
-def _write_resolution(
-    resolution: Resolution, spec: ExperimentSpec
-) -> dict[str, object]:
-    """Write a resolution back out under the experiment's own field names."""
-    return {
-        "canonical": resolution.canonical,
-        spec.valid_column: resolution.is_valid,
-        "multiple": resolution.multiple,
-    }
-
-
 def normalize_experiment(
     experiment_id: str,
     *,
@@ -140,16 +112,16 @@ def normalize_experiment(
     directory = MAPPINGS_DIR / experiment_id
     mapping = _load_mapping(directory, spec)
     cache = _load_cache(directory)
-    pairs = _distinct_pairs(frame, spec)
+    pairs = _distinct_pairs(frame)
 
     resolutions: dict[tuple[str, str], Resolution] = {}
     unresolved: list[tuple[str, str]] = []
-    for lang, raw in pairs:
-        offline = _resolve_offline(lang, raw, spec, mapping, cache)
+    for lang, answer in pairs:
+        offline = _resolve_offline(lang, answer, spec, mapping, cache)
         if offline is not None:
-            resolutions[(lang, raw)] = offline
+            resolutions[(lang, answer)] = offline
         else:
-            unresolved.append((lang, raw))
+            unresolved.append((lang, answer))
 
     if dry_run:
         return NormalizeOutcome(
@@ -196,31 +168,31 @@ def _read_experiment_raw(experiment_id: str) -> pl.DataFrame:
     return pl.concat(frames)
 
 
-def _distinct_pairs(frame: pl.DataFrame, spec: ExperimentSpec) -> list[tuple[str, str]]:
-    """Return the sorted, deduped (lang, raw answer) pairs from the raw frame."""
+def _distinct_pairs(frame: pl.DataFrame) -> list[tuple[str, str]]:
+    """Return the sorted, deduped (lang, answer) pairs from the raw frame."""
     langs = frame.get_column("lang").to_list()
-    raws = frame.get_column(spec.raw_column).to_list()
+    answers = frame.get_column("answer").to_list()
     return sorted(
-        {(str(lang), str(raw)) for lang, raw in zip(langs, raws, strict=True)}
+        {(str(lang), str(answer)) for lang, answer in zip(langs, answers, strict=True)}
     )
 
 
 def _resolve_offline(
     lang: str,
-    raw: str,
+    answer: str,
     spec: ExperimentSpec,
     mapping: dict[str, str],
     cache: dict[str, dict[str, dict[str, object]]],
 ) -> Resolution | None:
-    """Resolve a raw answer without an LLM: refusal, mapping table, then cache."""
-    if not raw.strip():
+    """Resolve one answer without an LLM: refusal, mapping table, then cache."""
+    if not answer.strip():
         return Resolution(canonical="", is_valid=False, multiple=False)
-    canonical = mapping.get(preprocess(raw, spec))
+    canonical = mapping.get(preprocess(answer, spec))
     if canonical is not None:
         return Resolution(canonical=canonical, is_valid=True, multiple=False)
-    cached = cache.get(lang, {}).get(raw)
+    cached = cache.get(lang, {}).get(answer)
     if cached is not None:
-        return _read_resolution(cached, spec)
+        return Resolution.model_validate(cached)
     return None
 
 
@@ -258,24 +230,24 @@ def _resolve_online(
             question_id=experiment_id,
             lang=lang,
             model=resolved_model,
-            prompt=template.replace("{lang}", lang).replace("{raw}", raw),
+            prompt=template.replace("{lang}", lang).replace("{raw}", answer),
             prompt_sha256="",
             sample_idx=index,
             seed=None,
             sampling=SamplingParams(temperature=0.0),
             response_schema=response_schema,
         )
-        for index, (lang, raw) in enumerate(unresolved)
+        for index, (lang, answer) in enumerate(unresolved)
     ]
     results = make_backend().generate_many(requests)
 
     resolved: dict[tuple[str, str], Resolution] = {}
-    for (lang, raw), result in zip(unresolved, results, strict=True):
+    for (lang, answer), result in zip(unresolved, results, strict=True):
         if result.parsed is None:
             continue
-        resolution = _read_resolution(result.parsed.model_dump(mode="json"), spec)
-        resolved[(lang, raw)] = resolution
-        cache.setdefault(lang, {})[raw] = _write_resolution(resolution, spec)
+        resolution = Resolution.model_validate(result.parsed.model_dump(mode="json"))
+        resolved[(lang, answer)] = resolution
+        cache.setdefault(lang, {})[answer] = resolution.model_dump(mode="json")
     return resolved
 
 
@@ -293,7 +265,7 @@ def _require_all_resolved(
     failed = [pair for pair in unresolved if pair not in resolutions]
     if not failed:
         return
-    preview = ", ".join(f"{lang}:{raw!r}" for lang, raw in failed[:3])
+    preview = ", ".join(f"{lang}:{answer!r}" for lang, answer in failed[:3])
     raise ValueError(
         f"{len(failed)} of {len(unresolved)} answers came back unparsed and were "
         f"not written: {preview}. Everything else is cached, so a rerun retries "
@@ -310,68 +282,38 @@ def _join_resolutions(
 
     An answer that resolved to no category at all, such as a refusal, is written
     as a null rather than an empty string, so the column never carries a category
-    that does not exist.
+    that does not exist. The experiment appends whatever else it can derive from
+    the resolved frame, which the pipeline has no way to compute for it.
     """
     rows = [
         {
             "lang": lang,
-            spec.raw_column: raw,
-            spec.canonical_column: resolution.canonical or None,
-            spec.valid_column: resolution.is_valid,
+            "answer": answer,
+            "canonical": resolution.canonical or None,
+            "is_valid": resolution.is_valid,
             "multiple": resolution.multiple,
         }
-        for (lang, raw), resolution in resolutions.items()
+        for (lang, answer), resolution in resolutions.items()
     ]
     schema: dict[str, pl.DataType] = {
         "lang": pl.String(),
-        spec.raw_column: pl.String(),
-        spec.canonical_column: pl.String(),
-        spec.valid_column: pl.Boolean(),
+        "answer": pl.String(),
+        "canonical": pl.String(),
+        "is_valid": pl.Boolean(),
         "multiple": pl.Boolean(),
     }
     resolution_frame = pl.DataFrame(rows, schema_overrides=schema)
-    joined = frame.join(resolution_frame, on=["lang", spec.raw_column], how="left")
-    return _order_columns(joined.with_columns(_positions(joined, spec)), spec)
+    joined = frame.join(resolution_frame, on=["lang", "answer"], how="left")
+    add = spec.extra_normalized_columns
+    extra = add(joined) if add is not None else {}
+    return _order_columns(joined.with_columns(**extra), list(extra))
 
 
-def _position(order: list[str] | None, canonical: str | None) -> int | None:
-    """Return the 1-based place of one canonical answer among the values shown.
-
-    Null whenever the answer is not one of them: a refusal, an 'other' answer, or
-    a category that exists but was not on this sample's list.
-    """
-    if order is None or canonical is None or canonical not in order:
-        return None
-    return order.index(canonical) + 1
-
-
-def _positions(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.Series:
-    """Locate every row's canonical answer in the input it was shown.
-
-    Empty when the experiment names no positional input, which is any experiment
-    whose prompt does not present an ordered list to choose from.
-    """
-    if spec.position_input is None:
-        return pl.Series("chosen_position", [None] * frame.height, dtype=pl.Int64())
-    shown = (
-        frame.get_column("prompt_inputs")
-        .str.json_decode(pl.Struct({spec.position_input: pl.List(pl.String())}))
-        .struct.field(spec.position_input)
-        .to_list()
-    )
-    canonicals = frame.get_column(spec.canonical_column).to_list()
-    positions = [
-        _position(order, canonical)
-        for order, canonical in zip(shown, canonicals, strict=True)
-    ]
-    return pl.Series("chosen_position", positions, dtype=pl.Int64())
-
-
-def _order_columns(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.DataFrame:
-    """Move the added columns to sit directly after the raw answer they describe."""
-    added = [spec.canonical_column, spec.valid_column, "multiple", "chosen_position"]
+def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
+    """Move the added columns to sit directly after the answer they describe."""
+    added = ["canonical", "is_valid", "multiple", *extra]
     kept = [column for column in frame.columns if column not in added]
-    cut = kept.index(spec.raw_column) + 1
+    cut = kept.index("answer") + 1
     return frame.select(kept[:cut] + added + kept[cut:])
 
 
