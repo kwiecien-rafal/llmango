@@ -1,9 +1,9 @@
 """Tests for the normalization pipeline: layers, dedupe, caching and edge rules.
 
-These run against the real 001_fruit prompt tree (fruits.yaml, experiment.yaml,
+These run against the real 001_fruit prompt tree (fruit_list.yaml, experiment.yaml,
 normalize.md); only the output directories are redirected into tmp_path. The
-fruit table seeds the deterministic mapping, so every in-list answer resolves
-offline and only off-list strings reach the LLM layer.
+experiment's mapping seed resolves every in-list answer offline, so only off-list
+strings reach the LLM layer.
 """
 
 import json
@@ -31,14 +31,14 @@ def env(data_dirs: Path) -> Path:
 
 _RUN_ID = "001a__en__20260720T101500Z__c3f9a1"
 
-_SHOWN = '["mango", "apple", "banana"]'
+_SHOWN = '{"fruit_list": ["mango", "apple", "banana"]}'
 
 
 def _raw_row(
     lang: str,
     fruit: str,
     sample_idx: int = 0,
-    option_order: str = _SHOWN,
+    prompt_inputs: str = _SHOWN,
     error: str | None = None,
 ) -> dict[str, object]:
     return {
@@ -53,7 +53,7 @@ def _raw_row(
         "seed": 0,
         "temperature": 1.0,
         "prompt_sha256": "x",
-        "option_order": option_order,
+        "prompt_inputs": prompt_inputs,
         "raw_json": None,
         "fruit_raw": fruit,
         "error": error,
@@ -113,6 +113,21 @@ class StubBackend(GenerationBackend):
         )
 
 
+class FlakyBackend(StubBackend):
+    """Backend that answers every request except the one naming a given answer."""
+
+    backend_id = "flaky"
+
+    def __init__(self, result: FruitNormalization, failing: str) -> None:
+        super().__init__(result)
+        self._failing = failing
+
+    def generate(self, request: GenRequest) -> GenResult:
+        if self._failing in request.prompt:
+            return GenResult.failed(request, "rate limited", datetime.now(UTC))
+        return super().generate(request)
+
+
 def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
     _write_raw(
         [
@@ -168,7 +183,9 @@ def test_chosen_position_reports_where_the_answer_was_shown(env: Path) -> None:
 
 
 def test_chosen_position_is_null_when_the_answer_was_not_shown(env: Path) -> None:
-    _write_raw([_raw_row("en", "kiwi", option_order='["mango", "apple"]')])
+    _write_raw(
+        [_raw_row("en", "kiwi", prompt_inputs='{"fruit_list": ["mango", "apple"]}')]
+    )
 
     normalize_experiment(
         _EXPERIMENT,
@@ -238,7 +255,29 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
         normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
     )
     cache = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert cache["en"]["banana and apple"]["canonical"] == "banana"
+    entry = cache["en"]["banana and apple"]
+    assert entry == {"canonical": "banana", "is_fruit": True, "multiple": True}
+
+
+def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) -> None:
+    result = FruitNormalization(
+        raw="starfruit", canonical="other", is_fruit=True, multiple=False
+    )
+    backend = FlakyBackend(result, failing="durian")
+    _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
+
+    with pytest.raises(ValueError, match="unparsed"):
+        normalize_experiment(
+            _EXPERIMENT, make_backend=lambda: backend, model="gpt-5.6-luna"
+        )
+
+    assert not normalized_path(_EXPERIMENT).is_file()
+    cache_path = (
+        normalize_module.MAPPINGS_DIR / _EXPERIMENT / "normalization_cache.json"
+    )
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert "starfruit" in cache["en"]
+    assert "durian" not in cache["en"]
 
 
 def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:

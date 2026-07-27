@@ -1,5 +1,10 @@
-"""Repo-root-anchored paths, environment loading, and API key access."""
+"""Repo-root-anchored paths, content hashing, environment loading and API key access.
 
+The prompt tree's shape and the way any piece of content is hashed live here so
+that every stage agrees on both without importing each other.
+"""
+
+import hashlib
 import os
 from pathlib import Path
 
@@ -17,6 +22,21 @@ RUNS_DIR = REPO_ROOT / "runs"
 SITE_DIR = REPO_ROOT / "site"
 CHARTS_DIR = SITE_DIR / "public" / "charts"
 PRICING_FILE = DATA_DIR / "pricing.json"
+
+
+def sha256_text(text: str) -> str:
+    """Return the hex SHA-256 of a piece of content, for manifests and provenance."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def experiment_dir(experiment_id: str) -> Path:
+    """Return an experiment's folder, holding its shared files and questions."""
+    return PROMPTS_DIR / experiment_id
+
+
+def question_dir(experiment_id: str, question_id: str) -> Path:
+    """Return one question's folder under its experiment."""
+    return experiment_dir(experiment_id) / question_id
 
 
 def load_env() -> None:

@@ -1,29 +1,25 @@
-"""Experiment and question config, the shared fruit table, and prompt rendering.
+"""Experiment and question config, and the prompt templates they name.
 
-An experiment (001_fruit) is declared by experiment.yaml plus a shared fruits.yaml
-and normalize.md. It contains questions (001a, 001b, ...), each a subfolder with
-its own meta.yaml and one prompt template per language. A template carries a
-{fruit_list} placeholder; the shown order of that list is either a fixed
-permutation or a per-sample shuffle, so a rendered prompt is produced per sample
-rather than read once from a static file.
+An experiment is declared by experiment.yaml plus normalize.md. It contains
+questions (001a, 001b, ...), each a subfolder with its own meta.yaml and one
+prompt template per language. A template's placeholders are filled per sample by
+the prompt inputs the question declares, so a rendered prompt is produced per
+sample rather than read once from a static file. Loading a question checks that
+its templates and its declared inputs name each other exactly.
 """
 
-import hashlib
-import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from llmango.config import PROMPTS_DIR
+from llmango.config import experiment_dir, question_dir, sha256_text
+from llmango.inputs import InputDeclarations, validate_placeholders
 from llmango.registry import get_experiment, resolve_experiment_id, resolve_schema
 
 _EXPERIMENT_FILE = "experiment.yaml"
-_FRUITS_FILE = "fruits.yaml"
 _META_FILE = "meta.yaml"
-_LIST_PLACEHOLDER = "{fruit_list}"
 
 
 class SamplingParams(BaseModel):
@@ -48,14 +44,17 @@ class ExperimentConfig(BaseModel):
 
 
 class QuestionMeta(BaseModel):
-    """Parsed contents of a question's meta.yaml manifest."""
+    """Parsed contents of a question's meta.yaml manifest.
+
+    Each entry under inputs is keyed by the template placeholder it fills, and
+    its body is passed through to the experiment untouched.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     languages: list[str]
-    order: Literal["fixed", "shuffle"]
-    order_ids: list[str] | None = None
     schema_variants: list[str] = Field(default_factory=lambda: ["en"])
+    inputs: InputDeclarations = Field(default_factory=dict)
     sampling: SamplingParams | None = None
 
 
@@ -66,33 +65,10 @@ class QuestionConfig:
     question_id: str
     experiment_id: str
     languages: list[str]
-    order: str
-    order_ids: list[str] | None
     schema_variants: list[str]
+    inputs: InputDeclarations
     sampling: SamplingParams
     model: str | None
-
-
-@dataclass(frozen=True)
-class FruitTable:
-    """The shared, ordered fruit list with its per-language labels."""
-
-    order: list[str]
-    labels: dict[str, dict[str, str]]
-    sha256: str
-
-    def canonical_ids(self) -> list[str]:
-        """Return the canonical ids in their identity (file) order."""
-        return list(self.order)
-
-    def label(self, canonical: str, lang: str) -> str:
-        """Return the localized label for one fruit, or raise if absent."""
-        labels = self.labels.get(canonical)
-        if labels is None:
-            raise KeyError(f"fruits.yaml has no fruit {canonical!r}")
-        if lang not in labels:
-            raise KeyError(f"fruits.yaml has no {lang} label for {canonical}")
-        return labels[lang]
 
 
 @dataclass(frozen=True)
@@ -103,21 +79,6 @@ class PromptTemplate:
     path: Path
     text: str
     sha256: str
-
-
-def prompt_sha256(text: str) -> str:
-    """Return the hex SHA-256 of a prompt's text."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def experiment_dir(experiment_id: str) -> Path:
-    """Return an experiment's folder, holding its shared files and questions."""
-    return PROMPTS_DIR / experiment_id
-
-
-def question_dir(experiment_id: str, question_id: str) -> Path:
-    """Return one question's folder under its experiment."""
-    return experiment_dir(experiment_id) / question_id
 
 
 def load_experiment_config(experiment_id: str) -> ExperimentConfig:
@@ -158,8 +119,9 @@ def load_question(ref: str) -> QuestionConfig:
     """Load and validate a question by reference (e.g. 001a).
 
     Resolves the owning experiment, reads the question's meta.yaml, and checks
-    that every declared language has a template, that a fixed order is a
-    permutation of the fruit set, and that every schema variant is registered.
+    that every declared language has a template, that each template's
+    placeholders match the declared prompt inputs, and that every schema variant
+    is registered.
     """
     experiment_id = resolve_experiment_id(ref)
     question_id = ref.strip()
@@ -182,36 +144,20 @@ def load_question(ref: str) -> QuestionConfig:
             f"Missing prompt templates for {question_id}: {', '.join(missing)}"
         )
 
-    _validate_order(meta, experiment_id, question_id)
+    for lang in meta.languages:
+        template = load_template(experiment_id, question_id, lang)
+        validate_placeholders(template.text, meta.inputs, f"{question_id}/{lang}.md")
     _validate_schema_variants(meta.schema_variants, experiment_id)
 
     return QuestionConfig(
         question_id=question_id,
         experiment_id=experiment_id,
         languages=meta.languages,
-        order=meta.order,
-        order_ids=meta.order_ids,
         schema_variants=meta.schema_variants,
+        inputs=meta.inputs,
         sampling=meta.sampling or exp_config.sampling,
         model=exp_config.model,
     )
-
-
-def load_fruits(experiment_id: str) -> FruitTable:
-    """Load the experiment's shared fruit table and hash its file contents."""
-    path = experiment_dir(experiment_id) / _FRUITS_FILE
-    if not path.is_file():
-        raise FileNotFoundError(f"Missing fruit table: {path}")
-    text = path.read_text(encoding="utf-8")
-    entries = cast(list[dict[str, Any]], yaml.safe_load(text) or [])
-    order: list[str] = []
-    labels: dict[str, dict[str, str]] = {}
-    for entry in entries:
-        canonical = str(entry["canonical"])
-        entry_labels = cast(dict[str, str], entry["labels"])
-        order.append(canonical)
-        labels[canonical] = {str(k): str(v) for k, v in entry_labels.items()}
-    return FruitTable(order=order, labels=labels, sha256=prompt_sha256(text))
 
 
 def load_template(experiment_id: str, question_id: str, lang: str) -> PromptTemplate:
@@ -220,64 +166,7 @@ def load_template(experiment_id: str, question_id: str, lang: str) -> PromptTemp
     if not path.is_file():
         raise FileNotFoundError(f"Missing prompt template: {path}")
     text = path.read_text(encoding="utf-8")
-    return PromptTemplate(lang=lang, path=path, text=text, sha256=prompt_sha256(text))
-
-
-def shown_order(
-    table: FruitTable,
-    order: str,
-    order_ids: list[str] | None,
-    sample_idx: int,
-    seed: int | None,
-) -> list[str]:
-    """Return the canonical ids in the order shown for one sample.
-
-    A fixed order is the declared permutation, identical across samples and
-    languages. A shuffle is deterministic in (seed, sample_idx) and so is shared
-    across languages for a given sample, keeping option position a controlled
-    variable.
-    """
-    if order == "fixed":
-        if order_ids is None:
-            raise ValueError("A fixed order needs order_ids.")
-        return list(order_ids)
-    return _shuffled(table.canonical_ids(), seed, sample_idx)
-
-
-def render_prompt(
-    template: PromptTemplate,
-    table: FruitTable,
-    order: str,
-    order_ids: list[str] | None,
-    sample_idx: int,
-    seed: int | None,
-) -> tuple[str, list[str]]:
-    """Render one sample's prompt and return it with the shown option order."""
-    shown = shown_order(table, order, order_ids, sample_idx, seed)
-    labels = ", ".join(table.label(canonical, template.lang) for canonical in shown)
-    return template.text.replace(_LIST_PLACEHOLDER, labels), shown
-
-
-def _shuffled(ids: list[str], seed: int | None, sample_idx: int) -> list[str]:
-    """Deterministically shuffle ids from a stable (seed, sample_idx) key."""
-    key = f"{seed}:{sample_idx}".encode()
-    rng = random.Random(int.from_bytes(hashlib.sha256(key).digest()[:8], "big"))
-    shuffled = list(ids)
-    rng.shuffle(shuffled)
-    return shuffled
-
-
-def _validate_order(meta: QuestionMeta, experiment_id: str, question_id: str) -> None:
-    """Check a fixed order names each fruit exactly once."""
-    if meta.order != "fixed":
-        return
-    canonical = set(load_fruits(experiment_id).canonical_ids())
-    order_ids = meta.order_ids or []
-    if sorted(order_ids) != sorted(canonical):
-        raise ValueError(
-            f"{question_id} order_ids must be a permutation of the fruit set; "
-            f"got {order_ids}."
-        )
+    return PromptTemplate(lang=lang, path=path, text=text, sha256=sha256_text(text))
 
 
 def _validate_schema_variants(schema_variants: list[str], experiment_id: str) -> None:

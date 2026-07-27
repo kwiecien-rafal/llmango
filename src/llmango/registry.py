@@ -13,13 +13,15 @@ charts agree on them by construction instead of by three matching string
 literals.
 """
 
-import hashlib
 import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from pydantic import BaseModel
+
+from llmango.config import sha256_text
+from llmango.inputs import BuildInput
 
 FREE_TEXT_VARIANT = "none"
 OTHER_CATEGORY = "other"
@@ -73,20 +75,45 @@ class SchemaVariant:
         if self.schema is None:
             return None
         encoded = json.dumps(self.schema.model_json_schema(), ensure_ascii=False)
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return sha256_text(encoded)
 
 
 @dataclass(frozen=True)
 class ExperimentSpec:
-    """Everything the generic pipeline needs to run one experiment."""
+    """Everything the generic pipeline needs to run one experiment.
+
+    raw_column, canonical_column and valid_column let an experiment name its own
+    columns in the experiment's own words. valid_column names two things at once:
+    the validity flag on the normalization schema, which the model sees, and the
+    column that flag lands in. The engine's own name for it is is_valid, so
+    normalize and aggregate never spell an experiment's vocabulary themselves.
+
+    build_input turns one of the question's declared prompt inputs into the text
+    that fills its placeholder. The engine finds and hashes the input's data file
+    but never reads inside it, so how a declaration becomes a prompt, including
+    any per-sample randomization, is the experiment's own decision.
+
+    mapping_seed offers normalization a label-to-canonical mapping the experiment
+    already has, sparing the LLM layer every answer that was on the prompt. It is
+    given the experiment's question ids, because a question may override an input
+    with its own data file and the seed has to cover every list actually shown.
+
+    position_input names the input chosen_position indexes into. That input's
+    recorded value must be a list of canonical ids; leave it unset for an
+    experiment where position means nothing.
+    """
 
     experiment_id: str
     schema_variants: dict[str, SchemaVariant]
     to_row: Callable[[BaseModel | None, str], dict[str, object]] | None = None
     normalization_schema: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
+    build_input: BuildInput | None = None
+    mapping_seed: Callable[[list[str]], dict[str, str]] | None = None
+    position_input: str | None = None
     raw_column: str = "raw"
     canonical_column: str = "canonical"
+    valid_column: str = "is_valid"
     canonical_values: frozenset[str] | None = None
     default_variant: str = "en"
 

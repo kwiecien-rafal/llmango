@@ -2,10 +2,10 @@
 
 A run turns one question into validated responses across languages and samples,
 writes them to Parquet, and records a manifest. Prompts are rendered per sample
-from templates and the shared fruit table, so the option order can be fixed or
-shuffled per sample. Reruns with the same configuration are skipped by matching
-the manifest content hash, so results are never duplicated. The batch path splits
-this into submit and fetch.
+from templates and the question's prompt inputs, which the experiment builds, so
+what varies per sample is the experiment's to decide. Reruns with the same
+configuration are skipped by matching the manifest content hash, so results are
+never duplicated. The batch path splits this into submit and fetch.
 """
 
 import json
@@ -21,6 +21,8 @@ from llmango.backends.base import (
     GenResult,
     Usage,
 )
+from llmango.config import sha256_text
+from llmango.inputs import InputSource, load_input_sources, render, resolve
 from llmango.manifest import (
     RunManifest,
     RunUsage,
@@ -41,13 +43,10 @@ from llmango.pricing import (
     round_usd,
 )
 from llmango.questions import (
-    FruitTable,
     PromptTemplate,
-    load_fruits,
+    QuestionConfig,
     load_question,
     load_template,
-    prompt_sha256,
-    render_prompt,
 )
 from llmango.registry import ExperimentSpec, SchemaVariant, get_experiment
 from llmango.storage import COST_COLUMNS, USAGE_COLUMNS, results_path, write_results
@@ -156,7 +155,7 @@ def _result_to_row(
         "temperature": request.sampling.temperature,
         "prompt_sha256": request.prompt_sha256,
         "prompt": request.prompt,
-        "option_order": json.dumps(list(request.option_order), ensure_ascii=False),
+        "prompt_inputs": request.prompt_inputs,
         "raw_json": result.raw_json,
         **parsed_fields,
         "model_snapshot": result.model_snapshot,
@@ -240,7 +239,7 @@ class _PreparedRun:
     spec: ExperimentSpec
     manifest: RunManifest
     templates: dict[str, PromptTemplate]
-    fruits: FruitTable
+    sources: dict[str, InputSource]
 
 
 def _prepare(
@@ -250,16 +249,20 @@ def _prepare(
     samples: int,
     languages: list[str] | None,
     seed: int | None,
-    schema_variant: str,
+    schema_variant: str | None,
     run_id: str | None,
 ) -> _PreparedRun:
     """Load the question and build its manifest, ready for the idempotency check.
+
+    An unset schema variant falls back to the experiment's declared default, so
+    no caller has to name an arm that only some experiments happen to have.
 
     The run id is derived from the finished manifest, since it embeds the
     configuration's content hash, so it is filled in once the rest is known.
     """
     config = load_question(question_ref)
     spec = get_experiment(config.experiment_id)
+    schema_variant = schema_variant or spec.default_variant
     variant = spec.variant(schema_variant)
 
     model = model or config.model
@@ -274,7 +277,10 @@ def _prepare(
         lang: load_template(config.experiment_id, config.question_id, lang)
         for lang in languages
     }
-    fruits = load_fruits(config.experiment_id)
+    sources = load_input_sources(
+        config.experiment_id, config.question_id, list(config.inputs)
+    )
+    _check_inputs_build(spec, config, sources, languages[0], effective_seed)
 
     manifest = RunManifest(
         run_id="",
@@ -289,14 +295,38 @@ def _prepare(
         sampling=config.sampling,
         seed=effective_seed,
         samples_per_language=samples,
-        order=config.order,
-        order_ids=config.order_ids,
+        inputs=config.inputs,
         template_sha256={lang: template.sha256 for lang, template in templates.items()},
-        fruits_sha256=fruits.sha256,
+        input_sha256={name: source.sha256 for name, source in sources.items()},
     )
     manifest.run_id = run_id or build_run_id(manifest)
     return _PreparedRun(
-        spec=spec, manifest=manifest, templates=templates, fruits=fruits
+        spec=spec, manifest=manifest, templates=templates, sources=sources
+    )
+
+
+def _check_inputs_build(
+    spec: ExperimentSpec,
+    config: QuestionConfig,
+    sources: dict[str, InputSource],
+    lang: str,
+    seed: int | None,
+) -> None:
+    """Build one sample's inputs so a bad declaration fails before anything is spent.
+
+    An experiment validates its own declarations inside build_input, which only
+    the request loop reaches. Calling it once here puts that validation back on
+    the plan path, where a malformed order or an unknown input name is caught
+    while a run is still being priced rather than partway through paying for it.
+    """
+    resolve(
+        spec.build_input,
+        sources,
+        config.inputs,
+        lang,
+        0,
+        seed,
+        config.experiment_id,
     )
 
 
@@ -335,7 +365,7 @@ def run(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_variant: str = "en",
+    schema_variant: str | None = None,
     run_id: str | None = None,
     max_retries: int = 3,
     retry_backoff: float = 1.0,
@@ -349,6 +379,7 @@ def run(
     If a manifest with the same content hash already exists, the run is skipped
     and nothing is regenerated. The pricing table defaults to the committed
     pricing file and is pinned into the manifest so cost stays reproducible.
+    An unset schema variant uses the experiment's declared default.
     """
     prepared = _prepare(
         question,
@@ -371,7 +402,7 @@ def run(
     variant = prepared.spec.variant(manifest.schema_variant)
     results = _generate_all(
         backend,
-        _build_requests(manifest, prepared.spec, prepared.templates, prepared.fruits),
+        _build_requests(manifest, prepared.spec, prepared.templates, prepared.sources),
         max_retries,
         retry_backoff,
         requests_per_minute,
@@ -410,7 +441,7 @@ def plan_run(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_variant: str = "en",
+    schema_variant: str | None = None,
 ) -> RunPlan:
     """Build a run's manifest and check for a duplicate without generating anything.
 
@@ -444,7 +475,7 @@ def submit_batch(
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_variant: str = "en",
+    schema_variant: str | None = None,
     run_id: str | None = None,
     pricing_table: PricingTable | None = None,
 ) -> RunOutcome:
@@ -474,7 +505,7 @@ def submit_batch(
     manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
     _pin_pricing(manifest, pricing_table)
     manifest.batch_id = backend.submit(
-        _build_requests(manifest, prepared.spec, prepared.templates, prepared.fruits)
+        _build_requests(manifest, prepared.spec, prepared.templates, prepared.sources)
     )
     try:
         written_manifest_path = write_manifest(manifest)
@@ -499,7 +530,7 @@ def fetch_batch(run_id: str, backend: BatchBackend) -> RunOutcome:
     """Fetch a submitted batch's results and persist them to Parquet.
 
     Rebuilds the exact requests from the stored manifest, verifying the templates
-    and fruit table still hash to the values recorded at submit time before
+    and prompt inputs still hash to the values recorded at submit time before
     writing results. The manifest is rewritten with the usage and cost the batch
     turned out to consume, which submit time could not know; its configuration,
     and so its content hash, is untouched.
@@ -552,20 +583,23 @@ def _requests_from_manifest(
                 f"Template {manifest.question_id}/{lang}.md changed since submit; "
                 f"its hash no longer matches the manifest."
             )
-    fruits = load_fruits(manifest.experiment_id)
-    if fruits.sha256 != manifest.fruits_sha256:
-        raise ValueError(
-            f"fruits.yaml for {manifest.experiment_id} changed since submit; "
-            f"its hash no longer matches the manifest."
-        )
-    return _build_requests(manifest, spec, templates, fruits)
+    sources = load_input_sources(
+        manifest.experiment_id, manifest.question_id, list(manifest.inputs)
+    )
+    for name, source in sources.items():
+        if source.sha256 != manifest.input_sha256.get(name):
+            raise ValueError(
+                f"Prompt input {name} for {manifest.experiment_id} changed since "
+                f"submit; its hash no longer matches the manifest."
+            )
+    return _build_requests(manifest, spec, templates, sources)
 
 
 def _build_requests(
     manifest: RunManifest,
     spec: ExperimentSpec,
     templates: dict[str, PromptTemplate],
-    fruits: FruitTable,
+    sources: dict[str, InputSource],
 ) -> list[GenRequest]:
     """Render one request per language and sample from the run's templates."""
     variant = spec.variant(manifest.schema_variant)
@@ -573,26 +607,33 @@ def _build_requests(
     for lang in manifest.languages:
         template = templates[lang]
         for sample_idx in range(manifest.samples_per_language):
-            prompt, shown = render_prompt(
-                template,
-                fruits,
-                manifest.order,
-                manifest.order_ids,
+            resolved = resolve(
+                spec.build_input,
+                sources,
+                manifest.inputs,
+                lang,
                 sample_idx,
                 manifest.seed,
+                manifest.experiment_id,
             )
+            prompt = render(template.text, resolved)
+            recorded = {
+                name: value.value
+                for name, value in resolved.items()
+                if value.value is not None
+            }
             requests.append(
                 GenRequest(
                     question_id=manifest.question_id,
                     lang=lang,
                     model=manifest.model,
                     prompt=prompt,
-                    prompt_sha256=prompt_sha256(prompt),
+                    prompt_sha256=sha256_text(prompt),
                     sample_idx=sample_idx,
                     seed=manifest.seed,
                     sampling=manifest.sampling,
                     response_schema=variant.schema,
-                    option_order=tuple(shown),
+                    prompt_inputs=json.dumps(recorded, ensure_ascii=False),
                     schema_variant=manifest.schema_variant,
                 )
             )

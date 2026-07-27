@@ -1,11 +1,4 @@
-"""Parquet storage for raw generation results.
-
-Raw results are written one Parquet file per (question, model, run). The common
-columns are fixed here per CLAUDE.md; each experiment contributes its own parsed
-fields via its to_row hook, which land between raw_json and the provenance block.
-After the parsed fields comes a fixed block recording the provenance, token usage
-and cost of each generation, then created_at.
-"""
+"""Parquet storage for raw generation results."""
 
 from collections.abc import Iterable
 from pathlib import Path
@@ -27,7 +20,7 @@ COMMON_LEADING_COLUMNS = [
     "temperature",
     "prompt_sha256",
     "prompt",
-    "option_order",
+    "prompt_inputs",
     "raw_json",
 ]
 
@@ -76,7 +69,7 @@ _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "temperature": pl.Float64(),
     "prompt_sha256": pl.String(),
     "prompt": pl.String(),
-    "option_order": pl.String(),
+    "prompt_inputs": pl.String(),
     "raw_json": pl.String(),
     "model_snapshot": pl.String(),
     "finish_reason": pl.String(),
@@ -107,12 +100,7 @@ def _slugify(value: str) -> str:
 
 
 def results_path(run_id: str, model: str) -> Path:
-    """Return the Parquet path for one run.
-
-    The name is the run id plus the model, so a raw file and its manifest share a
-    prefix and sort into the same order, and a question's files still group under
-    its id.
-    """
+    """Return the Parquet path for one run."""
     return RAW_DIR / f"{run_id}__{_slugify(model)}.parquet"
 
 

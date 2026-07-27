@@ -7,7 +7,6 @@ configuration, so re-running the same config produces the same hash and the
 runner can skip duplicate work; measured outcomes are excluded from it.
 """
 
-import hashlib
 import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -16,7 +15,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, computed_field
 
-from llmango.config import RUNS_DIR
+from llmango.config import RUNS_DIR, sha256_text
+from llmango.inputs import InputDeclarations
 from llmango.pricing import PricingEntry
 from llmango.questions import SamplingParams
 
@@ -102,10 +102,11 @@ class RunUsage(BaseModel):
 class RunManifest(BaseModel):
     """A traceable record of one run's exact configuration and environment.
 
-    Prompts are rendered per sample from templates and the shared fruit table, so
-    the manifest hashes those inputs plus the order strategy and the response
-    schema rather than a single static prompt. The same inputs plus seed and
-    sample index reproduce every prompt exactly.
+    Prompts are rendered per sample from templates and the question's prompt
+    inputs, so the manifest records each input's declaration, hashes the data file
+    behind it alongside the templates, and pins the response schema, rather than
+    storing a single static prompt. Those inputs plus seed and sample index
+    reproduce every prompt exactly.
     """
 
     run_id: str
@@ -116,17 +117,16 @@ class RunManifest(BaseModel):
     model_snapshot: str | None = None
     pricing: PricingEntry | None = None
     batch_id: str | None = None
-    schema_variant: str = "en"
+    schema_variant: str
     schema_name: str | None = None
     schema_sha256: str | None = None
     languages: list[str]
     sampling: SamplingParams
     seed: int | None = None
     samples_per_language: int
-    order: str
-    order_ids: list[str] | None = None
+    inputs: InputDeclarations = Field(default_factory=dict)
     template_sha256: dict[str, str]
-    fruits_sha256: str
+    input_sha256: dict[str, str] = Field(default_factory=dict)
     usage: RunUsage | None = None
     package_versions: dict[str, str] = Field(default_factory=collect_package_versions)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -141,7 +141,7 @@ class RunManifest(BaseModel):
         """Hash the run configuration, ignoring run id, timestamp and environment."""
         payload = self.model_dump(mode="json", exclude=_CONTENT_EXCLUDE)
         encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return sha256_text(encoded)
 
 
 def build_run_id(manifest: RunManifest) -> str:

@@ -27,14 +27,14 @@ def _manifest(**overrides: Any) -> RunManifest:
         "question_id": "001a",
         "backend": "openai",
         "model": "gpt-5.6-luna",
+        "schema_variant": "en",
         "languages": ["en", "pl"],
         "sampling": SamplingParams(temperature=1.0, seed=7),
         "seed": 7,
         "samples_per_language": 5,
-        "order": "fixed",
-        "order_ids": ["apple", "mango"],
+        "inputs": {"fruit_list": {"order": "fixed", "order_ids": ["apple", "mango"]}},
         "template_sha256": {"en": "aaa", "pl": "bbb"},
-        "fruits_sha256": "ccc",
+        "input_sha256": {"fruit_list": "ccc"},
     }
     base.update(overrides)
     return RunManifest(**base)
@@ -130,11 +130,19 @@ def test_run_id_hash_tracks_the_configuration() -> None:
     )
 
 
-def test_content_hash_changes_with_order() -> None:
-    reversed_ids = ["mango", "apple"]
+def test_content_hash_changes_with_an_input_declaration() -> None:
+    forward = {"fruit_list": {"order": "fixed", "order_ids": ["apple", "mango"]}}
+    reversed_ids = {"fruit_list": {"order": "fixed", "order_ids": ["mango", "apple"]}}
     assert (
-        _manifest(order_ids=["apple", "mango"]).content_hash()
-        != _manifest(order_ids=reversed_ids).content_hash()
+        _manifest(inputs=forward).content_hash()
+        != _manifest(inputs=reversed_ids).content_hash()
+    )
+
+
+def test_content_hash_changes_with_an_input_file() -> None:
+    assert (
+        _manifest(input_sha256={"fruit_list": "ccc"}).content_hash()
+        != _manifest(input_sha256={"fruit_list": "ddd"}).content_hash()
     )
 
 

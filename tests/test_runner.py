@@ -1,5 +1,6 @@
 """Tests for the runner: persistence, idempotency and refusal handling."""
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -174,7 +175,7 @@ def test_refusals_persist_with_empty_fruit_raw(pricing_table: PricingTable) -> N
     assert frame["prompt_tokens"].to_list() == [None]
 
 
-def test_run_tags_the_schema_variant_and_option_order(
+def test_run_tags_the_schema_variant_and_prompt_inputs(
     fake_backend: GenerationBackend, pricing_table: PricingTable
 ) -> None:
     outcome = run(
@@ -190,8 +191,9 @@ def test_run_tags_the_schema_variant_and_option_order(
     assert frame["schema_variant"].to_list() == ["en"]
     assert frame["schema_name"].to_list() == ["FruitChoice"]
     assert outcome.manifest.schema_sha256
-    order = frame["option_order"].to_list()[0]
-    assert order.startswith("[") and "apple" in order
+    recorded = json.loads(frame["prompt_inputs"].to_list()[0])
+    assert recorded["fruit_list"] == outcome.manifest.inputs["fruit_list"]["order_ids"]
+    assert outcome.manifest.input_sha256["fruit_list"]
 
 
 def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None:

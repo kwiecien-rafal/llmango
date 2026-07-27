@@ -1,3 +1,5 @@
 languages: [pl]
-order: shuffle
 schema_variants: [en, pl, none]
+inputs:
+  fruit_list:
+    order: shuffle

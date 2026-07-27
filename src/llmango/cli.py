@@ -53,7 +53,7 @@ def run(
         list[str] | None, typer.Option("--lang", help="Restrict to these languages.")
     ] = None,
     seed: Annotated[
-        int | None, typer.Option("--seed", help="Seed for the shuffled option order.")
+        int | None, typer.Option("--seed", help="Seed for per-sample prompt inputs.")
     ] = None,
     batch: Annotated[
         bool, typer.Option("--batch", help="Submit via the OpenAI Batch API.")
@@ -235,7 +235,7 @@ def _report_plan(plan: RunPlan) -> None:
     typer.echo(f"  model:     {manifest.model}")
     schema = manifest.schema_name or "free text"
     typer.echo(f"  schema:    {manifest.schema_variant} ({schema})")
-    typer.echo(f"  order:     {manifest.order}")
+    typer.echo(f"  inputs:    {', '.join(sorted(manifest.inputs)) or 'none'}")
     typer.echo(f"  languages: {', '.join(manifest.languages)}")
     typer.echo(f"  samples:   {manifest.samples_per_language} per language")
     typer.echo(f"  requests:  {manifest.total_requests} total")

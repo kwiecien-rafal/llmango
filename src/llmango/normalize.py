@@ -2,22 +2,26 @@
 
 Runs per experiment: reads the raw answers of every question in the experiment
 and maps each onto a canonical English category in layers, cheapest first. The
-shared fruit table seeds the deterministic mapping so every in-list answer
-resolves for free; leftover strings (off-list or free-text) fall through to the
-mapping file and then an LLM. Raw answers are never overwritten. Normalization
-only adds the canonical, is_fruit, multiple and chosen_position columns and
+experiment's own mapping seed resolves every answer it already has a label for;
+leftover strings (off-list or free-text) fall through to the mapping file and
+then an LLM. Raw answers are never overwritten. Normalization
+only adds the canonical, validity, multiple and chosen_position columns and
 writes a separate normalized Parquet file. Every LLM result is cached and
 promoted, so reruns never pay for the same string twice.
 
+The engine calls the validity flag is_valid throughout; the column it lands in
+and the field the model fills are both named by the experiment's valid_column,
+so an experiment keeps its own wording without the engine adopting it.
+
 Position is resolved here rather than at generation time because it takes a
 canonical answer to locate: the raw answer is free text in the prompt's language,
-while option_order records which canonical ids were shown and in what order.
+while prompt_inputs records what the question's inputs resolved to for that row.
 """
 
 import json
 import string
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,16 +30,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 from llmango.backends.base import GenerationBackend, GenRequest
-from llmango.config import MAPPINGS_DIR
+from llmango.config import MAPPINGS_DIR, experiment_dir
 from llmango.questions import (
     SamplingParams,
-    experiment_dir,
     list_questions,
     load_experiment_config,
-    load_fruits,
 )
 from llmango.registry import (
-    OTHER_CATEGORY,
     ExperimentSpec,
     get_experiment,
     resolve_experiment_id,
@@ -50,12 +51,17 @@ _PUNCTUATION = string.punctuation + "«»„“”‘’¿¡… "
 
 
 class Resolution(BaseModel):
-    """The canonical category a raw answer resolves to."""
+    """The canonical category a raw answer resolves to.
+
+    is_valid is the engine's name for the flag saying the answer named a category
+    at all. An experiment spells the same flag its own way, so a resolution is
+    read from and written back to the experiment's field names.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     canonical: str
-    is_fruit: bool
+    is_valid: bool
     multiple: bool
 
 
@@ -78,6 +84,30 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
     if spec.preprocess is not None:
         text = spec.preprocess(text)
     return text
+
+
+def _read_resolution(fields: Mapping[str, object], spec: ExperimentSpec) -> Resolution:
+    """Read a resolution from fields keyed the experiment's way.
+
+    Both the model's normalization response and the cache on disk spell the
+    validity flag with the experiment's valid_column, so it is renamed to the
+    engine's is_valid before validation. Any other field, such as the echoed raw
+    answer, is ignored.
+    """
+    payload = dict(fields)
+    payload["is_valid"] = payload.get(spec.valid_column)
+    return Resolution.model_validate(payload)
+
+
+def _write_resolution(
+    resolution: Resolution, spec: ExperimentSpec
+) -> dict[str, object]:
+    """Write a resolution back out under the experiment's own field names."""
+    return {
+        "canonical": resolution.canonical,
+        spec.valid_column: resolution.is_valid,
+        "multiple": resolution.multiple,
+    }
 
 
 def normalize_experiment(
@@ -106,7 +136,7 @@ def normalize_experiment(
     frame = _read_experiment_raw(experiment_id)
 
     directory = MAPPINGS_DIR / experiment_id
-    mapping = _load_mapping(directory, spec, experiment_id)
+    mapping = _load_mapping(directory, spec)
     cache = _load_cache(directory)
     pairs = _distinct_pairs(frame, spec)
 
@@ -131,7 +161,7 @@ def normalize_experiment(
         resolutions.update(
             _resolve_online(
                 unresolved,
-                experiment_id,
+                spec,
                 normalization_schema,
                 make_backend,
                 model,
@@ -140,6 +170,7 @@ def normalize_experiment(
             )
         )
         _save_cache(directory, cache)
+        _require_all_resolved(unresolved, resolutions)
 
     normalized = _join_resolutions(frame, resolutions, spec)
     parquet_path = write_normalized(normalized, experiment_id)
@@ -181,26 +212,31 @@ def _resolve_offline(
 ) -> Resolution | None:
     """Resolve a raw answer without an LLM: refusal, mapping table, then cache."""
     if not raw.strip():
-        return Resolution(canonical="", is_fruit=False, multiple=False)
+        return Resolution(canonical="", is_valid=False, multiple=False)
     canonical = mapping.get(preprocess(raw, spec))
     if canonical is not None:
-        return Resolution(canonical=canonical, is_fruit=True, multiple=False)
+        return Resolution(canonical=canonical, is_valid=True, multiple=False)
     cached = cache.get(lang, {}).get(raw)
     if cached is not None:
-        return Resolution.model_validate(cached)
+        return _read_resolution(cached, spec)
     return None
 
 
 def _resolve_online(
     unresolved: list[tuple[str, str]],
-    experiment_id: str,
+    spec: ExperimentSpec,
     response_schema: type[BaseModel],
     make_backend: Callable[[], GenerationBackend] | None,
     model: str | None,
     max_llm_calls: int | None,
     cache: dict[str, dict[str, dict[str, object]]],
 ) -> dict[tuple[str, str], Resolution]:
-    """Guard cost, build the backend lazily, and resolve the leftover answers."""
+    """Guard cost, build the backend lazily, and resolve the leftover answers.
+
+    Only a parsed response becomes a resolution. Anything else is left out, so the
+    caller can save what was paid for and then report what is missing.
+    """
+    experiment_id = spec.experiment_id
     if max_llm_calls is not None and len(unresolved) > max_llm_calls:
         raise ValueError(
             f"{len(unresolved)} answers need the LLM layer, above the smoke limit "
@@ -234,14 +270,33 @@ def _resolve_online(
     resolved: dict[tuple[str, str], Resolution] = {}
     for (lang, raw), result in zip(unresolved, results, strict=True):
         if result.parsed is None:
-            resolved[(lang, raw)] = Resolution(
-                canonical=OTHER_CATEGORY, is_fruit=True, multiple=False
-            )
             continue
-        resolution = Resolution.model_validate(result.parsed.model_dump(mode="json"))
+        resolution = _read_resolution(result.parsed.model_dump(mode="json"), spec)
         resolved[(lang, raw)] = resolution
-        cache.setdefault(lang, {})[raw] = resolution.model_dump()
+        cache.setdefault(lang, {})[raw] = _write_resolution(resolution, spec)
     return resolved
+
+
+def _require_all_resolved(
+    unresolved: list[tuple[str, str]],
+    resolutions: dict[tuple[str, str], Resolution],
+) -> None:
+    """Fail rather than let a call that answered nothing become a category.
+
+    A call that came back with no parsed response, whether it errored, was refused
+    or was cut short, carries no answer, so writing it out under any category
+    would put a transport failure into the distributions. Everything that did come
+    back is cached by the time this runs, so a rerun pays only for these again.
+    """
+    failed = [pair for pair in unresolved if pair not in resolutions]
+    if not failed:
+        return
+    preview = ", ".join(f"{lang}:{raw!r}" for lang, raw in failed[:3])
+    raise ValueError(
+        f"{len(failed)} of {len(unresolved)} answers came back unparsed and were "
+        f"not written: {preview}. Everything else is cached, so a rerun retries "
+        f"only these."
+    )
 
 
 def _join_resolutions(
@@ -260,7 +315,7 @@ def _join_resolutions(
             "lang": lang,
             spec.raw_column: raw,
             spec.canonical_column: resolution.canonical or None,
-            "is_fruit": resolution.is_fruit,
+            spec.valid_column: resolution.is_valid,
             "multiple": resolution.multiple,
         }
         for (lang, raw), resolution in resolutions.items()
@@ -269,7 +324,7 @@ def _join_resolutions(
         "lang": pl.String(),
         spec.raw_column: pl.String(),
         spec.canonical_column: pl.String(),
-        "is_fruit": pl.Boolean(),
+        spec.valid_column: pl.Boolean(),
         "multiple": pl.Boolean(),
     }
     resolution_frame = pl.DataFrame(rows, schema_overrides=schema)
@@ -278,7 +333,7 @@ def _join_resolutions(
 
 
 def _position(order: list[str] | None, canonical: str | None) -> int | None:
-    """Return the 1-based place of one canonical answer among the options shown.
+    """Return the 1-based place of one canonical answer among the values shown.
 
     Null whenever the answer is not one of them: a refusal, an 'other' answer, or
     a category that exists but was not on this sample's list.
@@ -289,19 +344,30 @@ def _position(order: list[str] | None, canonical: str | None) -> int | None:
 
 
 def _positions(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.Series:
-    """Locate every row's canonical answer in the option order it was shown."""
-    shown = frame.get_column("option_order").str.json_decode(pl.List(pl.String()))
+    """Locate every row's canonical answer in the input it was shown.
+
+    Empty when the experiment names no positional input, which is any experiment
+    whose prompt does not present an ordered list to choose from.
+    """
+    if spec.position_input is None:
+        return pl.Series("chosen_position", [None] * frame.height, dtype=pl.Int64())
+    shown = (
+        frame.get_column("prompt_inputs")
+        .str.json_decode(pl.Struct({spec.position_input: pl.List(pl.String())}))
+        .struct.field(spec.position_input)
+        .to_list()
+    )
     canonicals = frame.get_column(spec.canonical_column).to_list()
     positions = [
         _position(order, canonical)
-        for order, canonical in zip(shown.to_list(), canonicals, strict=True)
+        for order, canonical in zip(shown, canonicals, strict=True)
     ]
     return pl.Series("chosen_position", positions, dtype=pl.Int64())
 
 
 def _order_columns(frame: pl.DataFrame, spec: ExperimentSpec) -> pl.DataFrame:
     """Move the added columns to sit directly after the raw answer they describe."""
-    added = [spec.canonical_column, "is_fruit", "multiple", "chosen_position"]
+    added = [spec.canonical_column, spec.valid_column, "multiple", "chosen_position"]
     kept = [column for column in frame.columns if column not in added]
     cut = kept.index(spec.raw_column) + 1
     return frame.select(kept[:cut] + added + kept[cut:])
@@ -313,15 +379,13 @@ def _normalize_model(experiment_id: str) -> str | None:
     return config.normalize_model or config.model
 
 
-def _load_mapping(
-    directory: Path, spec: ExperimentSpec, experiment_id: str
-) -> dict[str, str]:
-    """Load the deterministic mapping, seeded by the fruit table labels.
+def _load_mapping(directory: Path, spec: ExperimentSpec) -> dict[str, str]:
+    """Load the deterministic mapping, seeded by the experiment's own labels.
 
-    The fruit table's per-language labels resolve every in-list answer for free;
-    mapping.yaml adds or overrides entries for anything else.
+    The seed resolves every answer the experiment already knows a label for, in
+    any language; mapping.yaml adds or overrides entries for anything else.
     """
-    mapping = _fruit_label_mapping(experiment_id, spec)
+    mapping = _seed_mapping(spec)
     path = directory / _MAPPING_FILE
     if path.is_file():
         raw_map: dict[str, str] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -335,14 +399,16 @@ def _load_mapping(
     return mapping
 
 
-def _fruit_label_mapping(experiment_id: str, spec: ExperimentSpec) -> dict[str, str]:
-    """Build a label-to-canonical mapping from the experiment's fruit table."""
-    table = load_fruits(experiment_id)
-    return {
-        preprocess(label, spec): canonical
-        for canonical, labels in table.labels.items()
-        for label in labels.values()
-    }
+def _seed_mapping(spec: ExperimentSpec) -> dict[str, str]:
+    """Preprocess the experiment's label-to-canonical seed, empty when it has none.
+
+    The experiment is given its question ids, because a question may override an
+    input with its own data file while normalization spans every question at once.
+    """
+    if spec.mapping_seed is None:
+        return {}
+    seed = spec.mapping_seed(list_questions(spec.experiment_id))
+    return {preprocess(label, spec): canonical for label, canonical in seed.items()}
 
 
 def _load_cache(directory: Path) -> dict[str, dict[str, dict[str, object]]]:

@@ -36,7 +36,7 @@ class Answer:
     schema_variant: str
     lang: str
     canonical: str
-    is_fruit: bool
+    is_valid: bool
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             "schema_variant",
             "lang",
             spec.canonical_column,
-            "is_fruit",
+            spec.valid_column,
         )
     }
     return [
@@ -90,14 +90,14 @@ def _answers(frame: pl.DataFrame, spec: ExperimentSpec) -> list[Answer]:
             schema_variant=str(schema_variant),
             lang=str(lang),
             canonical=_text(canonical),
-            is_fruit=bool(fruit),
+            is_valid=bool(valid),
         )
-        for question_id, schema_variant, lang, canonical, fruit in zip(
+        for question_id, schema_variant, lang, canonical, valid in zip(
             columns["question_id"],
             columns["schema_variant"],
             columns["lang"],
             columns[spec.canonical_column],
-            columns["is_fruit"],
+            columns[spec.valid_column],
             strict=True,
         )
     ]
@@ -127,7 +127,7 @@ def _nest(heads: dict[tuple[str, str], Head], metric: Metric) -> Mapping[str, ob
 
 def _distribution(answers: list[Answer]) -> dict[str, object]:
     """Count one group's valid answers over their canonical categories."""
-    counts = Counter(answer.canonical for answer in answers if answer.is_fruit)
+    counts = Counter(answer.canonical for answer in answers if answer.is_valid)
     total = counts.total()
     return {
         "n": total,
