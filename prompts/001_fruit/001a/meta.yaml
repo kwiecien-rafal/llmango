@@ -1,5 +1,10 @@
-languages: [en, pl, ja]
-schema_variants: [en]
+ask:
+  - language: en
+    schemas: [FruitChoice]
+  - language: pl
+    schemas: [FruitChoice]
+  - language: ja
+    schemas: [FruitChoice]
 inputs:
   fruit_list:
     order: fixed

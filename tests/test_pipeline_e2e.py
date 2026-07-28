@@ -37,22 +37,17 @@ def pipeline(data_dirs: Path) -> Path:
 def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
     path = tmp_path / "aggregated" / f"{_QUESTION}.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload["distributions"]["en"]
+    return payload["distributions"]["FruitChoice"]
 
 
 def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
     backend: Backend = make_fake_backend(_ANSWERS)
-    run_outcome = run(
-        plan(
-            _QUESTION,
-            RunOptions(
-                backend_id=backend.backend_id, samples=4, languages=["en", "pl"]
-            ),
-        ),
-        backend,
+    options = RunOptions(
+        backend_id=backend.backend_id, samples=4, languages=["en", "pl"]
     )
+    run_outcome = run(plan(_QUESTION, options)[0], backend)
     assert run_outcome.rows_written == 8
 
     raw = read_results("*.parquet")

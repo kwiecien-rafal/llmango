@@ -16,7 +16,6 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
     return {
         "question_id": "001a",
         "lang": "en",
-        "schema_variant": "en",
         "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
         "backend": "fake",
@@ -37,6 +36,7 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
         "system_fingerprint": "fp_fake",
         "service_tier": "default",
         "provider_created_at": datetime(2026, 7, 20, tzinfo=UTC),
+        "response_schema": '{"title": "FruitChoice"}',
         "request_envelope": '{"model": "gpt-5.6-luna"}',
         "response_envelope": '{"id": "chatcmpl-fake"}',
         "prompt_tokens": 12,
@@ -78,7 +78,6 @@ def test_columns_follow_the_canonical_order(
     assert frame.columns == [
         "question_id",
         "lang",
-        "schema_variant",
         "schema_name",
         "model",
         "backend",
@@ -99,6 +98,7 @@ def test_columns_follow_the_canonical_order(
         "system_fingerprint",
         "service_tier",
         "provider_created_at",
+        "response_schema",
         "request_envelope",
         "response_envelope",
         "prompt_tokens",

@@ -26,7 +26,7 @@ def _manifest(**overrides: Any) -> RunManifest:
         "question_id": "001a",
         "backend": "openai",
         "model": "gpt-5.6-luna",
-        "schema_variant": "en",
+        "schema_name": "FruitChoice",
         "languages": ["en", "pl"],
         "sampling": SamplingParams(temperature=1.0, seed=7),
         "seed": 7,
@@ -70,15 +70,23 @@ def test_manifest_round_trips_usage() -> None:
     assert restored.usage.by_language["en"].prompt_tokens == 120
 
 
-def test_run_id_sorts_by_question_arm_then_time() -> None:
-    early = _manifest(created_at=datetime(2026, 7, 25, 14, 25, 30, tzinfo=UTC))
+def test_run_id_sorts_by_question_then_time() -> None:
+    early = _manifest(created_at=datetime(2026, 7, 25, 14, 25, 30, 42000, tzinfo=UTC))
     late = _manifest(created_at=datetime(2026, 7, 26, 9, 12, 4, tzinfo=UTC))
 
     early_id = build_run_id(early)
 
-    assert early_id == "001a__en__20260725T142530Z"
+    assert early_id == "001a__20260725T142530042Z"
     assert early_id < build_run_id(late)
     assert not set(early_id) & set(":/\\ ")
+
+
+def test_run_ids_a_millisecond_apart_do_not_collide() -> None:
+    """Arms of one question are submitted back to back and must not share an id."""
+    first = _manifest(created_at=datetime(2026, 7, 25, 14, 25, 30, 1000, tzinfo=UTC))
+    second = _manifest(created_at=datetime(2026, 7, 25, 14, 25, 30, 2000, tzinfo=UTC))
+
+    assert build_run_id(first) != build_run_id(second)
 
 
 def test_manifest_round_trips_pricing() -> None:

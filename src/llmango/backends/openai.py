@@ -38,11 +38,7 @@ def require_openai_key() -> str:
 
 
 def backend_id(batch: bool) -> str:
-    """Return the id a run is recorded under for one of the two transports.
-
-    The two stay distinct even though they are one provider and one request body,
-    because they bill differently and are different provenance.
-    """
+    """Return the id a run is recorded under for one of the two transports."""
     return "openai-batch" if batch else "openai"
 
 

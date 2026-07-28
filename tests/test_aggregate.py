@@ -1,4 +1,4 @@
-"""Tests for aggregation: distributions and the 'other' share."""
+"""Tests for aggregation: distributions, arm labels and the 'other' share."""
 
 import json
 from pathlib import Path
@@ -10,6 +10,7 @@ from llmango.aggregate import aggregate_question
 from llmango.storage import write_normalized
 
 _QUESTION = "001a"
+_ARMS = "001d"
 
 
 @pytest.fixture
@@ -23,11 +24,11 @@ def _row(
     canonical: str,
     is_valid: bool,
     error: str | None = None,
-    schema_variant: str = "en",
+    schema_name: str | None = "FruitChoice",
 ) -> dict[str, object]:
     return {
         "question_id": "001a",
-        "schema_variant": schema_variant,
+        "schema_name": schema_name,
         "lang": lang,
         "answer": answer,
         "canonical": canonical,
@@ -37,10 +38,10 @@ def _row(
     }
 
 
-def _write_normalized(rows: list[dict[str, object]]) -> None:
+def _write_normalized(rows: list[dict[str, object]], question: str = _QUESTION) -> None:
     schema: dict[str, pl.DataType] = {
         "question_id": pl.String(),
-        "schema_variant": pl.String(),
+        "schema_name": pl.String(),
         "lang": pl.String(),
         "answer": pl.String(),
         "canonical": pl.String(),
@@ -48,14 +49,16 @@ def _write_normalized(rows: list[dict[str, object]]) -> None:
         "multiple": pl.Boolean(),
         "error": pl.String(),
     }
-    write_normalized(pl.DataFrame(rows, schema=schema), _QUESTION)
+    write_normalized(pl.DataFrame(rows, schema=schema), question)
 
 
-def _read_langs(tmp_path: Path, schema_variant: str = "en") -> dict[str, object]:
-    path = tmp_path / "aggregated" / f"{_QUESTION}.json"
+def _read_distributions(
+    tmp_path: Path, question: str = _QUESTION
+) -> dict[str, dict[str, object]]:
+    path = tmp_path / "aggregated" / f"{question}.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["question_id"] == _QUESTION
-    return payload["distributions"][schema_variant]
+    assert payload["question_id"] == question
+    return payload["distributions"]
 
 
 @pytest.fixture
@@ -75,7 +78,7 @@ def aggregated(env: Path) -> Path:
 
 
 def test_distributions_count_valid_answers_and_report_other(aggregated: Path) -> None:
-    languages = _read_langs(aggregated)
+    languages = _read_distributions(aggregated)["FruitChoice"]
 
     assert languages["en"] == {
         "n": 2,
@@ -103,7 +106,7 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
 
     aggregate_question(_QUESTION)
 
-    distribution = _read_langs(env)
+    distribution = _read_distributions(env)["FruitChoice"]
     assert distribution["en"] == {
         "n": 1,
         "counts": {"apple": 1},
@@ -111,37 +114,37 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
     }
 
 
-def test_each_arm_is_counted_under_its_own_schema_variant(env: Path) -> None:
-    """Two arms of the same question nest schema variant over language."""
+def test_each_schema_is_counted_as_its_own_arm(env: Path) -> None:
+    """An arm is the schema its rows name, and the schemaless one is 'none'."""
     _write_normalized(
         [
-            _row("pl", "jabłko", "apple", True, schema_variant="pl"),
-            _row("pl", "banan", "banana", True, schema_variant="pl"),
-            _row("pl", "jabłko", "apple", True, schema_variant="none"),
-        ]
+            _row("pl", "jabłko", "apple", True, schema_name="WyborOwocu"),
+            _row("pl", "banan", "banana", True, schema_name="WyborOwocu"),
+            _row("pl", "jabłko", "apple", True, schema_name=None),
+        ],
+        _ARMS,
     )
 
-    aggregate_question(_QUESTION)
+    aggregate_question(_ARMS)
 
-    assert _read_langs(env, "pl")["pl"]["counts"] == {"apple": 1, "banana": 1}
-    assert _read_langs(env, "none")["pl"]["counts"] == {"apple": 1}
+    distributions = _read_distributions(env, _ARMS)
+    assert distributions["WyborOwocu"]["pl"]["counts"] == {"apple": 1, "banana": 1}
+    assert distributions["none"]["pl"]["counts"] == {"apple": 1}
 
 
 def test_an_arm_that_named_nothing_has_no_entry(env: Path) -> None:
-    """A variant whose answers all declined leaves no empty distribution behind."""
+    """An arm whose answers all declined leaves no empty distribution behind."""
     _write_normalized(
         [
-            _row("en", "apple", "apple", True),
-            _row("en", "", "", False, schema_variant="none"),
-        ]
+            _row("pl", "jabłko", "apple", True),
+            _row("pl", "", "", False, schema_name=None),
+        ],
+        _ARMS,
     )
 
-    aggregate_question(_QUESTION)
+    aggregate_question(_ARMS)
 
-    payload = json.loads(
-        (env / "aggregated" / f"{_QUESTION}.json").read_text(encoding="utf-8")
-    )
-    assert list(payload["distributions"]) == ["en"]
+    assert list(_read_distributions(env, _ARMS)) == ["FruitChoice"]
 
 
 def test_missing_normalized_parquet_raises(env: Path) -> None:

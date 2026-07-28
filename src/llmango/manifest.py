@@ -1,15 +1,16 @@
 """Run manifest for traceability.
 
 Every run writes a manifest capturing the model, its resolved snapshot, the
-backend, sampling params, per-language prompt and schema hashes, what the run
-consumed, and package versions, so any row can be traced back to the exact
-configuration that produced it.
+backend, sampling params, per-language prompt hashes, the response schema, what
+the run consumed, and package versions, so any row can be traced back to the
+exact configuration that produced it.
 """
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -29,7 +30,7 @@ _TRACKED_PACKAGES = (
     "huggingface-hub",
 )
 
-_RUN_ID_TIMESTAMP = "%Y%m%dT%H%M%SZ"
+_RUN_ID_TIMESTAMP = "%Y%m%dT%H%M%S%f"
 
 
 def collect_package_versions(
@@ -87,22 +88,27 @@ class RunManifest(BaseModel):
     """A traceable record of one run's exact configuration and environment.
 
     Prompts are rendered per sample from templates and the question's prompt
-    inputs, so the manifest records each input's declaration, hashes the data file
-    behind it alongside the templates, and pins the response schema, rather than
-    storing a single static prompt. Those inputs plus seed and sample index
-    reproduce every prompt exactly.
+    inputs, so the manifest records each input's declaration and hashes the data
+    file behind it alongside the templates, rather than storing a single static
+    prompt. Those inputs plus seed and sample index reproduce every prompt exactly.
+
+    response_schema is the whole JSON schema the run was asked under, not a hash
+    of it, so an edited schema shows up as a diff of what changed rather than as
+    an opaque mismatch. It is null for the free-text arm, which sends none.
+
+    run_id and created_at are stamped when the run starts rather than when it is
+    planned, so a plan that is only priced and never executed claims no id.
     """
 
-    run_id: str
+    run_id: str = ""
     question_id: str
     backend: str
     model: str
     model_snapshot: str | None = None
     pricing: PricingEntry | None = None
     batch_id: str | None = None
-    schema_variant: str
     schema_name: str | None = None
-    schema_sha256: str | None = None
+    response_schema: dict[str, Any] | None = None
     languages: list[str]
     sampling: SamplingParams
     seed: int | None = None
@@ -122,15 +128,16 @@ class RunManifest(BaseModel):
 
 
 def build_run_id(manifest: RunManifest) -> str:
-    """Build a run id that sorts usefully in a folder listing.
+    """Build a run id from the question and the moment its run started.
 
-    Question and schema variant first keep every run of one arm together, and let
-    the raw parquet still be found by its question prefix. The timestamp is in
-    basic ISO form, which sorts chronologically and contains no character a file
-    name rejects.
+    A question id and a timestamp name a run on their own, and everything else
+    about it, the schema included, is in the manifest and in every row it wrote.
+    The stamp carries milliseconds so that two arms of one question, submitted one
+    after the other, cannot land on the same id. Basic ISO form sorts
+    chronologically and contains no character a file name rejects.
     """
-    stamp = manifest.created_at.astimezone(UTC).strftime(_RUN_ID_TIMESTAMP)
-    return f"{manifest.question_id}__{manifest.schema_variant}__{stamp}"
+    stamp = manifest.created_at.astimezone(UTC).strftime(_RUN_ID_TIMESTAMP)[:-3]
+    return f"{manifest.question_id}__{stamp}Z"
 
 
 def manifest_path(run_id: str) -> Path:

@@ -1,5 +1,6 @@
-languages: [pl]
-schema_variants: [en, pl, none]
+ask:
+  - language: pl
+    schemas: [FruitChoice, WyborOwocu, null]
 inputs:
   fruit_list:
     order: shuffle

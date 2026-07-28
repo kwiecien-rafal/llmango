@@ -36,13 +36,15 @@ def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
     assert not (data_dirs / "runs").exists()
 
 
-def test_dry_run_names_the_schema_behind_each_variant(data_dirs: Path) -> None:
+def test_dry_run_reports_one_plan_per_schema_a_question_is_asked_under(
+    data_dirs: Path,
+) -> None:
     result = runner.invoke(app, ["run", "001d", "--dry-run"])
 
     assert result.exit_code == 0
-    assert "schema:    en (FruitChoice)" in result.output
-    assert "schema:    pl (WyborOwocu)" in result.output
-    assert "schema:    none (free text)" in result.output
+    assert "schema:    FruitChoice" in result.output
+    assert "schema:    WyborOwocu" in result.output
+    assert "schema:    free text" in result.output
 
 
 @pytest.mark.parametrize("command", ["normalize", "aggregate", "analyze"])

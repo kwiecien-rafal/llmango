@@ -19,6 +19,9 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
 
 from llmango.backends.base import (
     Backend,
@@ -46,11 +49,12 @@ from llmango.pricing import (
     round_usd,
 )
 from llmango.questions import (
+    Arm,
     PromptTemplate,
     QuestionConfig,
     load_question,
 )
-from llmango.spec import ExperimentSpec, SchemaVariant
+from llmango.spec import ExperimentSpec, answer_field
 from llmango.storage import COST_COLUMNS, USAGE_COLUMNS, results_path, write_results
 
 
@@ -64,7 +68,9 @@ class RunOptions:
     plan built for a dry run must need no client and no API key.
 
     Anything left unset falls back to the question's own configuration: its model,
-    its languages, its seed and its experiment's first declared schema variant.
+    its languages and its seed. languages narrows each arm to the languages asked
+    for rather than replacing them, since an arm is only ever run in the languages
+    the question declared under its schema.
     """
 
     backend_id: str
@@ -72,7 +78,6 @@ class RunOptions:
     samples: int = 1
     languages: list[str] | None = None
     seed: int | None = None
-    schema_variant: str | None = None
     batch: bool = False
 
 
@@ -127,65 +132,73 @@ def plan(
     question_id: str,
     options: RunOptions,
     pricing_table: PricingTable | None = None,
-) -> RunPlan:
-    """Build one run from disk: its manifest, its requests and its price.
+) -> list[RunPlan]:
+    """Build one plan per arm of a question: its manifest, requests and price.
 
     Everything a run depends on is read here once, in one place: the question's
     config and templates, the data behind each prompt input, every rendered
     request and the price of the model. Nothing reaches the network, so this is
     what --dry-run reports and what a real run then executes.
 
-    The run id is derived from the finished manifest, so it is filled in once the
-    rest is known.
+    A question is planned whole because its arms differ only in the schema they
+    ask under, so one read of disk covers them all. An arm left with no languages
+    once --lang has narrowed it is not planned at all.
     """
     spec = spec_for(question_id)
     config = load_question(question_id)
-    schema_variant = options.schema_variant or next(iter(spec.schema_variants))
-    variant = spec.variant(schema_variant)
-
     model = options.model or config.model
     if not model:
         raise ValueError(
             f"No model given and none set in experiment.yaml for {spec.folder}"
         )
-
-    languages = options.languages or config.languages
-    templates = _templates_for(config, languages)
+    _check_languages(config, options.languages)
     sources = load_input_sources(spec.folder, question_id, list(config.inputs))
+    pricing = _price(model, pricing_table)
 
-    manifest = RunManifest(
-        run_id="",
-        question_id=question_id,
-        backend=options.backend_id,
-        model=model,
-        schema_variant=schema_variant,
-        schema_name=variant.schema_name,
-        schema_sha256=variant.schema_sha256,
-        languages=languages,
-        sampling=config.sampling,
-        seed=options.seed if options.seed is not None else config.sampling.seed,
-        samples_per_language=options.samples,
-        inputs=config.inputs,
-        template_sha256={lang: template.sha256 for lang, template in templates.items()},
-        input_sha256={name: source.sha256 for name, source in sources.items()},
-    )
-    manifest.run_id = build_run_id(manifest)
-
-    return RunPlan(
-        spec=spec,
-        manifest=manifest,
-        requests=_build_requests(manifest, spec, templates, sources),
-        pricing=_price(model, pricing_table),
-        batch=options.batch,
-    )
+    plans: list[RunPlan] = []
+    for arm in config.arms:
+        languages = _languages_for(arm, options.languages)
+        if not languages:
+            continue
+        templates = {lang: config.templates[lang] for lang in languages}
+        manifest = RunManifest(
+            question_id=question_id,
+            backend=options.backend_id,
+            model=model,
+            schema_name=_schema_name(arm.schema),
+            response_schema=_schema_json(arm.schema),
+            languages=languages,
+            sampling=config.sampling,
+            seed=options.seed if options.seed is not None else config.sampling.seed,
+            samples_per_language=options.samples,
+            inputs=config.inputs,
+            template_sha256={
+                lang: template.sha256 for lang, template in templates.items()
+            },
+            input_sha256={name: source.sha256 for name, source in sources.items()},
+        )
+        plans.append(
+            RunPlan(
+                spec=spec,
+                manifest=manifest,
+                requests=_build_requests(
+                    manifest, spec, arm.schema, templates, sources
+                ),
+                pricing=pricing,
+                batch=options.batch,
+            )
+        )
+    return plans
 
 
 def run(plan: RunPlan, backend: Backend) -> RunOutcome:
     """Execute a planned run through one of the backend's two transports.
 
-    The price is pinned into the manifest before anything is generated, so a run
-    never proceeds without a known cost, and the model snapshot is resolved so the
-    manifest records exactly which revision answered.
+    The run is stamped with its id here rather than at plan time, so the id names
+    the moment the run actually started. The price is pinned into the manifest
+    before anything is generated, so a run never proceeds without a known cost,
+    and the model snapshot is resolved so the manifest records exactly which
+    revision answered.
 
     Batched, the requests are submitted and only the manifest is written; its
     results are collected later by fetch_batch. Synchronously, they are generated
@@ -205,10 +218,13 @@ def run(plan: RunPlan, backend: Backend) -> RunOutcome:
             f"This plan was built for backend '{manifest.backend}' but was handed "
             f"'{backend.backend_id}'. Plan and run the same one."
         )
+
+    manifest.created_at = datetime.now(UTC)
+    manifest.run_id = build_run_id(manifest)
     if manifest_path(manifest.run_id).exists():
         raise ValueError(
-            f"Run {manifest.run_id} already exists. Run ids are stamped to the "
-            f"second, so this run would overwrite it; try again in a moment."
+            f"Run {manifest.run_id} already exists, and a run never overwrites "
+            f"another one's files."
         )
 
     manifest.pricing = plan.pricing
@@ -252,19 +268,21 @@ def _plan_from_manifest(manifest: RunManifest) -> RunPlan:
     """Rebuild a submitted run's plan, checking its inputs still match the manifest.
 
     A batch is fetched long after it was submitted, so the requests are rebuilt
-    from the manifest and the templates and prompt inputs behind them are verified
-    against the hashes recorded at submit time. An edited file means the rows would
-    no longer describe what was sent.
+    from the manifest and the templates, prompt inputs and response schema behind
+    them are verified against what was recorded at submit time. An edited file
+    means the rows would no longer describe what was sent.
     """
     spec = spec_for(manifest.question_id)
     config = load_question(manifest.question_id)
-    templates = _templates_for(config, manifest.languages)
-    for lang, template in templates.items():
-        if template.sha256 != manifest.template_sha256[lang]:
+    templates: dict[str, PromptTemplate] = {}
+    for lang in manifest.languages:
+        template = config.templates.get(lang)
+        if template is None or template.sha256 != manifest.template_sha256[lang]:
             raise ValueError(
                 f"Template {manifest.question_id}/{lang}.md changed since submit; "
-                f"its hash no longer matches the manifest."
+                f"it was edited or removed, so it no longer matches the manifest."
             )
+        templates[lang] = template
 
     sources = load_input_sources(
         spec.folder, manifest.question_id, list(manifest.inputs)
@@ -276,36 +294,85 @@ def _plan_from_manifest(manifest: RunManifest) -> RunPlan:
                 f"submit; its hash no longer matches the manifest."
             )
 
+    arm = _arm_for(config, manifest.schema_name)
+    if _schema_json(arm.schema) != manifest.response_schema:
+        raise ValueError(
+            f"The response schema {manifest.schema_name} changed since submit; it "
+            f"no longer matches the one the manifest records."
+        )
+
     return RunPlan(
         spec=spec,
         manifest=manifest,
-        requests=_build_requests(manifest, spec, templates, sources),
+        requests=_build_requests(manifest, spec, arm.schema, templates, sources),
         pricing=manifest.pricing,
         batch=True,
     )
 
 
-def _templates_for(
-    config: QuestionConfig, languages: list[str]
-) -> dict[str, PromptTemplate]:
-    """Pick the templates for the languages a run asked for, in the order asked."""
-    unknown = [lang for lang in languages if lang not in config.templates]
+def _check_languages(config: QuestionConfig, requested: list[str] | None) -> None:
+    """Reject a language the question is not asked in, naming the ones it is."""
+    unknown = [lang for lang in requested or [] if lang not in config.templates]
     if unknown:
         raise ValueError(
             f"Question {config.question_id} has no prompt template for "
             f"{', '.join(unknown)}. It declares {', '.join(config.languages)}."
         )
-    return {lang: config.templates[lang] for lang in languages}
+
+
+def _languages_for(arm: Arm, requested: list[str] | None) -> list[str]:
+    """Narrow one arm to the languages asked for, keeping its declared order."""
+    if requested is None:
+        return arm.languages
+    return [lang for lang in arm.languages if lang in requested]
+
+
+def _arm_for(config: QuestionConfig, schema_name: str | None) -> Arm:
+    """Find the arm a submitted run was planned from, by the schema it recorded."""
+    for arm in config.arms:
+        if _schema_name(arm.schema) == schema_name:
+            return arm
+    raise ValueError(
+        f"Question {config.question_id} no longer asks anything under "
+        f"{schema_name or 'no schema'}, so its submitted batch cannot be rebuilt."
+    )
+
+
+def _schema_name(schema: type[BaseModel] | None) -> str | None:
+    """The class name a response schema is recorded under, None for free text."""
+    return schema.__name__ if schema is not None else None
+
+
+def _schema_json(schema: type[BaseModel] | None) -> dict[str, Any] | None:
+    """Render a response schema as the JSON stored with the run it was sent in.
+
+    The free-text arm has no schema, and records none. Keys are left in
+    declaration order rather than sorted, because that order is one of the things
+    the model sees.
+    """
+    return schema.model_json_schema() if schema is not None else None
+
+
+def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:
+    """Read the answer off a parsed response, or off free text when there is none.
+
+    An answer schema declares exactly one field, so a parsed response carries its
+    answer in the only field it has. Anything unparsed, whether free text by
+    design or a refusal, answers with whatever text came back.
+    """
+    if parsed is None:
+        return raw_json or ""
+    return str(getattr(parsed, answer_field(type(parsed))))
 
 
 def _build_requests(
     manifest: RunManifest,
     spec: ExperimentSpec,
+    schema: type[BaseModel] | None,
     templates: dict[str, PromptTemplate],
     sources: dict[str, InputSource],
 ) -> list[GenRequest]:
     """Render one request per language and sample from the run's templates."""
-    variant = spec.variant(manifest.schema_variant)
     requests: list[GenRequest] = []
     for lang in manifest.languages:
         template = templates[lang]
@@ -335,7 +402,7 @@ def _build_requests(
                     sample_idx=sample_idx,
                     seed=manifest.seed,
                     sampling=manifest.sampling,
-                    response_schema=variant.schema,
+                    response_schema=schema,
                     prompt_inputs=json.dumps(recorded, ensure_ascii=False),
                 )
             )
@@ -390,10 +457,16 @@ def _rows(
     spec: ExperimentSpec,
     batched: bool,
 ) -> list[dict[str, object]]:
-    """Turn every generation into the row the raw parquet stores it as."""
-    variant = spec.variant(manifest.schema_variant)
+    """Turn every generation into the row the raw parquet stores it as.
+
+    The schema is serialized once for the whole run rather than per row, since
+    every row of a run was asked under the same one.
+    """
+    schema = manifest.response_schema
+    serialized = json.dumps(schema, ensure_ascii=False) if schema is not None else None
     return [
-        _result_to_row(result, manifest, spec, variant, batched) for result in results
+        _result_to_row(result, manifest, spec, serialized, batched)
+        for result in results
     ]
 
 
@@ -401,20 +474,19 @@ def _result_to_row(
     result: GenResult,
     manifest: RunManifest,
     spec: ExperimentSpec,
-    variant: SchemaVariant,
+    response_schema: str | None,
     batched: bool,
 ) -> dict[str, object]:
     """Combine the common columns, the experiment's extras, provenance and cost."""
     request = result.request
-    answer = variant.extract(result.parsed, result.raw_json)
+    answer = _answer(result.parsed, result.raw_json)
     extra = (
         spec.extra_raw_columns(result.parsed, answer) if spec.extra_raw_columns else {}
     )
     return {
         "question_id": request.question_id,
         "lang": request.lang,
-        "schema_variant": manifest.schema_variant,
-        "schema_name": variant.schema_name,
+        "schema_name": manifest.schema_name,
         "model": request.model,
         "backend": manifest.backend,
         "run_id": manifest.run_id,
@@ -435,6 +507,7 @@ def _result_to_row(
         "system_fingerprint": result.system_fingerprint,
         "service_tier": result.service_tier,
         "provider_created_at": result.provider_created_at,
+        "response_schema": response_schema,
         "request_envelope": result.request_envelope,
         "response_envelope": result.response_envelope,
         **_usage_columns(result.usage),

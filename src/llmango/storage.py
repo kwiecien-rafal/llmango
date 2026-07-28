@@ -17,7 +17,6 @@ from llmango.config import NORMALIZED_DIR, RAW_DIR
 COMMON_LEADING_COLUMNS = [
     "question_id",
     "lang",
-    "schema_variant",
     "schema_name",
     "model",
     "backend",
@@ -41,6 +40,7 @@ PROVENANCE_COLUMNS = [
     "system_fingerprint",
     "service_tier",
     "provider_created_at",
+    "response_schema",
     "request_envelope",
     "response_envelope",
 ]
@@ -67,7 +67,6 @@ TRAILING_COLUMNS = ["created_at"]
 _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "question_id": pl.String(),
     "lang": pl.String(),
-    "schema_variant": pl.String(),
     "schema_name": pl.String(),
     "model": pl.String(),
     "backend": pl.String(),
@@ -88,6 +87,7 @@ _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "system_fingerprint": pl.String(),
     "service_tier": pl.String(),
     "provider_created_at": pl.Datetime(time_unit="us", time_zone="UTC"),
+    "response_schema": pl.String(),
     "request_envelope": pl.String(),
     "response_envelope": pl.String(),
     "prompt_tokens": pl.Int64(),

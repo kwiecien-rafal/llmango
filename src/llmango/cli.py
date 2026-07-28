@@ -13,8 +13,8 @@ from llmango import runner
 from llmango.aggregate import AggregateOutcome, aggregate_question
 from llmango.backends.openai import OpenAIBackend, backend_id
 from llmango.experiments import spec_for
+from llmango.manifest import RunManifest
 from llmango.normalize import NormalizeOutcome, normalize_question
-from llmango.questions import load_question
 
 if TYPE_CHECKING:
     from llmango.charts import AnalyzeOutcome
@@ -62,31 +62,21 @@ def run(
         bool, typer.Option("--force", help="Allow a large paid run.")
     ] = False,
 ) -> None:
-    """Run one question across languages and persist raw results to Parquet.
-
-    A question declaring several schema variants (e.g. 001d) runs once per
-    variant, each tagged with its schema language. Every run reports its plan
-    before executing it, so --dry-run is the same path stopped one step early.
-    """
-    count = _resolve_samples(samples, smoke, dry_run, force)
+    """Run question across language-schema arms and persist raw results to Parquet."""
+    options = runner.RunOptions(
+        backend_id=backend_id(batch),
+        model=model,
+        samples=_resolve_samples(samples, smoke, dry_run, force),
+        languages=lang,
+        seed=seed,
+        batch=batch,
+    )
     try:
-        for schema_variant in load_question(question).schema_variants:
-            plan = runner.plan(
-                question,
-                runner.RunOptions(
-                    backend_id=backend_id(batch),
-                    model=model,
-                    samples=count,
-                    languages=lang,
-                    seed=seed,
-                    schema_variant=schema_variant,
-                    batch=batch,
-                ),
-            )
-            _report_plan(plan)
+        for planned in runner.plan(question, options):
+            _report_plan(planned)
             if dry_run:
                 continue
-            outcome = runner.run(plan, OpenAIBackend(batch=batch))
+            outcome = runner.run(planned, OpenAIBackend(batch=batch))
             if batch:
                 _report_submit(outcome)
             else:
@@ -198,7 +188,7 @@ def _die(message: str) -> NoReturn:
 
 def _report_run(outcome: runner.RunOutcome) -> None:
     typer.echo(
-        f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
+        f"Run {outcome.run_id} ({_schema(outcome.manifest)}): "
         f"wrote {outcome.rows_written} rows."
     )
     usage = outcome.manifest.usage
@@ -211,12 +201,16 @@ def _report_run(outcome: runner.RunOutcome) -> None:
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
+def _schema(manifest: RunManifest) -> str:
+    """Name the schema a run was asked under, for a line a human reads."""
+    return manifest.schema_name or "free text"
+
+
 def _report_plan(plan: runner.RunPlan) -> None:
     manifest = plan.manifest
     typer.echo(f"Plan for {plan.question_id} via {manifest.backend}:")
     typer.echo(f"  model:     {manifest.model}")
-    schema = manifest.schema_name or "free text"
-    typer.echo(f"  schema:    {manifest.schema_variant} ({schema})")
+    typer.echo(f"  schema:    {_schema(manifest)}")
     typer.echo(f"  inputs:    {', '.join(sorted(manifest.inputs)) or 'none'}")
     typer.echo(f"  languages: {', '.join(manifest.languages)}")
     typer.echo(f"  samples:   {manifest.samples_per_language} per language")
@@ -258,7 +252,7 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
 
 def _report_submit(outcome: runner.RunOutcome) -> None:
     typer.echo(
-        f"Run {outcome.run_id} (schema {outcome.manifest.schema_variant}): "
+        f"Run {outcome.run_id} ({_schema(outcome.manifest)}): "
         f"submitted batch {outcome.batch_id}."
     )
     typer.echo(f"Fetch results with: llmango batch-fetch {outcome.run_id}")

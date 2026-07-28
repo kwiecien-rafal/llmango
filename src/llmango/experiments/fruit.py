@@ -30,7 +30,7 @@ import polars as pl
 
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
-from llmango.spec import FREE_TEXT_VARIANT, ExperimentSpec, SchemaVariant
+from llmango.spec import ExperimentSpec
 
 FOLDER = "001_fruit"
 QUESTIONS = ("001a", "001b", "001c", "001d")
@@ -44,8 +44,9 @@ class FruitChoice(LLMResponse):
     fruit: str
 
 
-# 001d polish schema
 class WyborOwocu(LLMResponse):
+    """The Polish parallel of FruitChoice, used only by the 001d pl arm."""
+
     owoc: str
 
 
@@ -241,11 +242,7 @@ def _shuffled(ids: list[str], seed: int | None, sample_idx: int) -> list[str]:
 FRUIT = ExperimentSpec(
     folder=FOLDER,
     questions=QUESTIONS,
-    schema_variants={
-        "en": SchemaVariant(schema=FruitChoice, field="fruit"),
-        "pl": SchemaVariant(schema=WyborOwocu, field="owoc"),
-        FREE_TEXT_VARIANT: SchemaVariant(schema=None, field=None),
-    },
+    schemas=(FruitChoice, WyborOwocu),
     normalization_schema=FruitNormalization,
     preprocess=preprocess,
     build_input=build_input,

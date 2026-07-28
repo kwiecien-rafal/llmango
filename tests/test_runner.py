@@ -1,6 +1,7 @@
 """Tests for the runner: planning, persistence, batching and refusal handling."""
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from conftest import FakeBackend
 from llmango import runner as runner_module
 from llmango.backends.base import Backend, GenRequest, GenResult
+from llmango.experiments.fruit import FruitChoice, WyborOwocu
 from llmango.manifest import RunManifest, read_manifest
 from llmango.pricing import PricingTable
 from llmango.runner import RunOptions, RunPlan, fetch_batch, plan, run
@@ -69,17 +71,16 @@ def _isolate_dirs(data_dirs: Path) -> None:
     """Redirect output directories into tmp_path for every runner test."""
 
 
-def _plan(
+def _plans(
     backend: Backend,
     pricing_table: PricingTable,
     question: str = "001a",
     samples: int = 1,
     languages: list[str] | None = None,
     seed: int | None = None,
-    schema_variant: str | None = None,
     batch: bool = False,
-) -> RunPlan:
-    """Plan a run for the backend under test, priced from an injected table."""
+) -> list[RunPlan]:
+    """Plan every arm of a question, priced from an injected table."""
     return plan(
         question,
         RunOptions(
@@ -87,11 +88,23 @@ def _plan(
             samples=samples,
             languages=languages,
             seed=seed,
-            schema_variant=schema_variant,
             batch=batch,
         ),
         pricing_table=pricing_table,
     )
+
+
+def _plan(
+    backend: Backend,
+    pricing_table: PricingTable,
+    question: str = "001a",
+    samples: int = 1,
+    languages: list[str] | None = None,
+    seed: int | None = None,
+    batch: bool = False,
+) -> RunPlan:
+    """The one plan of a single-schema question such as 001a."""
+    return _plans(backend, pricing_table, question, samples, languages, seed, batch)[0]
 
 
 def test_plan_builds_every_request_and_writes_nothing(
@@ -174,27 +187,41 @@ def test_run_refuses_a_backend_the_plan_was_not_built_for(
         run(planned, RefusingBackend())
 
 
-def test_rerun_within_the_same_second_is_refused(
+def test_a_rerun_is_more_samples_rather_than_a_replacement(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    """Repeating a config is allowed and pools; colliding on a run id is not.
-
-    Two runs of the same arm are more samples of it, not a duplicate, so nothing
-    stops a rerun. A run id is stamped to the second, though, so a repeat inside
-    that second would land on the same files, which fails instead of overwriting.
-    """
+    """Two runs of one arm are more samples of it, so both files are kept."""
     first = run(
         _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
     )
+    second = run(
+        _plan(fake_backend, pricing_table, samples=2, languages=["en"]), fake_backend
+    )
+
+    assert first.run_id != second.run_id
+    assert first.rows_written == second.rows_written == 2
+    assert read_results("001a__*.parquet").height == 4
+
+
+def test_a_run_never_overwrites_another_ones_files(
+    fake_backend: FakeBackend,
+    pricing_table: PricingTable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run ids are stamped to the millisecond; a collision refuses rather than eats."""
+    monkeypatch.setattr(runner_module, "build_run_id", lambda manifest: "001a__fixed")
+    run(_plan(fake_backend, pricing_table, languages=["en"]), fake_backend)
 
     with pytest.raises(ValueError, match="already exists"):
-        run(
-            _plan(fake_backend, pricing_table, samples=2, languages=["en"]),
-            fake_backend,
-        )
+        run(_plan(fake_backend, pricing_table, languages=["en"]), fake_backend)
 
-    assert first.rows_written == 2
-    assert read_results("*.parquet").height == 2
+
+def test_a_run_id_names_the_question_and_when_it_started(
+    fake_backend: FakeBackend, pricing_table: PricingTable
+) -> None:
+    outcome = run(_plan(fake_backend, pricing_table, languages=["en"]), fake_backend)
+
+    assert re.fullmatch(r"001a__\d{8}T\d{9}Z", outcome.run_id)
 
 
 def test_refusals_persist_with_an_empty_answer(pricing_table: PricingTable) -> None:
@@ -210,43 +237,54 @@ def test_refusals_persist_with_an_empty_answer(pricing_table: PricingTable) -> N
     assert frame["prompt_tokens"].to_list() == [None]
 
 
-def test_run_tags_the_schema_variant_and_prompt_inputs(
+def test_every_row_carries_the_schema_it_was_asked_under(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
+    """The schema itself is stored, so the raw data explains itself alone."""
     outcome = run(
         _plan(fake_backend, pricing_table, languages=["en"], seed=1), fake_backend
     )
 
     frame = read_results("*.parquet")
-    assert frame["schema_variant"].to_list() == ["en"]
     assert frame["schema_name"].to_list() == ["FruitChoice"]
-    assert outcome.manifest.schema_sha256
+    assert json.loads(frame["response_schema"].to_list()[0]) == (
+        FruitChoice.model_json_schema()
+    )
+    assert outcome.manifest.response_schema == FruitChoice.model_json_schema()
     recorded = json.loads(frame["prompt_inputs"].to_list()[0])
     assert recorded["fruit_list"] == outcome.manifest.inputs["fruit_list"]["order_ids"]
     assert outcome.manifest.input_sha256["fruit_list"]
 
 
-def test_free_text_variant_reads_plain_text(pricing_table: PricingTable) -> None:
+def test_free_text_arm_reads_plain_text(pricing_table: PricingTable) -> None:
     backend = FreeTextBackend()
-    outcome = run(
-        _plan(
-            backend,
-            pricing_table,
-            question="001d",
-            languages=["pl"],
-            schema_variant="none",
-        ),
-        backend,
-    )
+    free_text = _plans(backend, pricing_table, question="001d")[2]
+
+    outcome = run(free_text, backend)
 
     frame = read_results("*.parquet")
-    assert outcome.manifest.schema_variant == "none"
     assert outcome.manifest.schema_name is None
-    assert outcome.manifest.schema_sha256 is None
-    assert frame["schema_variant"].to_list() == ["none"]
+    assert outcome.manifest.response_schema is None
     assert frame["schema_name"].to_list() == [None]
+    assert frame["response_schema"].to_list() == [None]
     assert frame["answer"].to_list() == ["jabłko"]
     assert frame["raw_json"].to_list() == ["jabłko"]
+
+
+def test_a_question_is_planned_once_per_schema_it_is_asked_under(
+    fake_backend: FakeBackend, pricing_table: PricingTable
+) -> None:
+    """001d asks one language three ways, so it plans three runs of one language."""
+    plans = _plans(fake_backend, pricing_table, question="001d")
+
+    assert [planned.manifest.schema_name for planned in plans] == [
+        "FruitChoice",
+        "WyborOwocu",
+        None,
+    ]
+    assert all(planned.manifest.languages == ["pl"] for planned in plans)
+    assert plans[1].manifest.response_schema == WyborOwocu.model_json_schema()
+    assert all(request.response_schema is WyborOwocu for request in plans[1].requests)
 
 
 def test_batch_run_records_batch_id_without_writing_rows(
@@ -317,6 +355,23 @@ def test_fetch_batch_refuses_an_edited_template(
     )
     manifest = read_manifest(submitted.run_id)
     manifest.template_sha256["en"] = "not-the-hash-that-was-submitted"
+    monkeypatch.setattr(runner_module, "read_manifest", lambda run_id: manifest)
+
+    with pytest.raises(ValueError, match="changed since submit"):
+        fetch_batch(submitted.run_id, fake_backend)
+
+
+def test_fetch_batch_refuses_an_edited_response_schema(
+    fake_backend: FakeBackend,
+    pricing_table: PricingTable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A schema edited between submit and fetch would misdescribe what was sent."""
+    submitted = run(
+        _plan(fake_backend, pricing_table, languages=["en"], batch=True), fake_backend
+    )
+    manifest = read_manifest(submitted.run_id)
+    manifest.response_schema = {"title": "SomethingElse"}
     monkeypatch.setattr(runner_module, "read_manifest", lambda run_id: manifest)
 
     with pytest.raises(ValueError, match="changed since submit"):

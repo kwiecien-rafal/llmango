@@ -15,7 +15,7 @@ reachable by a screen reader. The index therefore carries every plotted number
 and the site pairs each chart with a table view. That table is the accessible
 twin of the image, not an optional extra.
 
-One series is one arm: a question asked under one schema variant in one language.
+One series is one arm: a question asked under one schema in one language.
 Arms are labeled by whichever of the two actually varies within their question,
 which is what puts 001d's three schema arms in a single chart rather than three
 one-series charts.
@@ -37,7 +37,7 @@ from matplotlib.ticker import FixedLocator, PercentFormatter
 from matplotlib.typing import RcKeyType
 
 from llmango.config import AGG_DIR, CHARTS_DIR
-from llmango.spec import FREE_TEXT_VARIANT, OTHER_CATEGORY
+from llmango.spec import FREE_TEXT, OTHER_CATEGORY
 
 _DISTRIBUTION = "distribution.svg"
 _INDEX = "index.json"
@@ -75,9 +75,9 @@ Row = dict[str, Any]
 
 @dataclass(frozen=True, order=True)
 class Arm:
-    """One comparable series: a question under one schema variant and language."""
+    """One comparable series: a question under one schema and language."""
 
-    schema_variant: str
+    schema: str
     lang: str
 
 
@@ -142,52 +142,52 @@ def _load(question_id: str) -> dict[Arm, Cell] | None:
     payload: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
     distributions = cast(dict[str, dict[str, Cell]], payload["distributions"])
     return {
-        Arm(schema_variant=schema_variant, lang=lang): cell
-        for schema_variant, langs in sorted(distributions.items())
+        Arm(schema=schema, lang=lang): cell
+        for schema, langs in sorted(distributions.items())
         for lang, cell in sorted(langs.items())
     }
 
 
 def _varies(arms: list[Arm]) -> tuple[bool, bool]:
-    """Whether the schema variant and the language differ across a question's arms."""
+    """Whether the schema and the language differ across a question's arms."""
     return (
-        len({arm.schema_variant for arm in arms}) > 1,
+        len({arm.schema for arm in arms}) > 1,
         len({arm.lang for arm in arms}) > 1,
     )
 
 
 def _labels(arms: list[Arm]) -> list[str]:
-    """Label each arm by whichever of schema variant and language varies.
+    """Label each arm by whichever of schema and language varies.
 
     Returned in the order the arms were given, so a caller can zip the labels
     straight onto the cells they belong to.
     """
-    many_variants, many_langs = _varies(arms)
+    many_schemas, many_langs = _varies(arms)
     labels: list[str] = []
     for arm in arms:
-        schema = _schema_label(arm.schema_variant)
-        if many_variants and many_langs:
-            labels.append(f"{arm.lang} / {schema}")
-        elif many_variants:
-            labels.append(schema)
+        label = _schema_label(arm.schema)
+        if many_schemas and many_langs:
+            labels.append(f"{arm.lang} / {label}")
+        elif many_schemas:
+            labels.append(label)
         else:
             labels.append(arm.lang)
     return labels
 
 
-def _schema_label(schema_variant: str) -> str:
+def _schema_label(schema: str) -> str:
     """Name a schema arm the way a legend should read it."""
-    if schema_variant == FREE_TEXT_VARIANT:
+    if schema == FREE_TEXT:
         return "no schema"
-    return f"{schema_variant} schema"
+    return f"{schema} schema"
 
 
 def _dimension(arms: list[Arm]) -> str:
     """Name what a question's arms differ in, for the legend title."""
-    many_variants, many_langs = _varies(arms)
-    if many_variants and many_langs:
+    many_schemas, many_langs = _varies(arms)
+    if many_schemas and many_langs:
         return "arm"
-    return "schema" if many_variants else "language"
+    return "schema" if many_schemas else "language"
 
 
 def _distribution_title(question_id: str, arms: list[Arm], labels: list[str]) -> str:

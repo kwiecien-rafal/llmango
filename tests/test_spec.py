@@ -1,9 +1,9 @@
-"""Tests for the experiment spec: schema variants and the optional hooks."""
+"""Tests for the experiment spec: its registered schemas and its optional hooks."""
 
 import pytest
 
 from llmango.schemas import LLMResponse
-from llmango.spec import ExperimentSpec, SchemaVariant
+from llmango.spec import ExperimentSpec, answer_field
 
 
 class ThrowawayResponse(LLMResponse):
@@ -14,37 +14,34 @@ def _spec() -> ExperimentSpec:
     return ExperimentSpec(
         folder="900_throwaway",
         questions=("900a",),
-        schema_variants={"en": SchemaVariant(ThrowawayResponse, "value")},
+        schemas=(ThrowawayResponse,),
     )
 
 
-def test_variant_lookup_raises_on_unknown_schema_variant() -> None:
-    with pytest.raises(ValueError, match="schema variant"):
-        _spec().variant("pl")
+def test_a_schema_is_looked_up_by_the_name_a_question_declares() -> None:
+    assert _spec().schema_named("ThrowawayResponse") is ThrowawayResponse
 
 
-def test_schema_identity_names_and_hashes_the_response_schema() -> None:
-    variant = SchemaVariant(ThrowawayResponse, "value")
-
-    assert variant.schema_name == "ThrowawayResponse"
-    assert len(variant.schema_sha256 or "") == 64
+def test_an_unregistered_schema_name_lists_the_ones_that_exist() -> None:
+    with pytest.raises(ValueError, match="Known schemas: ThrowawayResponse"):
+        _spec().schema_named("Missing")
 
 
-def test_schema_hash_changes_when_a_field_changes() -> None:
-    class Renamed(LLMResponse):
-        other: str
-
-    assert (
-        SchemaVariant(ThrowawayResponse, "value").schema_sha256
-        != SchemaVariant(Renamed, "other").schema_sha256
-    )
+def test_the_answer_is_the_one_field_an_answer_schema_declares() -> None:
+    assert answer_field(ThrowawayResponse) == "value"
 
 
-def test_free_text_variant_has_no_schema_identity() -> None:
-    variant = SchemaVariant(None, None)
+def test_a_schema_with_more_than_one_field_is_refused_on_declaration() -> None:
+    """A registered schema is checked at import, before any run is planned."""
 
-    assert variant.schema_name is None
-    assert variant.schema_sha256 is None
+    class TwoFields(LLMResponse):
+        value: str
+        reason: str
+
+    with pytest.raises(ValueError, match="exactly one"):
+        ExperimentSpec(
+            folder="900_throwaway", questions=("900a",), schemas=(TwoFields,)
+        )
 
 
 def test_column_hooks_are_optional() -> None:
