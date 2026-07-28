@@ -21,7 +21,7 @@ def test_large_run_is_refused_without_force() -> None:
 
 
 def test_smoke_and_samples_cannot_be_combined() -> None:
-    result = runner.invoke(app, ["run", "--smoke", "--samples", "3"])
+    result = runner.invoke(app, ["run", "001a", "--smoke", "--samples", "3"])
 
     assert result.exit_code == 1
     assert "not both" in result.output

@@ -35,7 +35,7 @@ def main() -> None:
 
 @app.command()
 def run(
-    question: QuestionArgument = "001a",
+    question: QuestionArgument,
     model: Annotated[
         str | None, typer.Option("--model", help="Override the question's model.")
     ] = None,
@@ -76,7 +76,7 @@ def run(
 
 @app.command()
 def normalize(
-    question: QuestionArgument = "001a",
+    question: QuestionArgument,
     model: Annotated[
         str | None,
         typer.Option("--model", help="Override the normalization model."),
@@ -102,7 +102,7 @@ def normalize(
 
 
 @app.command()
-def aggregate(question: QuestionArgument = "001a") -> None:
+def aggregate(question: QuestionArgument) -> None:
     """Aggregate one question's normalized answers into the JSON the charts read."""
     _check_question(question)
     try:
@@ -113,7 +113,7 @@ def aggregate(question: QuestionArgument = "001a") -> None:
 
 
 @app.command()
-def analyze(question: QuestionArgument = "001a") -> None:
+def analyze(question: QuestionArgument) -> None:
     """Draw the charts the site embeds from one question's aggregates."""
     from llmango.charts import analyze_question
 
