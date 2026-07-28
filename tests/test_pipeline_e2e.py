@@ -44,7 +44,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
     backend: Backend = make_fake_backend(_ANSWERS)
-    planned = plan(_QUESTION, samples=4, languages=["en", "pl"])
+    planned = plan(_QUESTION, samples_per_arm=4, languages=["en", "pl"])
     run_outcome = run(planned, backend)
     assert run_outcome.rows_written == 8
 

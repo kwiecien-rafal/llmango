@@ -24,11 +24,11 @@ def _row(
     canonical: str,
     is_valid: bool,
     error: str | None = None,
-    schema_name: str | None = "FruitChoice",
+    schema: str | None = "FruitChoice",
 ) -> dict[str, object]:
     return {
         "question_id": "001a",
-        "schema_name": schema_name,
+        "response_schema": json.dumps({"title": schema}) if schema else None,
         "lang": lang,
         "answer": answer,
         "canonical": canonical,
@@ -41,7 +41,7 @@ def _row(
 def _write_normalized(rows: list[dict[str, object]], question: str = _QUESTION) -> None:
     schema: dict[str, pl.DataType] = {
         "question_id": pl.String(),
-        "schema_name": pl.String(),
+        "response_schema": pl.String(),
         "lang": pl.String(),
         "answer": pl.String(),
         "canonical": pl.String(),
@@ -115,12 +115,12 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
 
 
 def test_each_schema_is_counted_as_its_own_arm(env: Path) -> None:
-    """An arm is the schema its rows name, and the schemaless one is 'none'."""
+    """An arm is titled by the schema its rows carry, and the schemaless one 'none'."""
     _write_normalized(
         [
-            _row("pl", "jabłko", "apple", True, schema_name="WyborOwocu"),
-            _row("pl", "banan", "banana", True, schema_name="WyborOwocu"),
-            _row("pl", "jabłko", "apple", True, schema_name=None),
+            _row("pl", "jabłko", "apple", True, schema="WyborOwocu"),
+            _row("pl", "banan", "banana", True, schema="WyborOwocu"),
+            _row("pl", "jabłko", "apple", True, schema=None),
         ],
         _ARMS,
     )
@@ -137,7 +137,7 @@ def test_an_arm_that_named_nothing_has_no_entry(env: Path) -> None:
     _write_normalized(
         [
             _row("pl", "jabłko", "apple", True),
-            _row("pl", "", "", False, schema_name=None),
+            _row("pl", "", "", False, schema=None),
         ],
         _ARMS,
     )

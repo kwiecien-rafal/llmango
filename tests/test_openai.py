@@ -102,7 +102,6 @@ def test_generate_captures_provenance_and_usage(
     result = backend.generate(_request())
 
     assert result.response_id == "chatcmpl-fake"
-    assert result.system_fingerprint == "fp_fake"
     assert result.service_tier == "default"
     assert result.provider_created_at is not None
     assert result.response_envelope is not None
@@ -382,7 +381,6 @@ def test_fetch_captures_provenance_and_usage() -> None:
             "body": {
                 "id": "chatcmpl-batch",
                 "model": "gpt-5.6-luna-2026-01-01",
-                "system_fingerprint": "fp_batch",
                 "service_tier": "flex",
                 "created": 1_700_000_000,
                 "usage": {
@@ -410,7 +408,6 @@ def test_fetch_captures_provenance_and_usage() -> None:
     result = backend.fetch("batch-1", [_request()])[0]
 
     assert result.response_id == "chatcmpl-batch"
-    assert result.system_fingerprint == "fp_batch"
     assert result.service_tier == "flex"
     assert result.provider_created_at is not None
     assert result.response_envelope is not None

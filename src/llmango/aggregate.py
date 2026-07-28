@@ -37,8 +37,8 @@ def aggregate_question(question_id: str) -> AggregateOutcome:
 
     One grouping collects the categories each arm named, in one pass over the
     answers that named one, and the arms are nested schema over language from
-    there. Rows carry the schema they were asked under, so nothing has to be
-    looked up in the question's config to know which arm a row belongs to.
+    there. Rows carry the whole schema they were asked under, so an arm is named
+    off that schema rather than looked up in the question's config.
     """
     if not normalized_path(question_id).is_file():
         raise FileNotFoundError(
@@ -50,16 +50,21 @@ def aggregate_question(question_id: str) -> AggregateOutcome:
 
     arms = (
         frame.filter(pl.col("is_valid") & pl.col("canonical").is_not_null())
-        .group_by("schema_name", "lang")
+        .with_columns(arm=_arm_label())
+        .group_by("arm", "lang")
         .agg(pl.col("canonical"))
-        .sort("schema_name", "lang")
+        .sort("arm", "lang")
     )
 
     distributions: dict[str, dict[str, object]] = {}
-    for schema_name, lang, canonical in arms.iter_rows():
-        arm = schema_name or FREE_TEXT
+    for arm, lang, canonical in arms.iter_rows():
         distributions.setdefault(arm, {})[lang] = _distribution(canonical)
     return AggregateOutcome(path=_write_aggregate(question_id, distributions))
+
+
+def _arm_label() -> pl.Expr:
+    """Name a row's arm after the title of the schema it was asked under."""
+    return pl.col("response_schema").str.json_path_match("$.title").fill_null(FREE_TEXT)
 
 
 def _distribution(canonical: list[str]) -> dict[str, object]:

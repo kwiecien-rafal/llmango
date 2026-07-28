@@ -10,7 +10,7 @@ import pytest
 
 from conftest import FakeBackend
 from llmango import runner as runner_module
-from llmango.backends.base import GenRequest, GenResult
+from llmango.backends.base import GenRequest, GenResult, Usage
 from llmango.experiments.fruit import FruitChoice, WyborOwocu
 from llmango.manifest import Manifest, read_manifest
 from llmango.pricing import PricingTable
@@ -56,6 +56,13 @@ class PolishBackend:
             refusal=None,
             error=None,
             created_at=datetime.now(UTC),
+            usage=Usage(
+                prompt_tokens=12,
+                completion_tokens=3,
+                total_tokens=15,
+                cached_tokens=0,
+                reasoning_tokens=0,
+            ),
         )
 
 
@@ -67,13 +74,13 @@ def _isolate_dirs(data_dirs: Path) -> None:
 def _plan(
     pricing_table: PricingTable,
     question: str = "001a",
-    samples: int = 1,
+    samples_per_arm: int = 1,
     languages: list[str] | None = None,
 ) -> RunPlan:
     """Plan one run of a question, priced from an injected table."""
     return plan(
         question,
-        samples=samples,
+        samples_per_arm=samples_per_arm,
         languages=languages,
         pricing_table=pricing_table,
     )
@@ -96,7 +103,7 @@ def _record_resolved_providers(
 def test_plan_builds_every_request_and_writes_nothing(
     fake_backend: FakeBackend, pricing_table: PricingTable, data_dirs: Path
 ) -> None:
-    planned = _plan(pricing_table, samples=2, languages=["en", "pl"])
+    planned = _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"])
 
     assert len(planned.requests) == 4
     assert [request.lang for request in planned.requests] == ["en", "en", "pl", "pl"]
@@ -128,7 +135,9 @@ def test_plan_rejects_a_language_the_question_has_no_template_for(
 def test_run_writes_rows_and_manifest(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    outcome = run(_plan(pricing_table, samples=2, languages=["en", "pl"]), fake_backend)
+    outcome = run(
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]), fake_backend
+    )
 
     assert outcome.rows_written == 4
     assert outcome.parquet_path.exists()
@@ -191,8 +200,10 @@ def test_a_rerun_is_more_samples_rather_than_a_replacement(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     """Two runs of one question are more samples of it, so both files are kept."""
-    first = run(_plan(pricing_table, samples=2, languages=["en"]), fake_backend)
-    second = run(_plan(pricing_table, samples=2, languages=["en"]), fake_backend)
+    first = run(_plan(pricing_table, samples_per_arm=2, languages=["en"]), fake_backend)
+    second = run(
+        _plan(pricing_table, samples_per_arm=2, languages=["en"]), fake_backend
+    )
 
     assert first.run_id != second.run_id
     assert first.rows_written == second.rows_written == 2
@@ -240,7 +251,6 @@ def test_every_row_carries_the_schema_it_was_asked_under(
     outcome = run(_plan(pricing_table, languages=["en"]), fake_backend)
 
     frame = read_results("*.parquet")
-    assert frame["schema_name"].to_list() == ["FruitChoice"]
     assert json.loads(frame["response_schema"].to_list()[0]) == (
         FruitChoice.model_json_schema()
     )
@@ -255,7 +265,7 @@ def test_one_run_covers_every_arm_a_question_declares(
     pricing_table: PricingTable,
 ) -> None:
     """001d asks one language three ways, so one run writes all three arms."""
-    planned = _plan(pricing_table, question="001d", samples=2)
+    planned = _plan(pricing_table, question="001d", samples_per_arm=2)
 
     assert [arm.schema_name for arm in planned.manifest.arms] == [
         "FruitChoice",
@@ -263,7 +273,7 @@ def test_one_run_covers_every_arm_a_question_declares(
         None,
     ]
     assert planned.manifest.arms[1].response_schema == WyborOwocu.model_json_schema()
-    assert planned.manifest.total_requests == 6
+    assert planned.manifest.samples_total == 6
 
     outcome = run(planned, PolishBackend())
 
@@ -271,12 +281,12 @@ def test_one_run_covers_every_arm_a_question_declares(
     assert outcome.rows_written == 6
     assert frame["lang"].to_list() == ["pl"] * 6
     assert frame["answer"].to_list() == ["jabłko"] * 6
-    assert frame["schema_name"].to_list() == (
+    assert frame["response_schema"].str.json_path_match("$.title").to_list() == (
         ["FruitChoice"] * 2 + ["WyborOwocu"] * 2 + [None] * 2
     )
 
-    free_text = frame.filter(pl.col("schema_name").is_null())
-    assert free_text["response_schema"].to_list() == [None] * 2
+    free_text = frame.filter(pl.col("response_schema").is_null())
+    assert free_text.height == 2
     assert free_text["raw_json"].to_list() == ["jabłko"] * 2
 
 
@@ -284,7 +294,7 @@ def test_batch_run_records_batch_id_without_writing_rows(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     outcome = run(
-        _plan(pricing_table, samples=2, languages=["en", "pl"]),
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]),
         fake_backend,
         batch=True,
     )
@@ -301,7 +311,7 @@ def test_fetch_batch_writes_the_submitted_results(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     submitted = run(
-        _plan(pricing_table, samples=2, languages=["en", "pl"]),
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]),
         fake_backend,
         batch=True,
     )
@@ -320,7 +330,7 @@ def test_fetch_batch_records_usage_in_the_manifest(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
     submitted = run(
-        _plan(pricing_table, samples=2, languages=["en", "pl"]),
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]),
         fake_backend,
         batch=True,
     )
@@ -330,7 +340,7 @@ def test_fetch_batch_records_usage_in_the_manifest(
 
     manifest = read_manifest(submitted.run_id)
     assert manifest.usage is not None
-    assert manifest.usage.rows == 4
+    assert manifest.usage.total_tokens == 60
     assert manifest.usage.total_cost_usd == pytest.approx(3.24e-6)
 
 
@@ -395,25 +405,55 @@ def test_fetch_batch_refuses_an_arm_the_question_no_longer_asks(
 def test_run_records_usage_for_the_whole_run(
     fake_backend: FakeBackend, pricing_table: PricingTable
 ) -> None:
-    outcome = run(_plan(pricing_table, samples=2, languages=["en", "pl"]), fake_backend)
+    outcome = run(
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]), fake_backend
+    )
 
     usage = outcome.manifest.usage
     assert usage is not None
-    assert usage.rows == 4
     assert usage.prompt_tokens == 48
     assert usage.errors == 0
     assert usage.provider_refusals == 0
+
+
+def test_usage_is_recorded_for_each_arm_as_well_as_the_run(
+    fake_backend: FakeBackend, pricing_table: PricingTable
+) -> None:
+    """Every arm carries its own share of what the run used, not the whole of it."""
+    outcome = run(
+        _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"]), fake_backend
+    )
+
+    arms = outcome.manifest.arms
+    assert [arm.lang for arm in arms] == ["en", "pl"]
+    assert all(arm.usage is not None and arm.usage.prompt_tokens == 24 for arm in arms)
+    assert outcome.manifest.usage is not None
+    assert outcome.manifest.usage.prompt_tokens == 48
+
+
+def test_arm_usage_separates_arms_that_share_a_language(
+    pricing_table: PricingTable,
+) -> None:
+    """001d asks one language three ways, so an arm is its schema as much as it."""
+    outcome = run(
+        _plan(pricing_table, question="001d", samples_per_arm=2), PolishBackend()
+    )
+
+    arms = outcome.manifest.arms
+    assert [arm.schema_name for arm in arms] == ["FruitChoice", "WyborOwocu", None]
+    assert all(arm.usage is not None and arm.usage.prompt_tokens == 24 for arm in arms)
+    assert outcome.manifest.usage is not None
+    assert outcome.manifest.usage.prompt_tokens == 72
 
 
 def test_usage_counts_provider_refusals_and_keeps_their_cost_null(
     pricing_table: PricingTable,
 ) -> None:
     backend = RefusingBackend()
-    outcome = run(_plan(pricing_table, samples=2, languages=["en"]), backend)
+    outcome = run(_plan(pricing_table, samples_per_arm=2, languages=["en"]), backend)
 
     usage = outcome.manifest.usage
     assert usage is not None
-    assert usage.rows == 2
     assert usage.provider_refusals == 2
     assert usage.total_tokens == 0
     assert usage.total_cost_usd == 0.0

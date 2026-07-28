@@ -48,7 +48,6 @@ def _raw_row(
     return {
         "question_id": question_id,
         "lang": lang,
-        "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
         "provider": "fake",
         "run_id": run_id,

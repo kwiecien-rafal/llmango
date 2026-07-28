@@ -10,7 +10,6 @@ from llmango.config import NORMALIZED_DIR, RAW_DIR
 LEADING_COLUMNS: dict[str, pl.DataType] = {
     "question_id": pl.String(),
     "lang": pl.String(),
-    "schema_name": pl.String(),
     "model": pl.String(),
     "provider": pl.String(),
     "run_id": pl.String(),
@@ -29,7 +28,6 @@ TRAILING_COLUMNS: dict[str, pl.DataType] = {
     "refusal": pl.String(),
     "error": pl.String(),
     "response_id": pl.String(),
-    "system_fingerprint": pl.String(),
     "service_tier": pl.String(),
     "provider_created_at": pl.Datetime(time_unit="us", time_zone="UTC"),
     "response_schema": pl.String(),

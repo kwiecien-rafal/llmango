@@ -4,9 +4,9 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, model_validator
 
 from llmango.config import RUNS_DIR
 from llmango.inputs import InputDeclarations
@@ -41,9 +41,8 @@ def collect_package_versions(
 
 
 class UsageTotals(BaseModel):
-    """Rows, outcomes, tokens and cost for a whole run."""
+    """Outcomes, tokens and cost, for one arm or for a whole run."""
 
-    rows: int = 0
     errors: int = 0
     provider_refusals: int = 0
     prompt_tokens: int = 0
@@ -57,12 +56,13 @@ class UsageTotals(BaseModel):
 
 
 class ArmRecord(BaseModel):
-    """One arm of a run: the language and the whole schema it was asked under."""
+    """One arm of a run: the schema and language it asked under, and what it used."""
 
     lang: str
     schema_name: str | None = None
     response_schema: dict[str, Any] | None = None
     template_sha256: str
+    usage: UsageTotals | None = None
 
     @property
     def label(self) -> str:
@@ -78,7 +78,8 @@ class Manifest(BaseModel):
     provider: str
     model: str
     temperature: float
-    samples: int
+    samples_total: int = 0
+    samples_per_arm: int
     arms: list[ArmRecord]
     inputs: InputDeclarations = Field(default_factory=dict)
     input_sha256: dict[str, str] = Field(default_factory=dict)
@@ -88,11 +89,11 @@ class Manifest(BaseModel):
     package_versions: dict[str, str] = Field(default_factory=collect_package_versions)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    @computed_field
-    @property
-    def total_requests(self) -> int:
-        """How many generations the run covers, across every arm."""
-        return self.samples * len(self.arms)
+    @model_validator(mode="after")
+    def _count_samples(self) -> Self:
+        """Total the samples a run covers, so the stored count can never drift."""
+        self.samples_total = self.samples_per_arm * len(self.arms)
+        return self
 
 
 def build_run_id(manifest: Manifest) -> str:

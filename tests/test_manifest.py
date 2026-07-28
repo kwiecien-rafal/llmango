@@ -38,7 +38,7 @@ def _manifest(**overrides: Any) -> Manifest:
         "provider": "openai",
         "model": "gpt-5.6-luna",
         "temperature": 1.0,
-        "samples": 5,
+        "samples_per_arm": 5,
         "arms": _arms("en", "pl"),
         "inputs": {"fruit_list": {"order": "fixed", "order_ids": ["apple", "mango"]}},
         "input_sha256": {"fruit_list": "ccc"},
@@ -48,7 +48,7 @@ def _manifest(**overrides: Any) -> Manifest:
 
 
 def _usage() -> UsageTotals:
-    return UsageTotals(rows=10, prompt_tokens=120, total_cost_usd=0.000213)
+    return UsageTotals(prompt_tokens=120, total_cost_usd=0.000213)
 
 
 def test_manifest_round_trips_through_json() -> None:
@@ -57,11 +57,19 @@ def test_manifest_round_trips_through_json() -> None:
     assert restored == manifest
 
 
-def test_total_requests_covers_every_arm() -> None:
-    manifest = _manifest(arms=_arms("en", "pl", "ja"), samples=5)
+def test_samples_total_covers_every_arm() -> None:
+    manifest = _manifest(arms=_arms("en", "pl", "ja"), samples_per_arm=5)
 
-    assert manifest.total_requests == 15
-    assert "total_requests" in manifest.model_dump_json()
+    assert manifest.samples_total == 15
+    assert '"samples_total":15' in manifest.model_dump_json()
+
+
+def test_samples_total_is_recounted_rather_than_trusted() -> None:
+    """It is derived, so an edited file cannot make it disagree with the arms."""
+    manifest = _manifest(arms=_arms("en", "pl"), samples_per_arm=5, samples_total=999)
+
+    assert manifest.samples_total == 10
+    assert Manifest.model_validate_json(manifest.model_dump_json()).samples_total == 10
 
 
 def test_an_arm_records_the_schema_it_was_asked_under() -> None:

@@ -47,7 +47,6 @@ class GenResult:
     error: str | None
     created_at: datetime
     response_id: str | None = None
-    system_fingerprint: str | None = None
     service_tier: str | None = None
     provider_created_at: datetime | None = None
     request_envelope: str | None = None

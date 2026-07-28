@@ -52,7 +52,6 @@ class FakeCompletion:
     choices: list[FakeChoice]
     model: str
     id: str = "chatcmpl-fake"
-    system_fingerprint: str | None = "fp_fake"
     service_tier: str | None = "default"
     created: int = 1_700_000_000
     usage: FakeUsage | None = None
@@ -70,7 +69,6 @@ class FakeCompletion:
                 "object": "chat.completion",
                 "created": self.created,
                 "model": self.model,
-                "system_fingerprint": self.system_fingerprint,
                 "service_tier": self.service_tier,
                 "choices": [
                     {
@@ -201,7 +199,6 @@ class FakeBackend(Backend):
             error=None,
             created_at=now,
             response_id="chatcmpl-fake",
-            system_fingerprint="fp_fake",
             service_tier="default",
             provider_created_at=now,
             response_envelope='{"id": "chatcmpl-fake"}',

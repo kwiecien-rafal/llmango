@@ -63,11 +63,13 @@ def run(
     ] = False,
 ) -> None:
     """Run question across language-schema arms and persist raw results to Parquet."""
-    planned = runner.plan(question, samples=samples, model=model, languages=lang)
+    planned = runner.plan(
+        question, samples_per_arm=samples, model=model, languages=lang
+    )
     _report_plan(planned)
     if dry_run:
         return
-    _guard_cost(planned.manifest.total_requests, force)
+    _guard_cost(planned.manifest.samples_total, force)
     _report_outcome(runner.run(planned, batch=batch))
 
 
@@ -126,12 +128,12 @@ def batch_fetch(
     typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
-def _guard_cost(requests: int, force: bool) -> None:
-    """Refuse a large paid run, counting every request across every arm."""
-    if requests > COST_GUARD_CALLS and not force:
+def _guard_cost(samples_total: int, force: bool) -> None:
+    """Refuse a large paid run, counting every sample across every arm."""
+    if samples_total > COST_GUARD_CALLS and not force:
         raise ValueError(
-            f"Refusing a large run of {requests} requests without --force. "
-            f"The unforced limit is {COST_GUARD_CALLS} requests."
+            f"Refusing a large run of {samples_total} samples without --force. "
+            f"The unforced limit is {COST_GUARD_CALLS} samples."
         )
 
 
@@ -147,8 +149,10 @@ def _report_plan(plan: runner.RunPlan) -> None:
     typer.echo(f"  model:       {manifest.model}")
     typer.echo(f"  temperature: {manifest.temperature}")
     typer.echo(f"  inputs:      {', '.join(sorted(manifest.inputs)) or 'none'}")
-    typer.echo(f"  samples:     {manifest.samples} per arm")
-    typer.echo(f"  requests:    {manifest.total_requests} total")
+    typer.echo(
+        f"  samples:     {manifest.samples_total} total, "
+        f"{manifest.samples_per_arm} per arm"
+    )
     if manifest.pricing is not None:
         price = manifest.pricing
         typer.echo(

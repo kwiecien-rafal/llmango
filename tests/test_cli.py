@@ -23,11 +23,11 @@ def test_large_run_is_refused_without_force() -> None:
 def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
     result = runner.invoke(app, ["run", "001a", "--dry-run", "--samples", "3"])
 
-    expected_requests = len(load_question("001a").arms) * 3
+    expected_total = len(load_question("001a").arms) * 3
     assert result.exit_code == 0
     assert "Plan for 001a via openai" in result.output
     assert "model:       gpt-5.6-luna" in result.output
-    assert f"requests:    {expected_requests} total" in result.output
+    assert f"samples:     {expected_total} total, 3 per arm" in result.output
     assert not (data_dirs / "runs").exists()
 
 
