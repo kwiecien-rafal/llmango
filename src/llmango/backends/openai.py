@@ -7,7 +7,7 @@ from functools import cache
 from typing import Any
 
 from dotenv import load_dotenv
-from openai import Omit, OpenAI, omit
+from openai import OpenAI
 from openai.lib._pydantic import to_strict_json_schema
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.completion_usage import CompletionUsage
@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.config import REPO_ROOT
+from llmango.spec import FREE_TEXT, schema_name
 
 _ENDPOINT = "/v1/chat/completions"
 _COMPLETION_WINDOW = "24h"
@@ -37,11 +38,6 @@ def require_openai_key() -> str:
     return key
 
 
-def backend_id(batch: bool) -> str:
-    """Return the id a run is recorded under for one of the two transports."""
-    return "openai-batch" if batch else "openai"
-
-
 @cache
 def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
     """Build the strict json_schema response_format for a Pydantic schema."""
@@ -58,25 +54,16 @@ def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
 def _request_body(request: GenRequest) -> dict[str, Any]:
     """Build the chat-completions request body for one generation.
 
-    Optional sampling params are included only when set, so the body matches
-    exactly what goes on the wire.
-
-    The request seed is deliberately never sent. It keys the prompt inputs only.
-    The provider treats a seed as a request for repeatable sampling, so sending
-    it would ask for the same answer on every sample of a fixed-order question
-    and suppress the very randomness these runs measure.
+    A provider seed is deliberately never sent. It would ask for repeatable
+    sampling and suppress the very randomness these runs measure.
     """
     body: dict[str, Any] = {
         "model": request.model,
         "messages": [{"role": "user", "content": request.prompt}],
-        "temperature": request.sampling.temperature,
+        "temperature": request.temperature,
     }
     if request.response_schema is not None:
         body["response_format"] = _response_format(request.response_schema)
-    if request.sampling.top_p is not None:
-        body["top_p"] = request.sampling.top_p
-    if request.sampling.max_tokens is not None:
-        body["max_tokens"] = request.sampling.max_tokens
     return body
 
 
@@ -85,9 +72,15 @@ def _request_envelope(request: GenRequest) -> str:
     return json.dumps(_request_body(request), ensure_ascii=False)
 
 
-def _custom_id(lang: str, sample_idx: int) -> str:
-    """Build the custom_id that ties one request to its batched response."""
-    return f"{lang}::{sample_idx}"
+def _custom_id(request: GenRequest) -> str:
+    """Build the custom_id that ties one request to its batched response.
+
+    One batch covers every arm of a run, so the schema names the arm alongside
+    the language it was asked in; a language asked several ways would otherwise
+    collide with itself.
+    """
+    schema = schema_name(request.response_schema) or FREE_TEXT
+    return f"{schema}::{request.lang}::{request.sample_idx}"
 
 
 def build_jsonl(requests: list[GenRequest]) -> str:
@@ -95,7 +88,7 @@ def build_jsonl(requests: list[GenRequest]) -> str:
     lines = [
         json.dumps(
             {
-                "custom_id": _custom_id(request.lang, request.sample_idx),
+                "custom_id": _custom_id(request),
                 "method": "POST",
                 "url": _ENDPOINT,
                 "body": _request_body(request),
@@ -156,11 +149,6 @@ def _usage_from_body(usage: dict[str, Any] | None) -> Usage | None:
         prompt_details.get("cached_tokens", 0),
         completion_details.get("reasoning_tokens", 0),
     )
-
-
-def _given[T](value: T | None) -> T | Omit:
-    """Map an unset sampling param onto the SDK's omit sentinel."""
-    return value if value is not None else omit
 
 
 def _provider_created_at(created: object) -> datetime | None:
@@ -242,9 +230,8 @@ def _parse_line(line: _BatchLine, request: GenRequest) -> GenResult:
 class OpenAIBackend(Backend):
     """The OpenAI provider, synchronous by default, batched on request."""
 
-    def __init__(self, client: OpenAI | None = None, *, batch: bool = False) -> None:
+    def __init__(self, client: OpenAI | None = None) -> None:
         self._client = client or OpenAI(api_key=require_openai_key())
-        self.backend_id = backend_id(batch)
 
     def resolve_model_snapshot(self, model: str) -> str:
         return self._client.models.retrieve(model).id
@@ -267,9 +254,7 @@ class OpenAIBackend(Backend):
                     model=request.model,
                     messages=messages,
                     response_format=request.response_schema,
-                    temperature=request.sampling.temperature,
-                    top_p=_given(request.sampling.top_p),
-                    max_tokens=_given(request.sampling.max_tokens),
+                    temperature=request.temperature,
                 )
                 completion = raw.parse()
                 parsed = completion.choices[0].message.parsed
@@ -277,9 +262,7 @@ class OpenAIBackend(Backend):
                 raw = self._client.chat.completions.with_raw_response.create(
                     model=request.model,
                     messages=messages,
-                    temperature=request.sampling.temperature,
-                    top_p=_given(request.sampling.top_p),
-                    max_tokens=_given(request.sampling.max_tokens),
+                    temperature=request.temperature,
                 )
                 completion = raw.parse()
                 parsed = None
@@ -343,7 +326,7 @@ class OpenAIBackend(Backend):
 
         results: list[GenResult] = []
         for request in requests:
-            line = lines.get(_custom_id(request.lang, request.sample_idx))
+            line = lines.get(_custom_id(request))
             if line is None:
                 result = GenResult.failed(
                     request,

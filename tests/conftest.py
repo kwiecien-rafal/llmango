@@ -193,8 +193,6 @@ class FakeBackend(Backend):
     recorded, so a batch run fetches exactly what a sync run would have generated.
     """
 
-    backend_id = "fake"
-
     def __init__(self, answers: dict[str, list[str]] | None = None) -> None:
         self._answers = answers or {}
         self.submitted: list[list[GenRequest]] = []

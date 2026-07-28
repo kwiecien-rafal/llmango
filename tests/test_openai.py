@@ -15,9 +15,8 @@ from openai import OpenAI
 
 from llmango.backends import openai as openai_module
 from llmango.backends.base import GenRequest
-from llmango.backends.openai import OpenAIBackend, backend_id, build_jsonl
-from llmango.experiments.fruit import FruitChoice
-from llmango.questions import SamplingParams
+from llmango.backends.openai import OpenAIBackend, build_jsonl
+from llmango.experiments.fruit import FruitChoice, WyborOwocu
 
 
 class FakeClient(Protocol):
@@ -29,7 +28,7 @@ class FakeClient(Protocol):
 FakeClientFactory = Callable[..., FakeClient]
 
 
-def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> GenRequest:
+def _request(lang: str = "en", sample_idx: int = 0) -> GenRequest:
     return GenRequest(
         question_id="001a",
         lang=lang,
@@ -37,24 +36,9 @@ def _request(lang: str = "en", sample_idx: int = 0, seed: int | None = 7) -> Gen
         prompt=f"Pick one random fruit ({lang})",
         prompt_sha256="deadbeef",
         sample_idx=sample_idx,
-        seed=seed,
-        sampling=SamplingParams(temperature=0.5, seed=seed),
         response_schema=FruitChoice,
+        temperature=0.5,
     )
-
-
-def test_backend_id_names_the_transport() -> None:
-    assert backend_id(batch=False) == "openai"
-    assert backend_id(batch=True) == "openai-batch"
-
-
-def test_the_batch_flag_sets_the_backend_id(
-    make_openai_client: FakeClientFactory,
-) -> None:
-    client = cast(OpenAI, make_openai_client())
-
-    assert OpenAIBackend(client=client).backend_id == "openai"
-    assert OpenAIBackend(client=client, batch=True).backend_id == "openai-batch"
 
 
 def test_require_openai_key_returns_the_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,7 +135,7 @@ def test_generate_captures_a_refusal(make_openai_client: FakeClientFactory) -> N
     assert result.error is None
 
 
-def test_generate_forwards_the_sampling_params(
+def test_generate_forwards_the_model_and_temperature(
     make_openai_client: FakeClientFactory,
 ) -> None:
     parsed = FruitChoice(fruit="apple")
@@ -164,21 +148,6 @@ def test_generate_forwards_the_sampling_params(
     assert call["model"] == "gpt-5.6-luna"
     assert call["temperature"] == 0.5
     assert call["response_format"] is FruitChoice
-
-
-def test_generate_never_sends_the_seed(
-    make_openai_client: FakeClientFactory,
-) -> None:
-    """The seed keys the option order only; sending it would ask for repeatable
-    answers and flatten the distribution the run measures."""
-    parsed = FruitChoice(fruit="apple")
-    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
-    backend = OpenAIBackend(client=cast(OpenAI, client))
-
-    backend.generate(_request())
-
-    assert _request().seed == 7
-    assert "seed" not in client.calls[0]
 
 
 def test_generate_free_text_sends_no_response_format(
@@ -307,7 +276,7 @@ def _batch_backend(
     output_file_id: str | None = "file-output",
     error_file_id: str | None = None,
 ) -> tuple[OpenAIBackend, FakeBatchClient]:
-    """Build a batch-flagged backend over a fake client, returning both."""
+    """Build a backend over a fake batch client, returning both."""
     client = FakeBatchClient(
         files=FakeFiles(content_text=content_text),
         batches=FakeBatches(
@@ -319,7 +288,7 @@ def _batch_backend(
             )
         ),
     )
-    return OpenAIBackend(client=cast(OpenAI, client), batch=True), client
+    return OpenAIBackend(client=cast(OpenAI, client)), client
 
 
 def test_build_jsonl_encodes_each_request() -> None:
@@ -329,7 +298,7 @@ def test_build_jsonl_encodes_each_request() -> None:
 
     assert len(lines) == 2
     first = json.loads(lines[0])
-    assert first["custom_id"] == "en::0"
+    assert first["custom_id"] == "FruitChoice::en::0"
     assert first["method"] == "POST"
     assert first["url"] == "/v1/chat/completions"
     assert first["body"]["model"] == "gpt-5.6-luna"
@@ -342,37 +311,20 @@ def test_build_jsonl_encodes_each_request() -> None:
     assert schema["strict"] is True
     assert schema["schema"]["additionalProperties"] is False
 
-    assert json.loads(lines[1])["custom_id"] == "pl::1"
+    assert json.loads(lines[1])["custom_id"] == "FruitChoice::pl::1"
 
 
-def test_build_jsonl_omits_unset_sampling_params() -> None:
-    request = GenRequest(
-        question_id="001a",
-        lang="en",
-        model="gpt-5.6-luna",
-        prompt="prompt",
-        prompt_sha256="deadbeef",
-        sample_idx=0,
-        seed=None,
-        sampling=SamplingParams(temperature=1.0),
-        response_schema=FruitChoice,
-    )
+def test_a_batch_names_every_arm_of_a_run_apart() -> None:
+    """One batch covers every arm, so 001d's three ways of asking pl cannot collide."""
+    requests = [
+        replace(_request(lang="pl"), response_schema=schema)
+        for schema in (FruitChoice, WyborOwocu, None)
+    ]
 
-    body = json.loads(build_jsonl([request]))["body"]
+    lines = build_jsonl(requests).splitlines()
 
-    assert "top_p" not in body
-    assert "max_tokens" not in body
-
-
-def test_build_jsonl_never_sends_the_seed() -> None:
-    """The seed keys the option order only; sending it would ask for repeatable
-    answers and flatten the distribution the run measures."""
-    request = _request(seed=7)
-
-    body = json.loads(build_jsonl([request]))["body"]
-
-    assert request.seed == 7
-    assert "seed" not in body
+    custom_ids = [json.loads(line)["custom_id"] for line in lines]
+    assert custom_ids == ["FruitChoice::pl::0", "WyborOwocu::pl::0", "none::pl::0"]
 
 
 def test_build_jsonl_omits_response_format_for_free_text() -> None:
@@ -415,7 +367,10 @@ def test_submit_uploads_the_jsonl_and_creates_a_batch() -> None:
 def test_fetch_parses_output_lines_back_to_requests() -> None:
     requests = [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)]
     content = "\n".join(
-        [_output_line("pl::1", "banan"), _output_line("en::0", "mango")]
+        [
+            _output_line("FruitChoice::pl::1", "banan"),
+            _output_line("FruitChoice::en::0", "mango"),
+        ]
     )
     backend, _ = _batch_backend(content_text=content)
 
@@ -430,7 +385,7 @@ def test_fetch_parses_output_lines_back_to_requests() -> None:
 
 def test_fetch_captures_provenance_and_usage() -> None:
     record = {
-        "custom_id": "en::0",
+        "custom_id": "FruitChoice::en::0",
         "response": {
             "status_code": 200,
             "body": {
@@ -479,7 +434,7 @@ def test_fetch_captures_provenance_and_usage() -> None:
 
 def test_fetch_captures_a_refusal() -> None:
     record = {
-        "custom_id": "en::0",
+        "custom_id": "FruitChoice::en::0",
         "response": {
             "status_code": 200,
             "body": {
@@ -504,7 +459,8 @@ def test_fetch_captures_a_refusal() -> None:
 
 
 def test_fetch_marks_missing_lines_as_errors() -> None:
-    backend, _ = _batch_backend(content_text=_output_line("en::0", "mango"))
+    output = _output_line("FruitChoice::en::0", "mango")
+    backend, _ = _batch_backend(content_text=output)
 
     results = backend.fetch(
         "batch-1",
@@ -525,7 +481,7 @@ def test_fetch_raises_when_the_batch_is_not_complete() -> None:
 
 def test_fetch_captures_unparseable_content_without_aborting() -> None:
     truncated = {
-        "custom_id": "en::0",
+        "custom_id": "FruitChoice::en::0",
         "response": {
             "status_code": 200,
             "body": {
@@ -540,7 +496,8 @@ def test_fetch_captures_unparseable_content_without_aborting() -> None:
         },
         "error": None,
     }
-    content = "\n".join([json.dumps(truncated), _output_line("pl::1", "mango")])
+    answered = _output_line("FruitChoice::pl::1", "mango")
+    content = "\n".join([json.dumps(truncated), answered])
     backend, _ = _batch_backend(content_text=content)
 
     results = backend.fetch(
@@ -555,7 +512,7 @@ def test_fetch_captures_unparseable_content_without_aborting() -> None:
 
 def test_fetch_reads_errored_requests_from_the_error_file() -> None:
     error_record = {
-        "custom_id": "en::0",
+        "custom_id": "FruitChoice::en::0",
         "response": None,
         "error": {"code": "rate_limit_exceeded", "message": "slow down"},
     }

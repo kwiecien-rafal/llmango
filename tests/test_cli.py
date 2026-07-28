@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from llmango.cli import _report_normalize, app
 from llmango.normalize import NormalizeOutcome
 from llmango.questions import load_question
+from llmango.spec import FREE_TEXT
 
 runner = CliRunner()
 
@@ -29,22 +30,24 @@ def test_smoke_and_samples_cannot_be_combined() -> None:
 def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
     result = runner.invoke(app, ["run", "001a", "--dry-run", "--samples", "3"])
 
-    expected_requests = len(load_question("001a").languages) * 3
+    expected_requests = len(load_question("001a").arms) * 3
     assert result.exit_code == 0
-    assert "Plan for 001a" in result.output
-    assert f"requests:  {expected_requests} total" in result.output
+    assert "Plan for 001a via openai" in result.output
+    assert "model:       gpt-5.6-luna" in result.output
+    assert f"requests:    {expected_requests} total" in result.output
     assert not (data_dirs / "runs").exists()
 
 
-def test_dry_run_reports_one_plan_per_schema_a_question_is_asked_under(
-    data_dirs: Path,
-) -> None:
+def test_dry_run_reports_every_arm_of_one_plan(data_dirs: Path) -> None:
+    """001d asks Polish three ways, which is three arms of a single run."""
     result = runner.invoke(app, ["run", "001d", "--dry-run"])
 
     assert result.exit_code == 0
-    assert "schema:    FruitChoice" in result.output
-    assert "schema:    WyborOwocu" in result.output
-    assert "schema:    free text" in result.output
+    assert result.output.count("Plan for 001d") == 1
+    assert "arms:        3" in result.output
+    assert "FruitChoice  pl" in result.output
+    assert "WyborOwocu  pl" in result.output
+    assert f"{FREE_TEXT}  pl" in result.output
 
 
 @pytest.mark.parametrize("command", ["normalize", "aggregate", "analyze"])

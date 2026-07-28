@@ -31,6 +31,6 @@ def test_every_question_folder_is_declared() -> None:
         found = {
             child.name
             for child in experiment_dir(folder).iterdir()
-            if (child / "meta.yaml").is_file()
+            if (child / "question.yaml").is_file()
         }
         assert found == set(spec.questions)

@@ -11,10 +11,9 @@ import typer
 
 from llmango import runner
 from llmango.aggregate import AggregateOutcome, aggregate_question
-from llmango.backends.openai import OpenAIBackend, backend_id
 from llmango.experiments import spec_for
-from llmango.manifest import RunManifest
 from llmango.normalize import NormalizeOutcome, normalize_question
+from llmango.spec import FREE_TEXT
 
 if TYPE_CHECKING:
     from llmango.charts import AnalyzeOutcome
@@ -38,16 +37,13 @@ def main() -> None:
 def run(
     question: QuestionArgument = "001a",
     model: Annotated[
-        str | None, typer.Option("--model", help="Override the experiment model.")
+        str | None, typer.Option("--model", help="Override the question's model.")
     ] = None,
     samples: Annotated[
-        int | None, typer.Option("--samples", "-n", help="Samples per language.")
+        int | None, typer.Option("--samples", "-n", help="Samples per arm.")
     ] = None,
     lang: Annotated[
         list[str] | None, typer.Option("--lang", help="Restrict to these languages.")
-    ] = None,
-    seed: Annotated[
-        int | None, typer.Option("--seed", help="Seed for per-sample prompt inputs.")
     ] = None,
     batch: Annotated[
         bool, typer.Option("--batch", help="Submit via the OpenAI Batch API.")
@@ -63,24 +59,17 @@ def run(
     ] = False,
 ) -> None:
     """Run question across language-schema arms and persist raw results to Parquet."""
-    options = runner.RunOptions(
-        backend_id=backend_id(batch),
-        model=model,
-        samples=_resolve_samples(samples, smoke, dry_run, force),
-        languages=lang,
-        seed=seed,
-        batch=batch,
-    )
     try:
-        for planned in runner.plan(question, options):
-            _report_plan(planned)
-            if dry_run:
-                continue
-            outcome = runner.run(planned, OpenAIBackend(batch=batch))
-            if batch:
-                _report_submit(outcome)
-            else:
-                _report_run(outcome)
+        planned = runner.plan(
+            question,
+            samples=_resolve_samples(samples, smoke, dry_run, force),
+            model=model,
+            languages=lang,
+        )
+        _report_plan(planned)
+        if dry_run:
+            return
+        _report_outcome(runner.run(planned, batch=batch))
     except _PIPELINE_ERRORS as error:
         _die(str(error))
 
@@ -103,7 +92,6 @@ def normalize(
     try:
         outcome = normalize_question(
             question,
-            make_backend=OpenAIBackend,
             model=model,
             max_llm_calls=None if force else SMOKE_SAMPLE_LIMIT,
             dry_run=dry_run,
@@ -143,7 +131,7 @@ def batch_fetch(
 ) -> None:
     """Fetch a previously submitted batch and persist its results to Parquet."""
     try:
-        outcome = runner.fetch_batch(run_id, OpenAIBackend(batch=True))
+        outcome = runner.fetch_batch(run_id)
     except _PIPELINE_ERRORS as error:
         _die(str(error))
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
@@ -161,7 +149,7 @@ def _resolve_samples(
     count = samples if samples is not None else 1
     if not dry_run and count > SMOKE_SAMPLE_LIMIT and not force:
         _die(
-            f"Refusing a large run of {count} samples per language without --force. "
+            f"Refusing a large run of {count} samples per arm without --force. "
             f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
         )
     return count
@@ -186,46 +174,44 @@ def _die(message: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
-def _report_run(outcome: runner.RunOutcome) -> None:
-    typer.echo(
-        f"Run {outcome.run_id} ({_schema(outcome.manifest)}): "
-        f"wrote {outcome.rows_written} rows."
-    )
+def _report_outcome(outcome: runner.RunOutcome) -> None:
+    """Report a run, which either submitted a batch or wrote its rows."""
+    if outcome.batch_id is not None:
+        typer.echo(f"Run {outcome.run_id}: submitted batch {outcome.batch_id}.")
+        typer.echo(f"Fetch results with: llmango batch-fetch {outcome.run_id}")
+        return
+    typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     usage = outcome.manifest.usage
     if usage is not None:
         typer.echo(
-            f"Usage:    {usage.total.total_tokens} tokens, "
-            f"${usage.total.total_cost_usd:.6f}"
+            f"Usage:    {usage.total_tokens} tokens, ${usage.total_cost_usd:.6f}"
         )
     typer.echo(f"Parquet:  {outcome.parquet_path}")
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
-def _schema(manifest: RunManifest) -> str:
-    """Name the schema a run was asked under, for a line a human reads."""
-    return manifest.schema_name or "free text"
-
-
 def _report_plan(plan: runner.RunPlan) -> None:
     manifest = plan.manifest
-    typer.echo(f"Plan for {plan.question_id} via {manifest.backend}:")
-    typer.echo(f"  model:     {manifest.model}")
-    typer.echo(f"  schema:    {_schema(manifest)}")
-    typer.echo(f"  inputs:    {', '.join(sorted(manifest.inputs)) or 'none'}")
-    typer.echo(f"  languages: {', '.join(manifest.languages)}")
-    typer.echo(f"  samples:   {manifest.samples_per_language} per language")
-    typer.echo(f"  requests:  {manifest.total_requests} total")
+    typer.echo(f"Plan for {plan.question_id} via {manifest.provider}:")
+    typer.echo(f"  model:       {manifest.model}")
+    typer.echo(f"  temperature: {manifest.temperature}")
+    typer.echo(f"  inputs:      {', '.join(sorted(manifest.inputs)) or 'none'}")
+    typer.echo(f"  samples:     {manifest.samples} per arm")
+    typer.echo(f"  requests:    {manifest.total_requests} total")
     if plan.pricing is not None:
         price = plan.pricing
         typer.echo(
-            f"  price:     ${price.input}/1M in, ${price.output}/1M out "
+            f"  price:       ${price.input}/1M in, ${price.output}/1M out "
             f"(updated {price.last_updated})"
         )
     else:
         typer.echo(
-            f"  price:     no entry for {manifest.model}; add it to "
+            f"  price:       no entry for {manifest.model}; add it to "
             f"data/pricing.json before running."
         )
+    typer.echo(f"  arms:        {len(manifest.arms)}")
+    for arm in manifest.arms:
+        typer.echo(f"    {arm.schema_name or FREE_TEXT}  {arm.lang}")
 
 
 def _report_normalize(outcome: NormalizeOutcome) -> None:
@@ -248,14 +234,6 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
     for chart in outcome.charts:
         typer.echo(f"  {chart.file}  {chart.metric}, {len(chart.arms)} arms")
     typer.echo(f"Index: {outcome.index_path}")
-
-
-def _report_submit(outcome: runner.RunOutcome) -> None:
-    typer.echo(
-        f"Run {outcome.run_id} ({_schema(outcome.manifest)}): "
-        f"submitted batch {outcome.batch_id}."
-    )
-    typer.echo(f"Fetch results with: llmango batch-fetch {outcome.run_id}")
 
 
 if __name__ == "__main__":

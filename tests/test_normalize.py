@@ -50,10 +50,9 @@ def _raw_row(
         "lang": lang,
         "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
-        "backend": "fake",
+        "provider": "fake",
         "run_id": run_id,
         "sample_idx": sample_idx,
-        "seed": 0,
         "temperature": 1.0,
         "prompt_sha256": "x",
         "prompt_inputs": prompt_inputs,
@@ -81,8 +80,6 @@ def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
 class ExplodingBackend:
     """Backend that fails the test if the LLM layer ever calls it."""
 
-    backend_id = "boom"
-
     def resolve_model_snapshot(self, model: str) -> str:
         return model
 
@@ -92,8 +89,6 @@ class ExplodingBackend:
 
 class StubBackend:
     """Backend that answers every request with a fixed normalization."""
-
-    backend_id = "stub"
 
     def __init__(self, result: FruitNormalization) -> None:
         self._result = result
@@ -121,8 +116,6 @@ class StubBackend:
 
 class FlakyBackend(StubBackend):
     """Backend that answers every request except the one naming a given answer."""
-
-    backend_id = "flaky"
 
     def __init__(self, result: FruitNormalization, failing: str) -> None:
         super().__init__(result)
@@ -215,7 +208,7 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
     )
     _write_raw([_raw_row("en", "kiwi")])
 
-    outcome = normalize_question(_QUESTION, make_backend=ExplodingBackend)
+    outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
     frame = pl.read_parquet(normalized_path(_QUESTION))
     assert outcome.llm_calls == 0
@@ -229,9 +222,7 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
 
-    outcome = normalize_question(
-        _QUESTION, make_backend=lambda: backend, model="gpt-5.6-luna"
-    )
+    outcome = normalize_question(_QUESTION, backend=backend, model="gpt-5.6-luna")
 
     assert outcome.llm_calls == 1
     assert backend.calls == 1
@@ -255,9 +246,7 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) 
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
 
     with pytest.raises(ValueError, match="unparsed"):
-        normalize_question(
-            _QUESTION, make_backend=lambda: backend, model="gpt-5.6-luna"
-        )
+        normalize_question(_QUESTION, backend=backend, model="gpt-5.6-luna")
 
     assert not normalized_path(_QUESTION).is_file()
     cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
@@ -280,7 +269,7 @@ def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
     _write_raw([_raw_row("en", "starfruit")])
 
     with pytest.raises(ValueError, match="smoke limit"):
-        normalize_question(_QUESTION, make_backend=ExplodingBackend, max_llm_calls=0)
+        normalize_question(_QUESTION, backend=ExplodingBackend(), max_llm_calls=0)
 
 
 def test_mapping_values_must_be_canonical(env: Path) -> None:
@@ -296,7 +285,7 @@ def test_mapping_values_must_be_canonical(env: Path) -> None:
 def test_dry_run_counts_llm_work_without_calling_or_writing(env: Path) -> None:
     _write_raw([_raw_row("en", "apple"), _raw_row("en", "starfruit", sample_idx=1)])
 
-    outcome = normalize_question(_QUESTION, make_backend=ExplodingBackend, dry_run=True)
+    outcome = normalize_question(_QUESTION, backend=ExplodingBackend(), dry_run=True)
 
     assert outcome.parquet_path is None
     assert outcome.rows == 2

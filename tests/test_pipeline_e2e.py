@@ -10,7 +10,7 @@ from llmango.aggregate import aggregate_question
 from llmango.backends.base import Backend
 from llmango.charts import analyze_question
 from llmango.normalize import normalize_question
-from llmango.runner import RunOptions, plan, run
+from llmango.runner import plan, run
 from llmango.storage import read_results
 
 _QUESTION = "001a"
@@ -44,10 +44,8 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
     backend: Backend = make_fake_backend(_ANSWERS)
-    options = RunOptions(
-        backend_id=backend.backend_id, samples=4, languages=["en", "pl"]
-    )
-    run_outcome = run(plan(_QUESTION, options)[0], backend)
+    planned = plan(_QUESTION, samples=4, languages=["en", "pl"])
+    run_outcome = run(planned, backend)
     assert run_outcome.rows_written == 8
 
     raw = read_results("*.parquet")

@@ -18,10 +18,9 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
         "lang": "en",
         "schema_name": "FruitChoice",
         "model": "gpt-5.6-luna",
-        "backend": "fake",
+        "provider": "fake",
         "run_id": _RUN_ID,
         "sample_idx": sample_idx,
-        "seed": 7,
         "temperature": 1.0,
         "prompt_sha256": "deadbeef",
         "prompt": "Pick one random fruit from this list: apple, mango",
@@ -80,10 +79,9 @@ def test_columns_follow_the_canonical_order(
         "lang",
         "schema_name",
         "model",
-        "backend",
+        "provider",
         "run_id",
         "sample_idx",
-        "seed",
         "temperature",
         "prompt_sha256",
         "prompt",
@@ -149,7 +147,6 @@ def test_column_dtypes_are_pinned(
 
     frame = read_results("*.parquet")
     assert frame.schema["sample_idx"] == pl.Int64
-    assert frame.schema["seed"] == pl.Int64
     assert frame.schema["temperature"] == pl.Float64
     assert frame.schema["raw_json"] == pl.String
     assert frame.schema["prompt_tokens"] == pl.Int64

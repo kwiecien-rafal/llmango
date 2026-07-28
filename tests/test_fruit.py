@@ -48,7 +48,6 @@ def _request(
     declaration: dict[str, Any],
     lang: str = "en",
     sample_idx: int = 0,
-    seed: int | None = 42,
     data: Any = None,
 ) -> InputRequest:
     return InputRequest(
@@ -57,7 +56,6 @@ def _request(
         declaration=declaration,
         lang=lang,
         sample_idx=sample_idx,
-        seed=seed,
     )
 
 
@@ -84,14 +82,14 @@ def test_shuffle_is_a_permutation_that_varies_per_sample() -> None:
 
 
 def test_shuffle_is_identical_across_a_questions_languages() -> None:
-    config = load_question("001c")
-    declaration = config.inputs[FRUIT_LIST]
+    question = load_question("001c")
+    declaration = question.inputs[FRUIT_LIST]
     data = _question_data("001c")
     shown = [
         build_input(_request(declaration, lang=lang, sample_idx=7, data=data)).value
-        for lang in config.languages
+        for lang in question.languages
     ]
-    assert len(config.languages) == 3
+    assert len(question.languages) == 3
     assert shown[0] == shown[1] == shown[2]
 
 
@@ -117,7 +115,6 @@ def test_unknown_input_name_raises() -> None:
         declaration=_FIXED,
         lang="en",
         sample_idx=0,
-        seed=1,
     )
     with pytest.raises(ValueError, match="no prompt input 'vegetable_list'"):
         build_input(request)

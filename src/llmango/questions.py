@@ -1,14 +1,15 @@
 """Experiment and question config, and the prompt templates they name.
 
 An experiment's shared files are experiment.yaml plus normalize.md, in the folder
-its spec names. Each question it owns is a subfolder with its own meta.yaml and
-one prompt template per language.
+its spec names. Each question it owns is a subfolder with its own question.yaml
+and one prompt template per language.
 
-A question declares one thing: every language it is asked in, each with the
-response schemas it is asked under. There is one entry per language and no second
-list to keep in step with it, so the three shapes a question can take all read the
-same way: one schema for every language, a schema of its own per language, or one
-language asked under several schemas.
+A question declares who answers it and how it is asked: one provider, one model
+and one temperature, then every language it is asked in with the response schemas
+it is asked under. There is one entry per language and no second list to keep in
+step with it, so the three shapes a question can take all read the same way: one
+schema for every language, a schema of its own per language, or one language
+asked under several schemas.
 
 A template's placeholders are filled per sample by the prompt inputs the question
 declares, so a rendered prompt is produced per sample rather than read once from a
@@ -30,26 +31,20 @@ from llmango.inputs import InputDeclarations, validate_placeholders
 from llmango.spec import ExperimentSpec
 
 _EXPERIMENT_FILE = "experiment.yaml"
-_META_FILE = "meta.yaml"
-
-
-class SamplingParams(BaseModel):
-    """Sampling parameters passed to a generation backend."""
-
-    temperature: float = 1.0
-    top_p: float | None = None
-    max_tokens: int | None = None
-    seed: int | None = None
+_QUESTION_FILE = "question.yaml"
 
 
 class ExperimentConfig(BaseModel):
-    """Parsed contents of an experiment's experiment.yaml manifest."""
+    """Parsed contents of an experiment's experiment.yaml manifest.
+
+    Normalization is the one thing an experiment configures for all its
+    questions, since it pools every question's answers into one mapping.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str | None = None
-    normalize_model: str | None = None
-    sampling: SamplingParams = Field(default_factory=SamplingParams)
+    normalize_provider: str = "openai"
+    normalize_model: str
 
 
 class LanguageAsk(BaseModel):
@@ -65,12 +60,28 @@ class LanguageAsk(BaseModel):
     language: str
     schemas: list[str | None] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _one_entry_per_schema(self) -> Self:
+        """Reject a schema listed twice, which would ask one arm twice over."""
+        names = self.schemas
+        repeated = sorted(
+            {name or "no schema" for name in names if names.count(name) > 1}
+        )
+        if repeated:
+            raise ValueError(
+                f"Language {self.language} asks under {', '.join(repeated)} more "
+                f"than once; each schema it is asked under is listed once."
+            )
+        return self
 
-class QuestionMeta(BaseModel):
-    """Parsed contents of a question's meta.yaml manifest.
 
-    ask is one entry per language, in the order the question declares them, which
-    is the language list as well.
+class QuestionConfig(BaseModel):
+    """Parsed contents of a question's question.yaml manifest.
+
+    provider, model and temperature are declared once and apply to every arm, so
+    what varies within a question is the language and the schema alone.
+
+    ask is one entry per language, in the order the question declares them.
 
     Each key under inputs is the template placeholder it fills, and its body is
     passed through to the experiment untouched.
@@ -78,9 +89,11 @@ class QuestionMeta(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    provider: str = "openai"
+    model: str
+    temperature: float = 1.0
     ask: list[LanguageAsk] = Field(min_length=1)
     inputs: InputDeclarations = Field(default_factory=dict)
-    sampling: SamplingParams | None = None
 
     @model_validator(mode="after")
     def _one_entry_per_language(self) -> Self:
@@ -111,34 +124,38 @@ class PromptTemplate:
 
 @dataclass(frozen=True)
 class Arm:
-    """One response schema and every language a question asks under it.
+    """One language asked under one response schema.
 
-    A run covers one arm, so a question asked the same way in three languages is
-    one run of three languages, and a question asking one language under three
-    schemas is three runs of one. schema is None for the arm that sends none.
+    An arm is what a chart plots as a series and what aggregate keys its counts
+    by, so it is what a run varies and nothing else. schema is None for the arm
+    that sends none and reads the plain text back.
     """
 
     schema: type[BaseModel] | None
-    languages: list[str]
+    lang: str
 
 
 @dataclass(frozen=True)
-class QuestionConfig:
+class Question:
     """A question resolved against its experiment, ready to run.
 
-    languages lists every language the question declares, in the order it declares
-    them; arms groups those same languages by the schema they are asked under.
-    templates holds one loaded template per language, since loading the question
-    had to read them all to validate them.
+    arms lists every (schema, language) pair the question is asked as, in the
+    order it declares them. templates holds one loaded template per language,
+    since loading the question had to read them all to validate them.
     """
 
     question_id: str
-    languages: list[str]
+    provider: str
+    model: str
+    temperature: float
     arms: list[Arm]
     inputs: InputDeclarations
-    sampling: SamplingParams
-    model: str | None
     templates: dict[str, PromptTemplate]
+
+    @property
+    def languages(self) -> list[str]:
+        """Every language the question is asked in, in the order it declares them."""
+        return list(dict.fromkeys(arm.lang for arm in self.arms))
 
 
 def load_experiment_config(folder: str) -> ExperimentConfig:
@@ -150,29 +167,28 @@ def load_experiment_config(folder: str) -> ExperimentConfig:
     return ExperimentConfig.model_validate(data)
 
 
-def load_question(question_id: str) -> QuestionConfig:
+def load_question(question_id: str) -> Question:
     """Load and validate a question by its id (e.g. 001a)."""
     spec = spec_for(question_id)
     directory = question_dir(spec.folder, question_id)
-    meta_path = directory / _META_FILE
-    if not meta_path.is_file():
-        raise FileNotFoundError(f"Missing question manifest: {meta_path}")
+    path = directory / _QUESTION_FILE
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing question manifest: {path}")
 
-    meta = QuestionMeta.model_validate(yaml.safe_load(meta_path.read_text("utf-8")))
-    exp_config = load_experiment_config(spec.folder)
-    languages = [entry.language for entry in meta.ask]
+    config = QuestionConfig.model_validate(yaml.safe_load(path.read_text("utf-8")))
+    languages = [entry.language for entry in config.ask]
     templates = _load_templates(spec.folder, question_id, languages)
 
     for lang, template in templates.items():
-        validate_placeholders(template.text, meta.inputs, f"{question_id}/{lang}.md")
+        validate_placeholders(template.text, config.inputs, f"{question_id}/{lang}.md")
 
-    return QuestionConfig(
+    return Question(
         question_id=question_id,
-        languages=languages,
-        arms=_resolve_arms(question_id, meta.ask, spec),
-        inputs=meta.inputs,
-        sampling=meta.sampling or exp_config.sampling,
-        model=exp_config.model,
+        provider=config.provider,
+        model=config.model,
+        temperature=config.temperature,
+        arms=_resolve_arms(config.ask, spec),
+        inputs=config.inputs,
         templates=templates,
     )
 
@@ -199,29 +215,13 @@ def _load_templates(
     return {lang: load_template(folder, question_id, lang) for lang in languages}
 
 
-def _resolve_arms(
-    question_id: str, ask: list[LanguageAsk], spec: ExperimentSpec
-) -> list[Arm]:
-    """Group the declared languages into one arm per schema.
-
-    Every language asked under the same schema belongs to one arm, in the order
-    the schemas are first named, so a question asked the same way in three
-    languages runs once rather than three times.
-    """
-    grouped: dict[str | None, list[str]] = {}
-    for entry in ask:
-        for name in entry.schemas:
-            languages = grouped.setdefault(name, [])
-            if entry.language in languages:
-                raise ValueError(
-                    f"Question {question_id} asks {entry.language} under "
-                    f"{name or 'no schema'} more than once."
-                )
-            languages.append(entry.language)
+def _resolve_arms(ask: list[LanguageAsk], spec: ExperimentSpec) -> list[Arm]:
+    """Pair every declared language with each schema it is asked under."""
     return [
         Arm(
             schema=spec.schema_named(name) if name is not None else None,
-            languages=langs,
+            lang=entry.language,
         )
-        for name, langs in grouped.items()
+        for entry in ask
+        for name in entry.schemas
     ]

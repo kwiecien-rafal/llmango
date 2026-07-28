@@ -44,9 +44,9 @@ class InputSource:
 class InputRequest:
     """Everything an experiment needs to build one input for one sample.
 
-    declaration is the question's meta.yaml block for this input, passed through
-    verbatim. The engine never reads inside it, so an experiment declares its
-    inputs in whatever words fit what it varies.
+    declaration is the question's question.yaml block for this input, passed
+    through verbatim. The engine never reads inside it, so an experiment declares
+    its inputs in whatever words fit what it varies.
     """
 
     name: str
@@ -54,7 +54,6 @@ class InputRequest:
     declaration: Mapping[str, Any]
     lang: str
     sample_idx: int
-    seed: int | None
 
 
 @dataclass(frozen=True)
@@ -91,7 +90,6 @@ def resolve(
     declarations: InputDeclarations,
     lang: str,
     sample_idx: int,
-    seed: int | None,
     question_id: str,
 ) -> dict[str, ResolvedInput]:
     """Build every declared input for one sample through the experiment's hook."""
@@ -111,7 +109,6 @@ def resolve(
                 declaration=declaration,
                 lang=lang,
                 sample_idx=sample_idx,
-                seed=seed,
             )
         )
         for name, declaration in declarations.items()
@@ -139,7 +136,7 @@ def validate_placeholders(
     if undeclared := sorted(wanted - declared):
         raise ValueError(
             f"{label} uses undeclared prompt input(s): {', '.join(undeclared)}. "
-            f"Declare them under 'inputs' in meta.yaml."
+            f"Declare them under 'inputs' in question.yaml."
         )
     if unused := sorted(declared - wanted):
         raise ValueError(

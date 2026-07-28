@@ -1,8 +1,8 @@
 """Generation backend interface and its request/result value types.
 
-Every backend turns a GenRequest into a GenResult. The runner, storage and
-analysis code depend only on this interface, so adding a backend never requires
-touching them.
+Every backend turns a GenRequest into a GenResult. A pipeline stage knows a
+provider only as the name its config carries and this interface behind it, so
+adding a backend never requires touching one.
 """
 
 from abc import abstractmethod
@@ -11,8 +11,6 @@ from datetime import datetime
 from typing import Protocol, Self
 
 from pydantic import BaseModel
-
-from llmango.questions import SamplingParams
 
 
 @dataclass(frozen=True)
@@ -25,10 +23,6 @@ class GenRequest:
     prompt inputs resolved to for this sample. It is empty for a request that is
     not an arm of a question, such as a normalization call, whose results never
     reach a raw parquet.
-
-    seed keys the per-sample prompt inputs and is provenance only. A backend must
-    never forward it to a provider as a sampling seed, which would ask for repeatable
-    answers and flatten the distribution the run exists to measure.
     """
 
     question_id: str
@@ -37,9 +31,8 @@ class GenRequest:
     prompt: str
     prompt_sha256: str
     sample_idx: int
-    seed: int | None
-    sampling: SamplingParams
     response_schema: type[BaseModel] | None
+    temperature: float = 1.0
     prompt_inputs: str = "{}"
 
 
@@ -112,8 +105,6 @@ class Backend(Protocol):
     run picks between them with a flag, so they are two transports of one provider
     rather than two providers.
     """
-
-    backend_id: str
 
     @abstractmethod
     def resolve_model_snapshot(self, model: str) -> str:

@@ -1,9 +1,10 @@
 """Run manifest for traceability.
 
-Every run writes a manifest capturing the model, its resolved snapshot, the
-backend, sampling params, per-language prompt hashes, the response schema, what
-the run consumed, and package versions, so any row can be traced back to the
-exact configuration that produced it.
+Every run writes a manifest capturing the provider and model, its resolved
+snapshot, the temperature, every arm with its prompt hash and response schema,
+what the run consumed, and package versions, so any row can be traced back to the
+exact configuration that produced it. It mirrors the question's own config, plus
+what running it turned out to cost.
 """
 
 from collections.abc import Iterable
@@ -17,7 +18,6 @@ from pydantic import BaseModel, Field, computed_field
 from llmango.config import RUNS_DIR
 from llmango.inputs import InputDeclarations
 from llmango.pricing import PricingEntry
-from llmango.questions import SamplingParams
 
 _TRACKED_PACKAGES = (
     "openai",
@@ -47,7 +47,7 @@ def collect_package_versions(
 
 
 class UsageTotals(BaseModel):
-    """Rows, outcomes, tokens and cost for one language or for a whole run.
+    """Rows, outcomes, tokens and cost for a whole run.
 
     The error and refusal counts sit next to the tokens because rows that failed
     or were refused carry no usage: without them a token total looks complete
@@ -72,29 +72,31 @@ class UsageTotals(BaseModel):
     total_cost_usd: float = 0.0
 
 
-class RunUsage(BaseModel):
-    """What a run actually consumed, in total and broken down per language.
+class ArmRecord(BaseModel):
+    """One arm of a run: the language and the schema it was asked under.
 
-    Measured after generation, so it is absent on a dry run and on a batch that
-    has been submitted but not yet fetched.
+    response_schema is the whole JSON schema the arm was asked under, not a hash
+    of it, so an edited schema shows up as a diff of what changed rather than as
+    an opaque mismatch. Both schema fields are null for the free-text arm, which
+    sends none.
     """
 
-    measured_at: datetime
-    total: UsageTotals
-    by_language: dict[str, UsageTotals]
+    lang: str
+    schema_name: str | None = None
+    response_schema: dict[str, Any] | None = None
+    template_sha256: str
 
 
-class RunManifest(BaseModel):
+class Manifest(BaseModel):
     """A traceable record of one run's exact configuration and environment.
+
+    One run covers every arm the question declares, so arms is what varies inside
+    it and provider, model and temperature are what it holds constant.
 
     Prompts are rendered per sample from templates and the question's prompt
     inputs, so the manifest records each input's declaration and hashes the data
-    file behind it alongside the templates, rather than storing a single static
-    prompt. Those inputs plus seed and sample index reproduce every prompt exactly.
-
-    response_schema is the whole JSON schema the run was asked under, not a hash
-    of it, so an edited schema shows up as a diff of what changed rather than as
-    an opaque mismatch. It is null for the free-text arm, which sends none.
+    file behind it alongside each arm's template, rather than storing a single
+    static prompt. Those inputs plus the sample index reproduce every prompt.
 
     run_id and created_at are stamped when the run starts rather than when it is
     planned, so a plan that is only priced and never executed claims no id.
@@ -102,39 +104,35 @@ class RunManifest(BaseModel):
 
     run_id: str = ""
     question_id: str
-    backend: str
+    provider: str
     model: str
     model_snapshot: str | None = None
+    temperature: float
+    samples: int
+    arms: list[ArmRecord]
+    inputs: InputDeclarations = Field(default_factory=dict)
+    input_sha256: dict[str, str] = Field(default_factory=dict)
     pricing: PricingEntry | None = None
     batch_id: str | None = None
-    schema_name: str | None = None
-    response_schema: dict[str, Any] | None = None
-    languages: list[str]
-    sampling: SamplingParams
-    seed: int | None = None
-    samples_per_language: int
-    inputs: InputDeclarations = Field(default_factory=dict)
-    template_sha256: dict[str, str]
-    input_sha256: dict[str, str] = Field(default_factory=dict)
-    usage: RunUsage | None = None
+    usage: UsageTotals | None = None
     package_versions: dict[str, str] = Field(default_factory=collect_package_versions)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @computed_field
     @property
     def total_requests(self) -> int:
-        """How many generations the run covers, across every language."""
-        return self.samples_per_language * len(self.languages)
+        """How many generations the run covers, across every arm."""
+        return self.samples * len(self.arms)
 
 
-def build_run_id(manifest: RunManifest) -> str:
+def build_run_id(manifest: Manifest) -> str:
     """Build a run id from the question and the moment its run started.
 
     A question id and a timestamp name a run on their own, and everything else
-    about it, the schema included, is in the manifest and in every row it wrote.
-    The stamp carries milliseconds so that two arms of one question, submitted one
-    after the other, cannot land on the same id. Basic ISO form sorts
-    chronologically and contains no character a file name rejects.
+    about it, its arms included, is in the manifest and in every row it wrote. The
+    stamp carries milliseconds so that two runs of one question, started one after
+    the other, cannot land on the same id. Basic ISO form sorts chronologically
+    and contains no character a file name rejects.
     """
     stamp = manifest.created_at.astimezone(UTC).strftime(_RUN_ID_TIMESTAMP)[:-3]
     return f"{manifest.question_id}__{stamp}Z"
@@ -145,7 +143,7 @@ def manifest_path(run_id: str) -> Path:
     return RUNS_DIR / f"{run_id}.json"
 
 
-def write_manifest(manifest: RunManifest) -> Path:
+def write_manifest(manifest: Manifest) -> Path:
     """Write a manifest to runs/<run_id>.json and return its path.
 
     A batch is written twice, once at submit and once at fetch to add the usage
@@ -158,9 +156,9 @@ def write_manifest(manifest: RunManifest) -> Path:
     return path
 
 
-def read_manifest(run_id: str) -> RunManifest:
+def read_manifest(run_id: str) -> Manifest:
     """Load a manifest by run id from runs/<run_id>.json."""
     path = manifest_path(run_id)
     if not path.is_file():
         raise FileNotFoundError(f"No manifest for run: {run_id}")
-    return RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
+    return Manifest.model_validate_json(path.read_text(encoding="utf-8"))

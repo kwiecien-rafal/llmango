@@ -46,6 +46,11 @@ def answer_field(schema: type[BaseModel]) -> str:
     return fields[0]
 
 
+def schema_name(schema: type[BaseModel] | None) -> str | None:
+    """The class name a response schema is recorded under, None for free text."""
+    return schema.__name__ if schema is not None else None
+
+
 @dataclass(frozen=True)
 class ExperimentSpec:
     """Everything the generic pipeline needs to run one experiment's questions.
@@ -56,8 +61,8 @@ class ExperimentSpec:
     reference anyone types.
 
     schemas registers the response schemas its questions may be asked under. A
-    question's meta.yaml picks from them by class name, so which schema a question
-    used is written down once, on the line next to the language it was asked in.
+    question.yaml picks from them by class name, so which schema a question used
+    is written down once, on the line next to the language it was asked in.
 
     The pipeline owns a fixed column vocabulary: answer, canonical, is_valid and
     multiple mean the same thing in every experiment and are never renamed, which
@@ -102,7 +107,7 @@ class ExperimentSpec:
             answer_field(schema)
 
     def schema_named(self, name: str) -> type[BaseModel]:
-        """Return the registered response schema a question's meta.yaml names."""
+        """Return the registered response schema a question.yaml names."""
         for schema in self.schemas:
             if schema.__name__ == name:
                 return schema

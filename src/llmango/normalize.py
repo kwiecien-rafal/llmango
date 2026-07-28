@@ -20,7 +20,6 @@ experiment appends whatever else it can compute from the result.
 import json
 import string
 import unicodedata
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -30,10 +29,11 @@ import polars as pl
 import yaml
 from pydantic import BaseModel, ConfigDict
 
+from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
 from llmango.config import MAPPINGS_DIR, experiment_dir
 from llmango.experiments import spec_for
-from llmango.questions import SamplingParams, load_experiment_config
+from llmango.questions import load_experiment_config
 from llmango.spec import ExperimentSpec
 from llmango.storage import read_results, write_normalized
 
@@ -83,7 +83,7 @@ def preprocess(raw: str, spec: ExperimentSpec) -> str:
 def normalize_question(
     question_id: str,
     *,
-    make_backend: Callable[[], Backend] | None = None,
+    backend: Backend | None = None,
     model: str | None = None,
     max_llm_calls: int | None = None,
     dry_run: bool = False,
@@ -134,7 +134,7 @@ def normalize_question(
                 unresolved,
                 spec,
                 normalization_schema,
-                make_backend,
+                backend,
                 model,
                 max_llm_calls,
                 cache,
@@ -182,12 +182,16 @@ def _resolve_online(
     unresolved: list[tuple[str, str]],
     spec: ExperimentSpec,
     response_schema: type[BaseModel],
-    make_backend: Callable[[], Backend] | None,
+    backend: Backend | None,
     model: str | None,
     max_llm_calls: int | None,
     cache: dict[str, dict[str, dict[str, object]]],
 ) -> dict[tuple[str, str], Resolution]:
-    """Guard cost, build the backend lazily, and resolve the leftover answers.
+    """Guard cost, resolve the backend lazily, and resolve the leftover answers.
+
+    The experiment names the provider and model that normalize its answers, so a
+    caller passes a backend only to stand in for that provider. Either way it is
+    resolved here rather than at entry, so a run resolved offline needs no API key.
 
     Only a parsed response becomes a resolution. Anything else is left out, so the
     caller can save what was paid for and then report what is missing.
@@ -198,30 +202,23 @@ def _resolve_online(
             f"{len(unresolved)} answers need the LLM layer, above the smoke limit "
             f"of {max_llm_calls}. Re-run with --force to allow the paid calls."
         )
-    if make_backend is None:
-        raise ValueError(
-            f"{len(unresolved)} answers need the LLM layer but no backend given."
-        )
-    resolved_model = model or _normalize_model(folder)
-    if not resolved_model:
-        raise ValueError(f"No model given to normalize {folder}.")
-
+    config = load_experiment_config(folder)
     template = _load_prompt(folder)
+    backend = backend or backend_for(config.normalize_provider)
     requests = [
         GenRequest(
             question_id=folder,
             lang=lang,
-            model=resolved_model,
+            model=model or config.normalize_model,
             prompt=template.replace("{lang}", lang).replace("{raw}", answer),
             prompt_sha256="",
             sample_idx=index,
-            seed=None,
-            sampling=SamplingParams(temperature=0.0),
             response_schema=response_schema,
+            temperature=0.0,
         )
         for index, (lang, answer) in enumerate(unresolved)
     ]
-    results = make_backend().generate_many(requests)
+    results = backend.generate_many(requests)
 
     resolved: dict[tuple[str, str], Resolution] = {}
     for (lang, answer), result in zip(unresolved, results, strict=True):
@@ -297,12 +294,6 @@ def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
     kept = [column for column in frame.columns if column not in added]
     cut = kept.index("answer") + 1
     return frame.select(kept[:cut] + added + kept[cut:])
-
-
-def _normalize_model(folder: str) -> str | None:
-    """Return the configured normalization model, falling back to the run model."""
-    config = load_experiment_config(folder)
-    return config.normalize_model or config.model
 
 
 def _load_mapping(directory: Path, spec: ExperimentSpec) -> dict[str, str]:

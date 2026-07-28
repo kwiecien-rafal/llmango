@@ -1,4 +1,1 @@
-model: gpt-5.6-luna
 normalize_model: gpt-5.4-mini
-sampling:
-  temperature: 1.0
