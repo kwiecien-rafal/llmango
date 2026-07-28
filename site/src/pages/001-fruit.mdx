@@ -70,7 +70,7 @@ therefore a share of valid answers, and the count behind it sits in the table.
 Everything on this page is regenerated from a checkout by four commands:
 
 ```
-just run 001a --smoke     # generate raw responses
+just run 001a -n 5        # generate raw responses
 just normalize 001a       # map free text onto canonical categories
 just aggregate 001a       # reduce to committed JSON
 just analyze 001a         # draw the charts on this page

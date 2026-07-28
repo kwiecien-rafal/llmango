@@ -199,8 +199,8 @@ def _resolve_online(
     folder = spec.folder
     if max_llm_calls is not None and len(unresolved) > max_llm_calls:
         raise ValueError(
-            f"{len(unresolved)} answers need the LLM layer, above the smoke limit "
-            f"of {max_llm_calls}. Re-run with --force to allow the paid calls."
+            f"{len(unresolved)} answers need the LLM layer, above the unforced "
+            f"limit of {max_llm_calls}. Re-run with --force to allow the paid calls."
         )
     config = load_experiment_config(folder)
     template = _load_prompt(folder)

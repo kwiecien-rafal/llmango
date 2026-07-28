@@ -20,13 +20,6 @@ def test_large_run_is_refused_without_force() -> None:
     assert "without --force" in result.output
 
 
-def test_smoke_and_samples_cannot_be_combined() -> None:
-    result = runner.invoke(app, ["run", "001a", "--smoke", "--samples", "3"])
-
-    assert result.exit_code == 1
-    assert "not both" in result.output
-
-
 def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
     result = runner.invoke(app, ["run", "001a", "--dry-run", "--samples", "3"])
 

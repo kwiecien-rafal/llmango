@@ -268,7 +268,7 @@ def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
 def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
     _write_raw([_raw_row("en", "starfruit")])
 
-    with pytest.raises(ValueError, match="smoke limit"):
+    with pytest.raises(ValueError, match="unforced limit"):
         normalize_question(_QUESTION, backend=ExplodingBackend(), max_llm_calls=0)
 
 

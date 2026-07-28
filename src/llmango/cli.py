@@ -20,8 +20,7 @@ if TYPE_CHECKING:
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 
-SMOKE_SAMPLES = 5
-SMOKE_SAMPLE_LIMIT = 25
+COST_GUARD_LIMIT = 25
 
 QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
@@ -48,9 +47,6 @@ def run(
     batch: Annotated[
         bool, typer.Option("--batch", help="Submit via the OpenAI Batch API.")
     ] = False,
-    smoke: Annotated[
-        bool, typer.Option("--smoke", help=f"Tiny {SMOKE_SAMPLES}-sample smoke run.")
-    ] = False,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show the plan without generating.")
     ] = False,
@@ -62,7 +58,7 @@ def run(
     try:
         planned = runner.plan(
             question,
-            samples=_resolve_samples(samples, smoke, dry_run, force),
+            samples=_resolve_samples(samples, dry_run, force),
             model=model,
             languages=lang,
         )
@@ -93,7 +89,7 @@ def normalize(
         outcome = normalize_question(
             question,
             model=model,
-            max_llm_calls=None if force else SMOKE_SAMPLE_LIMIT,
+            max_llm_calls=None if force else COST_GUARD_LIMIT,
             dry_run=dry_run,
         )
     except _PIPELINE_ERRORS as error:
@@ -138,19 +134,13 @@ def batch_fetch(
     typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
-def _resolve_samples(
-    samples: int | None, smoke: bool, dry_run: bool, force: bool
-) -> int:
-    """Resolve the sample count, applying the smoke preset and the cost guardrail."""
-    if smoke and samples is not None:
-        _die("Pass either --smoke or --samples, not both.")
-    if smoke:
-        return SMOKE_SAMPLES
+def _resolve_samples(samples: int | None, dry_run: bool, force: bool) -> int:
+    """Resolve the sample count, applying the cost guardrail."""
     count = samples if samples is not None else 1
-    if not dry_run and count > SMOKE_SAMPLE_LIMIT and not force:
+    if not dry_run and count > COST_GUARD_LIMIT and not force:
         _die(
             f"Refusing a large run of {count} samples per arm without --force. "
-            f"Smoke runs stay at or below {SMOKE_SAMPLE_LIMIT}."
+            f"The unforced limit is {COST_GUARD_LIMIT} samples per arm."
         )
     return count
 
