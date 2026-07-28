@@ -1,14 +1,12 @@
 # Task shortcuts over the llmango CLI.
-#
-# Every recipe takes a question id (001a, 001b, ...). Nothing takes an experiment:
-# a question id is the only identifier the pipeline resolves.
+# Every recipe takes a question id (001a, 001b, ...)
 set shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 # List available recipes.
 default:
     @just --list
 
-# Generate raw responses for a question: `just run 001a --smoke`.
+# Generate raw responses for a question: `just run 001a -n 5`.
 # Submit through the OpenAI Batch API with `just run 001a --batch`.
 run question *args:
     uv run llmango run {{ question }} {{ args }}
@@ -29,7 +27,7 @@ aggregate question:
 analyze question:
     uv run llmango analyze {{ question }}
 
-# Run a question, then normalize, aggregate and chart it: `just all 001a --smoke`.
+# Run a question, then normalize, aggregate and chart it: `just all 001a -n 5`.
 all question *args:
     just run {{ question }} {{ args }}
     just normalize {{ question }}
