@@ -1,16 +1,4 @@
-"""Prompt inputs: the named values that fill a template's placeholders.
-
-A template placeholder {name} is filled by the prompt input named name. The
-engine discovers each input's data file, hashes it for the manifest and
-substitutes the rendered text. What an input's data means, and how a question's
-declaration turns it into text for one sample, belongs to the experiment, which
-supplies a build_input hook. Nothing here knows what an experiment asks about.
-
-An input's data file is named after the placeholder it fills, looked up in the
-question's folder first and the experiment's folder second, so an input can be
-shared across questions or overridden by one. An input with no file at all is
-allowed, for a value computed from the declaration alone.
-"""
+"""Prompt inputs: the named values that fill a template's placeholders."""
 
 import re
 from collections.abc import Callable, Mapping
@@ -29,12 +17,7 @@ InputDeclarations = dict[str, dict[str, Any]]
 
 @dataclass(frozen=True)
 class InputSource:
-    """One input's data file as loaded from disk, with its content hash.
-
-    data is None when the input has no file, which leaves the declaration as the
-    experiment's only material. The hash covers the file text verbatim so an edit
-    to an input is as traceable in a manifest as an edit to a prompt template.
-    """
+    """One input's data file as loaded from disk, with its content hash."""
 
     data: Any
     sha256: str
@@ -42,12 +25,7 @@ class InputSource:
 
 @dataclass(frozen=True)
 class InputRequest:
-    """Everything an experiment needs to build one input for one sample.
-
-    declaration is the question's question.yaml block for this input, passed
-    through verbatim. The engine never reads inside it, so an experiment declares
-    its inputs in whatever words fit what it varies.
-    """
+    """Everything an experiment needs to build one input for one sample."""
 
     name: str
     data: Any
@@ -58,12 +36,7 @@ class InputRequest:
 
 @dataclass(frozen=True)
 class ResolvedInput:
-    """One input resolved for one sample: what to render, and what to record.
-
-    text replaces the placeholder in the template. value is recorded in the raw
-    parquet's prompt_inputs column, so it must be JSON-serializable; None records
-    nothing, for an input whose rendered text is already the whole story.
-    """
+    """One input resolved for one sample: text to render, JSON value to record."""
 
     text: str
     value: Any = None
@@ -126,11 +99,7 @@ def render(template_text: str, resolved: Mapping[str, ResolvedInput]) -> str:
 def validate_placeholders(
     template_text: str, declarations: InputDeclarations, label: str
 ) -> None:
-    """Check a template's placeholders and a question's inputs name each other.
-
-    Run at config load so a mistyped placeholder fails immediately, rather than
-    reaching a model as a literal brace in the prompt.
-    """
+    """Check a template's placeholders and a question's inputs name each other."""
     wanted = placeholders(template_text)
     declared = set(declarations)
     if undeclared := sorted(wanted - declared):

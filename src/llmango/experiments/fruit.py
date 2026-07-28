@@ -1,24 +1,4 @@
-"""Experiment 001: fruit.
-
-Measures how random a model is when asked to pick a fruit from a fixed list,
-how the prompt language shifts that pick, and how requesting a structured
-response in a non-target language shifts it. The raw pick is preserved and
-normalized post-hoc to a canonical English category.
-
-QUESTIONS names the four questions this experiment owns. The spec declares them
-so a question id resolves to a spec, and the mapping seed reads the same constant
-to cover every fruit list any of them shows.
-
-The one prompt input is fruit_list, whose data file holds the canonical ids with
-their per-language labels. A question declares how that list is arranged, either
-a fixed permutation or a per-sample shuffle. Both live here rather than in the
-engine, because the arrangement is what this experiment varies; a later
-experiment arranges its own inputs its own way without touching shared code.
-
-001 appends one column of its own, chosen_position, for the same reason: only
-this experiment knows its prompt input is an ordered list a pick can sit inside.
-It adds nothing to the raw parquet, since the answer is already a core column.
-"""
+"""Experiment 001: how a model picks one fruit, and how language shifts the pick."""
 
 import hashlib
 import random
@@ -51,11 +31,7 @@ class WyborOwocu(LLMResponse):
 
 
 class FruitEnum(StrEnum):
-    """Canonical fruit categories, seeded from common answers.
-
-    Culture-specific fruits keep their own value rather than collapsing into a
-    nearby Western fruit, so the variation being studied is preserved.
-    """
+    """Canonical fruit categories; a culture-specific fruit keeps its own value."""
 
     APPLE = "apple"
     BANANA = "banana"
@@ -110,12 +86,7 @@ def preprocess(text: str) -> str:
 
 
 def build_input(request: InputRequest) -> ResolvedInput:
-    """Render the fruit list for one sample in one language.
-
-    Returns the localized labels as the model sees them, and the canonical ids in
-    the same order as the value recorded per row, which is what lets chosen
-    position be resolved later from a free-text answer.
-    """
+    """Render one sample's fruit list: localized labels shown, canonical ids kept."""
     if request.name != FRUIT_LIST:
         raise ValueError(f"{FOLDER} has no prompt input {request.name!r}.")
     table = _table(request.data)
@@ -125,14 +96,7 @@ def build_input(request: InputRequest) -> ResolvedInput:
 
 
 def mapping_seed() -> dict[str, str]:
-    """Map every fruit label in every language onto its canonical id.
-
-    Seeds normalization so an answer that named one of the listed fruits resolves
-    without an LLM call, whichever language it was asked in. The experiment's own
-    fruit list is the base and every question is read on top of it, since a
-    question that overrides the list with its own file shows labels the experiment
-    file does not have.
-    """
+    """Map every question's fruit labels, in every language, onto canonical ids."""
     mapping: dict[str, str] = {}
     for question_id in [None, *QUESTIONS]:
         sources = load_input_sources(FOLDER, question_id, [FRUIT_LIST])
@@ -143,14 +107,7 @@ def mapping_seed() -> dict[str, str]:
 
 
 def extra_normalized_columns(frame: pl.DataFrame) -> dict[str, pl.Series]:
-    """Add chosen_position: where the picked fruit sat in the list that row saw.
-
-    Only this experiment knows fruit_list resolves to an ordered list of canonical
-    ids, so the position of an answer within it is 001's own column rather than a
-    pipeline concept. It is computed after normalization because it takes a
-    canonical answer to locate, while the answer itself is free text in the
-    prompt's language.
-    """
+    """Add chosen_position: where the picked fruit sat in the list that row saw."""
     shown = (
         frame.get_column("prompt_inputs")
         .str.json_decode(pl.Struct({FRUIT_LIST: pl.List(pl.String())}))
@@ -166,11 +123,7 @@ def extra_normalized_columns(frame: pl.DataFrame) -> dict[str, pl.Series]:
 
 
 def _position(order: list[str] | None, canonical: str | None) -> int | None:
-    """Return the 1-based place of one canonical answer among the fruits shown.
-
-    Null whenever the answer is not one of them: a refusal, an 'other' answer, or
-    a fruit that exists but was not on this sample's list.
-    """
+    """Return the 1-based place of one canonical answer among the fruits shown."""
     if order is None or canonical is None or canonical not in order:
         return None
     return order.index(canonical) + 1
@@ -204,13 +157,7 @@ def _shown_order(
     declaration: Mapping[str, Any],
     sample_idx: int,
 ) -> list[str]:
-    """Return the canonical ids in the order one sample shows them.
-
-    A fixed order is the declared permutation, identical across samples and
-    languages. A shuffle is deterministic in sample_idx and so is shared across
-    every arm of a question and across questions, keeping fruit position a
-    controlled variable rather than a second thing varying alongside language.
-    """
+    """Return the canonical ids in the order one sample shows them."""
     order = declaration.get("order")
     if order == _ORDER_SHUFFLE:
         return _shuffled(list(table), sample_idx)

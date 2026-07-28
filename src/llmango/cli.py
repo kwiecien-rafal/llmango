@@ -1,11 +1,8 @@
-"""Command line entry points for the llmango pipeline.
+"""Command line entry points for the llmango pipeline."""
 
-llmango.charts is imported inside the analyze command rather than here, because
-importing it pulls in matplotlib, which costs roughly half a second of startup
-that every other command would pay without ever drawing anything.
-"""
-
-from typing import TYPE_CHECKING, Annotated, NoReturn
+from collections.abc import Callable
+from functools import wraps
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
@@ -13,34 +10,45 @@ from llmango import runner
 from llmango.aggregate import AggregateOutcome, aggregate_question
 from llmango.experiments import spec_for
 from llmango.normalize import NormalizeOutcome, normalize_question
-from llmango.spec import FREE_TEXT
 
 if TYPE_CHECKING:
     from llmango.charts import AnalyzeOutcome
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 
-COST_GUARD_LIMIT = 25
+COST_GUARD_CALLS = 100
 
 QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
-_PIPELINE_ERRORS = (OSError, RuntimeError, ValueError, KeyError)
+_PIPELINE_ERRORS = (OSError, RuntimeError, ValueError)
 
 
-@app.callback()
-def main() -> None:
-    """Probe how LLM behavior shifts across languages."""
+def _reports_pipeline_errors[**Params](
+    command: Callable[Params, None],
+) -> Callable[Params, None]:
+    """Report a pipeline failure as a message and a non-zero exit."""
+
+    @wraps(command)
+    def reporting(*args: Params.args, **kwargs: Params.kwargs) -> None:
+        try:
+            command(*args, **kwargs)
+        except _PIPELINE_ERRORS as error:
+            typer.echo(str(error))
+            raise typer.Exit(code=1) from error
+
+    return reporting
 
 
 @app.command()
+@_reports_pipeline_errors
 def run(
     question: QuestionArgument,
     model: Annotated[
         str | None, typer.Option("--model", help="Override the question's model.")
     ] = None,
     samples: Annotated[
-        int | None, typer.Option("--samples", "-n", help="Samples per arm.")
-    ] = None,
+        int, typer.Option("--samples", "-n", min=1, help="Samples per arm.")
+    ] = 1,
     lang: Annotated[
         list[str] | None, typer.Option("--lang", help="Restrict to these languages.")
     ] = None,
@@ -55,22 +63,16 @@ def run(
     ] = False,
 ) -> None:
     """Run question across language-schema arms and persist raw results to Parquet."""
-    try:
-        planned = runner.plan(
-            question,
-            samples=_resolve_samples(samples, dry_run, force),
-            model=model,
-            languages=lang,
-        )
-        _report_plan(planned)
-        if dry_run:
-            return
-        _report_outcome(runner.run(planned, batch=batch))
-    except _PIPELINE_ERRORS as error:
-        _die(str(error))
+    planned = runner.plan(question, samples=samples, model=model, languages=lang)
+    _report_plan(planned)
+    if dry_run:
+        return
+    _guard_cost(planned.manifest.total_requests, force)
+    _report_outcome(runner.run(planned, batch=batch))
 
 
 @app.command()
+@_reports_pipeline_errors
 def normalize(
     question: QuestionArgument,
     model: Annotated[
@@ -85,83 +87,82 @@ def normalize(
     ] = False,
 ) -> None:
     """Map raw answers to canonical categories and write a normalized Parquet file."""
-    try:
-        outcome = normalize_question(
+    _report_normalize(
+        normalize_question(
             question,
             model=model,
-            max_llm_calls=None if force else COST_GUARD_LIMIT,
+            max_llm_calls=None if force else COST_GUARD_CALLS,
             dry_run=dry_run,
         )
-    except _PIPELINE_ERRORS as error:
-        _die(str(error))
-    _report_normalize(outcome)
+    )
 
 
 @app.command()
+@_reports_pipeline_errors
 def aggregate(question: QuestionArgument) -> None:
     """Aggregate one question's normalized answers into the JSON the charts read."""
-    _check_question(question)
-    try:
-        outcome = aggregate_question(question)
-    except _PIPELINE_ERRORS as error:
-        _die(str(error))
-    _report_aggregate(outcome)
+    _require_question(question)
+    _report_aggregate(aggregate_question(question))
 
 
 @app.command()
+@_reports_pipeline_errors
 def analyze(question: QuestionArgument) -> None:
     """Draw the charts the site embeds from one question's aggregates."""
     from llmango.charts import analyze_question
 
-    _check_question(question)
-    try:
-        outcome = analyze_question(question)
-    except _PIPELINE_ERRORS as error:
-        _die(str(error))
-    _report_analyze(outcome)
+    _require_question(question)
+    _report_analyze(analyze_question(question))
 
 
 @app.command(name="batch-fetch")
+@_reports_pipeline_errors
 def batch_fetch(
     run_id: Annotated[str, typer.Argument(help="Run id of a submitted batch.")],
 ) -> None:
     """Fetch a previously submitted batch and persist its results to Parquet."""
-    try:
-        outcome = runner.fetch_batch(run_id)
-    except _PIPELINE_ERRORS as error:
-        _die(str(error))
+    outcome = runner.fetch_batch(run_id)
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     typer.echo(f"Parquet: {outcome.parquet_path}")
 
 
-def _resolve_samples(samples: int | None, dry_run: bool, force: bool) -> int:
-    """Resolve the sample count, applying the cost guardrail."""
-    count = samples if samples is not None else 1
-    if not dry_run and count > COST_GUARD_LIMIT and not force:
-        _die(
-            f"Refusing a large run of {count} samples per arm without --force. "
-            f"The unforced limit is {COST_GUARD_LIMIT} samples per arm."
+def _guard_cost(requests: int, force: bool) -> None:
+    """Refuse a large paid run, counting every request across every arm."""
+    if requests > COST_GUARD_CALLS and not force:
+        raise ValueError(
+            f"Refusing a large run of {requests} requests without --force. "
+            f"The unforced limit is {COST_GUARD_CALLS} requests."
         )
-    return count
 
 
-def _check_question(question: str) -> None:
-    """Reject an id no experiment declares, listing the ones that exist.
-
-    Aggregate and analyze read a question's own files and never need its spec, so
-    without this they would report a missing file for a question that was never a
-    question at all.
-    """
-    try:
-        spec_for(question)
-    except ValueError as error:
-        _die(str(error))
+def _require_question(question: str) -> None:
+    """Reject an id no experiment declares, which the later stages never look up."""
+    spec_for(question)
 
 
-def _die(message: str) -> NoReturn:
-    """Print an error message and exit with a non-zero status."""
-    typer.echo(message)
-    raise typer.Exit(code=1)
+def _report_plan(plan: runner.RunPlan) -> None:
+    """Report what a run would send, what it would cost and which arms it covers."""
+    manifest = plan.manifest
+    typer.echo(f"Plan for {manifest.question_id} via {manifest.provider}:")
+    typer.echo(f"  model:       {manifest.model}")
+    typer.echo(f"  temperature: {manifest.temperature}")
+    typer.echo(f"  inputs:      {', '.join(sorted(manifest.inputs)) or 'none'}")
+    typer.echo(f"  samples:     {manifest.samples} per arm")
+    typer.echo(f"  requests:    {manifest.total_requests} total")
+    if manifest.pricing is not None:
+        price = manifest.pricing
+        typer.echo(
+            f"  price:       ${price.input}/1M in, ${price.output}/1M out "
+            f"(updated {price.last_updated})"
+        )
+    else:
+        typer.echo(
+            f"  price:       no entry for {manifest.model}; add it to "
+            f"data/pricing.json before running."
+        )
+    typer.echo(f"  arms:        {len(manifest.arms)}")
+    for arm in manifest.arms:
+        typer.echo(f"    {arm.label}  {arm.lang}")
 
 
 def _report_outcome(outcome: runner.RunOutcome) -> None:
@@ -180,31 +181,8 @@ def _report_outcome(outcome: runner.RunOutcome) -> None:
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 
-def _report_plan(plan: runner.RunPlan) -> None:
-    manifest = plan.manifest
-    typer.echo(f"Plan for {plan.question_id} via {manifest.provider}:")
-    typer.echo(f"  model:       {manifest.model}")
-    typer.echo(f"  temperature: {manifest.temperature}")
-    typer.echo(f"  inputs:      {', '.join(sorted(manifest.inputs)) or 'none'}")
-    typer.echo(f"  samples:     {manifest.samples} per arm")
-    typer.echo(f"  requests:    {manifest.total_requests} total")
-    if plan.pricing is not None:
-        price = plan.pricing
-        typer.echo(
-            f"  price:       ${price.input}/1M in, ${price.output}/1M out "
-            f"(updated {price.last_updated})"
-        )
-    else:
-        typer.echo(
-            f"  price:       no entry for {manifest.model}; add it to "
-            f"data/pricing.json before running."
-        )
-    typer.echo(f"  arms:        {len(manifest.arms)}")
-    for arm in manifest.arms:
-        typer.echo(f"    {arm.schema_name or FREE_TEXT}  {arm.lang}")
-
-
 def _report_normalize(outcome: NormalizeOutcome) -> None:
+    """Report how many answers were mapped, and how many needed the LLM."""
     written = outcome.parquet_path is not None
     resolved = "resolved by the LLM" if written else "would be resolved by the LLM"
     typer.echo(
@@ -216,10 +194,12 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
 
 
 def _report_aggregate(outcome: AggregateOutcome) -> None:
+    """Report where a question's aggregates landed."""
     typer.echo(f"Aggregate: {outcome.path}")
 
 
 def _report_analyze(outcome: "AnalyzeOutcome") -> None:
+    """Report every chart drawn for a question, and its index."""
     typer.echo(f"Drew {len(outcome.charts)} charts for {outcome.question_id}:")
     for chart in outcome.charts:
         typer.echo(f"  {chart.file}  {chart.metric}, {len(chart.arms)} arms")

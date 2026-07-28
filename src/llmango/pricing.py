@@ -1,6 +1,4 @@
-"""Pricing reference for computing the cost of one generation.
-
-Prices live in data/pricing.json, updated manually."""
+"""Pricing reference for costing one generation, from data/pricing.json."""
 
 from dataclasses import dataclass
 from pathlib import Path

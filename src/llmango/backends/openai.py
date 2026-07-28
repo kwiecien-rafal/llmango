@@ -52,11 +52,7 @@ def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
 
 
 def _request_body(request: GenRequest) -> dict[str, Any]:
-    """Build the chat-completions request body for one generation.
-
-    A provider seed is deliberately never sent. It would ask for repeatable
-    sampling and suppress the very randomness these runs measure.
-    """
+    """Build the request body, never sending a seed: it would suppress randomness."""
     body: dict[str, Any] = {
         "model": request.model,
         "messages": [{"role": "user", "content": request.prompt}],
@@ -73,12 +69,7 @@ def _request_envelope(request: GenRequest) -> str:
 
 
 def _custom_id(request: GenRequest) -> str:
-    """Build the custom_id that ties one request to its batched response.
-
-    One batch covers every arm of a run, so the schema names the arm alongside
-    the language it was asked in; a language asked several ways would otherwise
-    collide with itself.
-    """
+    """Tie one request to its batched response by arm, language and sample."""
     schema = schema_name(request.response_schema) or FREE_TEXT
     return f"{schema}::{request.lang}::{request.sample_idx}"
 
@@ -107,11 +98,7 @@ def _build_usage(
     cached_tokens: int | None,
     reasoning_tokens: int | None,
 ) -> Usage:
-    """Build a Usage from the five token counts, coalescing nulls to zero.
-
-    The two transports report these in different shapes, a typed SDK object and a
-    JSON body, so the null-guarding and field mapping happen here once.
-    """
+    """Build a Usage from the five token counts either transport reports."""
     return Usage(
         prompt_tokens=prompt_tokens or 0,
         completion_tokens=completion_tokens or 0,
@@ -174,11 +161,7 @@ class _BatchLine(BaseModel):
 
 
 def _parse_line(line: _BatchLine, request: GenRequest) -> GenResult:
-    """Parse one validated batch line into a GenResult, capturing failures.
-
-    A malformed or schema-invalid response becomes a failed result so one bad
-    line never aborts the whole fetch.
-    """
+    """Parse one batch line, capturing a bad one rather than aborting the fetch."""
     created_at = datetime.now(UTC)
     envelope = _request_envelope(request)
     if line.error is not None:
@@ -233,16 +216,8 @@ class OpenAIBackend(Backend):
     def __init__(self, client: OpenAI | None = None) -> None:
         self._client = client or OpenAI(api_key=require_openai_key())
 
-    def resolve_model_snapshot(self, model: str) -> str:
-        return self._client.models.retrieve(model).id
-
     def generate(self, request: GenRequest) -> GenResult:
-        """Generate one response inline, recording what was sent and returned.
-
-        Both calls go through with_raw_response so the response envelope is the
-        body the provider actually returned, the same thing the batch path stores,
-        rather than a re-serialization of the SDK's own model.
-        """
+        """Generate one response inline, recording the verbatim bodies both ways."""
         created_at = datetime.now(UTC)
         envelope = _request_envelope(request)
         messages: list[ChatCompletionMessageParam] = [
@@ -307,12 +282,7 @@ class OpenAIBackend(Backend):
         return batch.id
 
     def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
-        """Download a completed batch's output and parse it into GenResults.
-
-        Raises if the batch has not completed yet. Successful and errored requests
-        are read from the output and error files, and each result is matched back
-        to its request by custom_id, since a batch returns them in any order.
-        """
+        """Download a completed batch and match every line back to its request."""
         batch = self._client.batches.retrieve(batch_id)
         if batch.status != "completed":
             raise RuntimeError(

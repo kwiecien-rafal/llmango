@@ -1,11 +1,4 @@
-"""Every experiment there is, and which question ids each one owns.
-
-A question id is the only identifier the pipeline takes, so this file is the one
-place that says what exists. Each experiment declares its questions and SPECS
-maps every one of them onto the spec that owns it. Declaring the ids rather than
-globbing the prompt tree means a question folder no experiment claims fails
-loudly instead of being silently skipped.
-"""
+"""Every experiment there is, and which question ids each one owns."""
 
 from llmango.experiments.fruit import FRUIT
 from llmango.spec import ExperimentSpec

@@ -1,69 +1,13 @@
-"""Parquet storage for raw generation results.
+"""Parquet storage for raw generation results, and the column set they carry."""
 
-The common core is byte-identical in every experiment and ends with answer, the
-one name every experiment's extracted answer goes by. An experiment's own columns
-sit in the single slot between that core and the fixed provenance, usage and cost
-blocks, so a consumer reading across experiments always finds the same columns in
-the same places.
-"""
-
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 import polars as pl
 
 from llmango.config import NORMALIZED_DIR, RAW_DIR
 
-COMMON_LEADING_COLUMNS = [
-    "question_id",
-    "lang",
-    "schema_name",
-    "model",
-    "provider",
-    "run_id",
-    "sample_idx",
-    "temperature",
-    "prompt_sha256",
-    "prompt",
-    "prompt_inputs",
-    "raw_json",
-    "answer",
-]
-
-PROVENANCE_COLUMNS = [
-    "model_snapshot",
-    "finish_reason",
-    "refusal",
-    "error",
-    "response_id",
-    "system_fingerprint",
-    "service_tier",
-    "provider_created_at",
-    "response_schema",
-    "request_envelope",
-    "response_envelope",
-]
-
-USAGE_COLUMNS = [
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-    "cached_tokens",
-    "reasoning_tokens",
-]
-
-COST_COLUMNS = [
-    "input_cost_usd",
-    "output_cost_usd",
-    "total_cost_usd",
-    "pricing_version",
-]
-
-FIXED_TRAILING_COLUMNS = PROVENANCE_COLUMNS + USAGE_COLUMNS + COST_COLUMNS
-
-TRAILING_COLUMNS = ["created_at"]
-
-_SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
+LEADING_COLUMNS: dict[str, pl.DataType] = {
     "question_id": pl.String(),
     "lang": pl.String(),
     "schema_name": pl.String(),
@@ -77,6 +21,9 @@ _SCHEMA_OVERRIDES: dict[str, pl.DataType] = {
     "prompt_inputs": pl.String(),
     "raw_json": pl.String(),
     "answer": pl.String(),
+}
+
+TRAILING_COLUMNS: dict[str, pl.DataType] = {
     "model_snapshot": pl.String(),
     "finish_reason": pl.String(),
     "refusal": pl.String(),
@@ -111,19 +58,14 @@ def results_path(run_id: str, model: str) -> Path:
     return RAW_DIR / f"{run_id}__{_slugify(model)}.parquet"
 
 
-def _ordered_columns(columns: Iterable[str]) -> list[str]:
-    """Order present columns: the common core, extras, the fixed block, created_at."""
-    present = set(columns)
-    known = (
-        set(COMMON_LEADING_COLUMNS)
-        | set(FIXED_TRAILING_COLUMNS)
-        | set(TRAILING_COLUMNS)
-    )
-    extras = [column for column in columns if column not in known]
-    ordered = (
-        COMMON_LEADING_COLUMNS + extras + FIXED_TRAILING_COLUMNS + TRAILING_COLUMNS
-    )
-    return [column for column in ordered if column in present]
+def _ordered_columns(row: Mapping[str, object]) -> list[str]:
+    """Order a run's columns: the core, the experiment's extras, then the rest."""
+    extras = [
+        column
+        for column in row
+        if column not in LEADING_COLUMNS and column not in TRAILING_COLUMNS
+    ]
+    return [*LEADING_COLUMNS, *extras, *TRAILING_COLUMNS]
 
 
 def write_results(
@@ -132,20 +74,13 @@ def write_results(
     model: str,
     extra_dtypes: Mapping[str, pl.DataType] | None = None,
 ) -> Path:
-    """Write result rows to a single Parquet file and return its path.
-
-    Every row of a run carries the same columns, so the order is resolved once
-    from the first row rather than rebuilt for each one. An experiment's extra
-    columns declare their dtypes here, so a column that happens to be null in
-    every row of one run still lands with the type it has in every other run.
-    """
+    """Write every declared column of each row to one Parquet file, filling nulls."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     columns = _ordered_columns(rows[0]) if rows else []
-    ordered = [{column: row[column] for column in columns} for row in rows]
-    overrides = {**_SCHEMA_OVERRIDES, **(extra_dtypes or {})}
-    frame = pl.DataFrame(ordered, schema_overrides=overrides)
+    ordered = [{column: row.get(column) for column in columns} for row in rows]
+    dtypes = {**LEADING_COLUMNS, **TRAILING_COLUMNS, **(extra_dtypes or {})}
     path = results_path(run_id, model)
-    frame.write_parquet(path)
+    pl.DataFrame(ordered, schema_overrides=dtypes).write_parquet(path)
     return path
 
 

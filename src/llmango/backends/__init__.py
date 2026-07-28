@@ -1,9 +1,4 @@
-"""Generation backends behind one interface, and the registry naming them.
-
-A question's config names its provider, so the registry is the one place a
-provider name becomes a backend. Nothing else in the pipeline imports a provider
-module, which is what keeps adding one a change to this file alone.
-"""
+"""Generation backends behind one interface, and the registry naming them."""
 
 from collections.abc import Callable
 from functools import cache

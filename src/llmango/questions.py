@@ -1,22 +1,4 @@
-"""Experiment and question config, and the prompt templates they name.
-
-An experiment's shared files are experiment.yaml plus normalize.md, in the folder
-its spec names. Each question it owns is a subfolder with its own question.yaml
-and one prompt template per language.
-
-A question declares who answers it and how it is asked: one provider, one model
-and one temperature, then every language it is asked in with the response schemas
-it is asked under. There is one entry per language and no second list to keep in
-step with it, so the three shapes a question can take all read the same way: one
-schema for every language, a schema of its own per language, or one language
-asked under several schemas.
-
-A template's placeholders are filled per sample by the prompt inputs the question
-declares, so a rendered prompt is produced per sample rather than read once from a
-static file. Loading a question checks that its templates and its declared inputs
-name each other exactly, and hands back the templates it read, so nothing
-downstream reads them from disk a second time.
-"""
+"""Experiment and question config, and the prompt templates they name."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,11 +17,7 @@ _QUESTION_FILE = "question.yaml"
 
 
 class ExperimentConfig(BaseModel):
-    """Parsed contents of an experiment's experiment.yaml manifest.
-
-    Normalization is the one thing an experiment configures for all its
-    questions, since it pools every question's answers into one mapping.
-    """
+    """Parsed contents of an experiment's experiment.yaml manifest."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -48,12 +26,7 @@ class ExperimentConfig(BaseModel):
 
 
 class LanguageAsk(BaseModel):
-    """One language the question is asked in, and the schemas it is asked under.
-
-    schemas names response schemas the experiment registers, by class name, and
-    holds several where one language is asked several ways. A null names no schema
-    at all, the arm that sends none and reads the plain text back.
-    """
+    """One language the question is asked in, and the schemas it is asked under."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -76,16 +49,7 @@ class LanguageAsk(BaseModel):
 
 
 class QuestionConfig(BaseModel):
-    """Parsed contents of a question's question.yaml manifest.
-
-    provider, model and temperature are declared once and apply to every arm, so
-    what varies within a question is the language and the schema alone.
-
-    ask is one entry per language, in the order the question declares them.
-
-    Each key under inputs is the template placeholder it fills, and its body is
-    passed through to the experiment untouched.
-    """
+    """Parsed contents of a question's question.yaml manifest."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -97,11 +61,7 @@ class QuestionConfig(BaseModel):
 
     @model_validator(mode="after")
     def _one_entry_per_language(self) -> Self:
-        """Reject a language declared twice, since one entry holds all its schemas.
-
-        Two entries for a language would put it in the language list twice, and
-        every count keyed by language downstream would double it.
-        """
+        """Reject a language declared twice, since one entry holds all its schemas."""
         languages = [entry.language for entry in self.ask]
         repeated = sorted({lang for lang in languages if languages.count(lang) > 1})
         if repeated:
@@ -124,12 +84,7 @@ class PromptTemplate:
 
 @dataclass(frozen=True)
 class Arm:
-    """One language asked under one response schema.
-
-    An arm is what a chart plots as a series and what aggregate keys its counts
-    by, so it is what a run varies and nothing else. schema is None for the arm
-    that sends none and reads the plain text back.
-    """
+    """One language asked under one response schema, None for the free-text arm."""
 
     schema: type[BaseModel] | None
     lang: str
@@ -137,14 +92,10 @@ class Arm:
 
 @dataclass(frozen=True)
 class Question:
-    """A question resolved against its experiment, ready to run.
-
-    arms lists every (schema, language) pair the question is asked as, in the
-    order it declares them. templates holds one loaded template per language,
-    since loading the question had to read them all to validate them.
-    """
+    """A question resolved against its experiment, ready to run."""
 
     question_id: str
+    spec: ExperimentSpec
     provider: str
     model: str
     temperature: float
@@ -184,6 +135,7 @@ def load_question(question_id: str) -> Question:
 
     return Question(
         question_id=question_id,
+        spec=spec,
         provider=config.provider,
         model=config.model,
         temperature=config.temperature,

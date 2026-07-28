@@ -22,16 +22,13 @@ from llmango.storage import read_results
 class RefusingBackend:
     """Sync backend that refuses every request with no parsed response."""
 
-    def resolve_model_snapshot(self, model: str) -> str:
-        return f"{model}-refuse"
-
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         return [
             GenResult(
                 request=request,
                 raw_json=None,
                 parsed=None,
-                model_snapshot=self.resolve_model_snapshot(request.model),
+                model_snapshot=f"{request.model}-refuse",
                 finish_reason="stop",
                 refusal="I can't help with that.",
                 error=None,
@@ -44,9 +41,6 @@ class RefusingBackend:
 class PolishBackend:
     """Sync backend answering each arm the way its own schema asks, free text last."""
 
-    def resolve_model_snapshot(self, model: str) -> str:
-        return f"{model}-polish"
-
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         return [self._generate(request) for request in requests]
 
@@ -57,7 +51,7 @@ class PolishBackend:
             request=request,
             raw_json=parsed.model_dump_json() if parsed is not None else "jabłko",
             parsed=parsed,
-            model_snapshot=self.resolve_model_snapshot(request.model),
+            model_snapshot=f"{request.model}-polish",
             finish_reason="stop",
             refusal=None,
             error=None,
@@ -107,7 +101,7 @@ def test_plan_builds_every_request_and_writes_nothing(
     assert len(planned.requests) == 4
     assert [request.lang for request in planned.requests] == ["en", "en", "pl", "pl"]
     assert all(request.prompt for request in planned.requests)
-    assert planned.pricing is not None
+    assert planned.manifest.pricing is not None
     assert not (data_dirs / "runs").exists()
     assert not (data_dirs / "raw").exists()
 
@@ -118,7 +112,7 @@ def test_a_plan_reads_its_provider_model_and_temperature_from_the_question(
     """A run's identity is the question's config, not anything the caller passed."""
     planned = _plan(pricing_table)
 
-    assert planned.provider == "openai"
+    assert planned.manifest.provider == "openai"
     assert planned.manifest.model == "gpt-5.6-luna"
     assert planned.manifest.temperature == 1.0
     assert all(request.temperature == 1.0 for request in planned.requests)
@@ -146,7 +140,6 @@ def test_run_writes_rows_and_manifest(
     assert frame.height == 4
     assert set(frame["lang"].to_list()) == {"en", "pl"}
     assert frame["provider"].to_list() == ["openai"] * 4
-    assert outcome.manifest.model_snapshot == "gpt-5.6-luna-fake"
     assert outcome.manifest.pricing is not None
 
 
@@ -189,7 +182,7 @@ def test_run_refuses_a_model_the_pricing_file_does_not_cover(
     unpriced = PricingTable(currency="USD", unit="per_1m_tokens", models={})
     planned = _plan(unpriced, languages=["en"])
 
-    assert planned.pricing is None
+    assert planned.manifest.pricing is None
     with pytest.raises(ValueError, match="No pricing for model"):
         run(planned, fake_backend)
 

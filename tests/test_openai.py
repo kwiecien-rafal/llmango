@@ -181,15 +181,6 @@ def test_generate_stores_the_verbatim_response_body(
     assert "parsed" not in body["choices"][0]["message"]
 
 
-def test_resolve_model_snapshot_reads_the_client(
-    make_openai_client: FakeClientFactory,
-) -> None:
-    client = make_openai_client(model="gpt-5.6-luna-2026-01-01")
-    backend = OpenAIBackend(client=cast(OpenAI, client))
-
-    assert backend.resolve_model_snapshot("gpt-5.6-luna") == "gpt-5.6-luna-2026-01-01"
-
-
 @dataclass
 class FakeFile:
     id: str

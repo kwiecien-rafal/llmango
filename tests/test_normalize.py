@@ -80,9 +80,6 @@ def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
 class ExplodingBackend:
     """Backend that fails the test if the LLM layer ever calls it."""
 
-    def resolve_model_snapshot(self, model: str) -> str:
-        return model
-
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         raise AssertionError("the LLM layer should not have been called")
 
@@ -93,9 +90,6 @@ class StubBackend:
     def __init__(self, result: FruitNormalization) -> None:
         self._result = result
         self.calls = 0
-
-    def resolve_model_snapshot(self, model: str) -> str:
-        return model
 
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         return [self._generate(request) for request in requests]

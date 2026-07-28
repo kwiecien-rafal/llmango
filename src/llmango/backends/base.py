@@ -1,9 +1,4 @@
-"""Generation backend interface and its request/result value types.
-
-Every backend turns a GenRequest into a GenResult. A pipeline stage knows a
-provider only as the name its config carries and this interface behind it, so
-adding a backend never requires touching one.
-"""
+"""Generation backend interface and its request/result value types."""
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -15,15 +10,7 @@ from pydantic import BaseModel
 
 @dataclass(frozen=True)
 class GenRequest:
-    """One prompt to generate one response for.
-
-    response_schema is None for a free-text request, which sends no structured
-    output. prompt_inputs is carried through unused by backends so the runner can
-    record it as a provenance column: it is the JSON of what each of the question's
-    prompt inputs resolved to for this sample. It is empty for a request that is
-    not an arm of a question, such as a normalization call, whose results never
-    reach a raw parquet.
-    """
+    """One prompt to generate one response for, free text when it has no schema."""
 
     question_id: str
     lang: str
@@ -38,11 +25,7 @@ class GenRequest:
 
 @dataclass(frozen=True)
 class Usage:
-    """Token counts reported by the provider for one generation.
-
-    reasoning_tokens are already part of completion_tokens; they are kept for
-    information and never added to cost a second time.
-    """
+    """Provider token counts; reasoning_tokens are already part of completion_tokens."""
 
     prompt_tokens: int
     completion_tokens: int
@@ -79,11 +62,7 @@ class GenResult:
         created_at: datetime,
         request_envelope: str | None = None,
     ) -> Self:
-        """Build a result carrying an error and no parsed response.
-
-        The request envelope is still recorded when known, so a failed call
-        remains traceable to exactly what was sent.
-        """
+        """Build a result carrying an error, and what was sent, and no response."""
         return cls(
             request=request,
             raw_json=None,
@@ -98,18 +77,7 @@ class GenResult:
 
 
 class Backend(Protocol):
-    """The single interface every generation backend implements.
-
-    A provider is reached two ways: generate_many synchronously, or submit and
-    fetch through an asynchronous batch job. Both belong to one backend because a
-    run picks between them with a flag, so they are two transports of one provider
-    rather than two providers.
-    """
-
-    @abstractmethod
-    def resolve_model_snapshot(self, model: str) -> str:
-        """Return the exact model snapshot or revision id that will be used."""
-        ...
+    """One provider, reached either inline or through an asynchronous batch job."""
 
     @abstractmethod
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:

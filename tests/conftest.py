@@ -88,11 +88,6 @@ class FakeCompletion:
 
 
 @dataclass
-class FakeModelInfo:
-    id: str
-
-
-@dataclass
 class FakeRawResponse:
     """The raw-response wrapper, holding both the body text and the parsed model."""
 
@@ -136,17 +131,8 @@ class FakeChat:
 
 
 @dataclass
-class FakeModels:
-    model_id: str
-
-    def retrieve(self, model: str) -> FakeModelInfo:
-        return FakeModelInfo(id=self.model_id)
-
-
-@dataclass
 class FakeOpenAIClient:
     chat: FakeChat
-    models: FakeModels
     calls: list[dict[str, object]]
 
 
@@ -179,26 +165,16 @@ def build_fake_openai_client(
     calls: list[dict[str, object]] = []
     return FakeOpenAIClient(
         chat=FakeChat(completions=FakeCompletions(completion=completion, calls=calls)),
-        models=FakeModels(model_id=model),
         calls=calls,
     )
 
 
 class FakeBackend(Backend):
-    """Deterministic backend that answers with a scripted fruit per lang and sample.
-
-    Answers are read as answers[lang][sample_idx]; an unscripted language falls
-    back to "apple", so the zero-argument default still answers every request.
-    Both transports are backed by the same script and submitted batches are
-    recorded, so a batch run fetches exactly what a sync run would have generated.
-    """
+    """Deterministic backend answering answers[lang][sample_idx], or "apple"."""
 
     def __init__(self, answers: dict[str, list[str]] | None = None) -> None:
         self._answers = answers or {}
         self.submitted: list[list[GenRequest]] = []
-
-    def resolve_model_snapshot(self, model: str) -> str:
-        return f"{model}-fake"
 
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         return [self._generate(request) for request in requests]
@@ -219,7 +195,7 @@ class FakeBackend(Backend):
             request=request,
             raw_json=parsed.model_dump_json(),
             parsed=parsed,
-            model_snapshot=self.resolve_model_snapshot(request.model),
+            model_snapshot=f"{request.model}-fake",
             finish_reason="stop",
             refusal=None,
             error=None,

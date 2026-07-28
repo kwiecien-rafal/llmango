@@ -1,21 +1,4 @@
-"""Run orchestration: plan a run from disk, then execute it through a backend.
-
-A run turns one question into validated responses across every arm it declares,
-writes them to Parquet, and records a manifest. Prompts are rendered per sample
-from templates and the question's prompt inputs, which the experiment builds, so
-what varies per sample is the experiment's to decide.
-
-The work is split in two. plan reads everything a run needs, builds every request
-and its manifest and resolves the price, all without touching the network, so a
-dry run is the same code path stopped before execution. run then picks one of the
-backend's two transports, generating inline or submitting a batch to fetch later.
-Which transport is a property of the call, not of the run: the manifest records
-the provider that answered, and both transports record it the same way.
-
-Running the same configuration twice is deliberate, not an accident to guard
-against: every run of a question lands in its own Parquet file and normalize
-pools them all, so a repeat is simply more samples of the same arms.
-"""
+"""Run orchestration: plan a run from disk, then execute it through a backend."""
 
 import json
 from dataclasses import dataclass
@@ -26,14 +9,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from llmango.backends import backend_for
-from llmango.backends.base import (
-    Backend,
-    GenRequest,
-    GenResult,
-    Usage,
-)
+from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.config import sha256_text
-from llmango.experiments import spec_for
 from llmango.inputs import InputSource, load_input_sources, render, resolve
 from llmango.manifest import (
     ArmRecord,
@@ -45,71 +22,53 @@ from llmango.manifest import (
     write_manifest,
 )
 from llmango.pricing import (
+    Cost,
     PricingEntry,
     PricingTable,
     compute_cost,
     load_pricing,
     round_usd,
 )
-from llmango.questions import (
-    Arm,
-    PromptTemplate,
-    Question,
-    load_question,
-)
-from llmango.spec import FREE_TEXT, ExperimentSpec, answer_field, schema_name
-from llmango.storage import COST_COLUMNS, USAGE_COLUMNS, results_path, write_results
+from llmango.questions import Arm, PromptTemplate, Question, load_question
+from llmango.spec import ExperimentSpec, answer_field, schema_name
+from llmango.storage import results_path, write_results
 
 
 @dataclass(frozen=True)
 class RunPlan:
-    """One run, fully built and validated, with nothing sent yet.
-
-    Holding the requests rather than the material to build them is what makes a
-    dry run honest: a malformed input declaration or an unrenderable template
-    fails while the run is still being priced, not partway through paying for it.
-
-    pricing is None when the model has no entry in the pricing file, which a dry
-    run reports and a real run refuses.
-    """
+    """One run, fully built and priced, with nothing sent yet."""
 
     spec: ExperimentSpec
     manifest: Manifest
     requests: list[GenRequest]
-    pricing: PricingEntry | None
-
-    @property
-    def question_id(self) -> str:
-        """The question this run covers."""
-        return self.manifest.question_id
-
-    @property
-    def provider(self) -> str:
-        """The provider this run's question names, which serves every arm."""
-        return self.manifest.provider
 
 
 @dataclass(frozen=True)
 class RunOutcome:
-    """The result of a run: what was written, and where."""
+    """What a run wrote, and where, read off the manifest it wrote it under."""
 
-    run_id: str
     manifest: Manifest
-    parquet_path: Path
-    manifest_path: Path
     rows_written: int
-    batch_id: str | None = None
 
+    @property
+    def run_id(self) -> str:
+        """The id naming this run's files."""
+        return self.manifest.run_id
 
-_TOKEN_FIELDS = (
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-    "cached_tokens",
-    "reasoning_tokens",
-)
+    @property
+    def batch_id(self) -> str | None:
+        """The batch this run submitted, None when it generated inline."""
+        return self.manifest.batch_id
 
-_COST_FIELDS = ("input_cost_usd", "output_cost_usd", "total_cost_usd")
+    @property
+    def parquet_path(self) -> Path:
+        """Where this run's raw results landed."""
+        return results_path(self.manifest.run_id, self.manifest.model)
+
+    @property
+    def manifest_path(self) -> Path:
+        """Where this run's manifest landed."""
+        return manifest_path(self.manifest.run_id)
 
 
 def plan(
@@ -120,14 +79,12 @@ def plan(
     languages: list[str] | None = None,
     pricing_table: PricingTable | None = None,
 ) -> RunPlan:
-    """Build one run of a question: its manifest, every request and its price."""
-    spec = spec_for(question_id)
+    """Build one plan for running a question: its manifest, requests and price."""
     question = load_question(question_id)
+    spec = question.spec
     model = model or question.model
-    _check_languages(question, languages)
-    arms = _selected_arms(question, languages)
+    arms = _arms_for_languages(question, languages)
     sources = load_input_sources(spec.folder, question_id, list(question.inputs))
-    pricing = _price(model, pricing_table)
 
     manifest = Manifest(
         question_id=question_id,
@@ -138,21 +95,21 @@ def plan(
         arms=[_arm_record(arm, question.templates[arm.lang]) for arm in arms],
         inputs=question.inputs,
         input_sha256={name: source.sha256 for name, source in sources.items()},
+        pricing=_price(model, pricing_table),
     )
     return RunPlan(
         spec=spec,
         manifest=manifest,
         requests=_build_requests(manifest, spec, arms, question.templates, sources),
-        pricing=pricing,
     )
 
 
 def run(
     plan: RunPlan, backend: Backend | None = None, *, batch: bool = False
 ) -> RunOutcome:
-    """Execute a planned run through one of the backend's two transports."""
+    """Execute a planned run, inline or as a batch to fetch later."""
     manifest = plan.manifest
-    if plan.pricing is None:
+    if manifest.pricing is None:
         raise ValueError(
             f"No pricing for model '{manifest.model}' in the pricing file. Add it "
             f"to data/pricing.json, prices per 1M tokens, before generating."
@@ -167,31 +124,17 @@ def run(
             f"another one's files."
         )
 
-    manifest.pricing = plan.pricing
-    manifest.model_snapshot = backend.resolve_model_snapshot(manifest.model)
-
     if batch:
         manifest.batch_id = backend.submit(plan.requests)
         _write_submitted_manifest(manifest)
-        return _outcome(manifest, rows_written=0)
+        return RunOutcome(manifest=manifest, rows_written=0)
 
     results = backend.generate_many(plan.requests)
-    rows = _rows(results, manifest, plan.spec, batched=False)
-    manifest.usage = _totals(rows)
-    write_results(rows, manifest.run_id, manifest.model, plan.spec.extra_raw_dtypes)
-    write_manifest(manifest)
-    return _outcome(manifest, rows_written=len(rows))
+    return _persist(manifest, plan.spec, results, batched=False)
 
 
 def fetch_batch(run_id: str, backend: Backend | None = None) -> RunOutcome:
-    """Fetch a submitted batch's results and persist them to Parquet.
-
-    The batch is collected from the provider its own manifest records, which is
-    the only one that holds its id.
-
-    The manifest is rewritten with the usage and cost the batch turned out to
-    consume, which submit time could not know; its configuration is untouched.
-    """
+    """Fetch a submitted batch's results and persist them to Parquet."""
     manifest = read_manifest(run_id)
     if manifest.batch_id is None:
         raise ValueError(f"Run {run_id} has no batch to fetch.")
@@ -199,25 +142,25 @@ def fetch_batch(run_id: str, backend: Backend | None = None) -> RunOutcome:
 
     submitted = _plan_from_manifest(manifest)
     results = backend.fetch(manifest.batch_id, submitted.requests)
-    rows = _rows(results, manifest, submitted.spec, batched=True)
-    manifest.usage = _totals(rows)
-    write_results(
-        rows, manifest.run_id, manifest.model, submitted.spec.extra_raw_dtypes
-    )
+    return _persist(manifest, submitted.spec, results, batched=True)
+
+
+def _persist(
+    manifest: Manifest, spec: ExperimentSpec, results: list[GenResult], batched: bool
+) -> RunOutcome:
+    """Write a run's rows and its manifest, costing each generation once."""
+    costs = [_cost(result.usage, manifest.pricing, batched) for result in results]
+    rows = _rows(results, costs, manifest, spec)
+    manifest.usage = _totals(results, costs)
+    write_results(rows, manifest.run_id, manifest.model, spec.extra_raw_dtypes)
     write_manifest(manifest)
-    return _outcome(manifest, rows_written=len(rows))
+    return RunOutcome(manifest=manifest, rows_written=len(rows))
 
 
 def _plan_from_manifest(manifest: Manifest) -> RunPlan:
-    """Rebuild a submitted run's plan, checking its inputs still match the manifest.
-
-    A batch is fetched long after it was submitted, so the requests are rebuilt
-    from the manifest and the templates, prompt inputs and response schemas behind
-    them are verified against what was recorded at submit time. An edited file
-    means the rows would no longer describe what was sent.
-    """
-    spec = spec_for(manifest.question_id)
+    """Rebuild a submitted run's plan, refusing anything edited since submit."""
     question = load_question(manifest.question_id)
+    spec = question.spec
     sources = load_input_sources(
         spec.folder, manifest.question_id, list(manifest.inputs)
     )
@@ -233,24 +176,19 @@ def _plan_from_manifest(manifest: Manifest) -> RunPlan:
         spec=spec,
         manifest=manifest,
         requests=_build_requests(manifest, spec, arms, question.templates, sources),
-        pricing=manifest.pricing,
     )
 
 
-def _check_languages(question: Question, requested: list[str] | None) -> None:
-    """Reject a language the question is not asked in, naming the ones it is."""
-    unknown = [lang for lang in requested or [] if lang not in question.templates]
+def _arms_for_languages(question: Question, requested: list[str] | None) -> list[Arm]:
+    """Narrow a question to the requested languages, refusing one it is not asked in."""
+    if requested is None:
+        return question.arms
+    unknown = [lang for lang in requested if lang not in question.templates]
     if unknown:
         raise ValueError(
             f"Question {question.question_id} has no prompt template for "
             f"{', '.join(unknown)}. It declares {', '.join(question.languages)}."
         )
-
-
-def _selected_arms(question: Question, requested: list[str] | None) -> list[Arm]:
-    """Narrow a question to the arms asked in the requested languages."""
-    if requested is None:
-        return question.arms
     return [arm for arm in question.arms if arm.lang in requested]
 
 
@@ -277,8 +215,7 @@ def _arm_for(record: ArmRecord, question: Question) -> Arm:
     if arm is None:
         raise ValueError(
             f"Question {question.question_id} no longer asks {record.lang} under "
-            f"{record.schema_name or FREE_TEXT}, so its submitted batch cannot be "
-            f"rebuilt."
+            f"{record.label}, so its submitted batch cannot be rebuilt."
         )
     if question.templates[arm.lang].sha256 != record.template_sha256:
         raise ValueError(
@@ -294,22 +231,12 @@ def _arm_for(record: ArmRecord, question: Question) -> Arm:
 
 
 def _schema_json(schema: type[BaseModel] | None) -> dict[str, Any] | None:
-    """Render a response schema as the JSON stored with the run it was sent in.
-
-    The free-text arm has no schema, and records none. Keys are left in
-    declaration order rather than sorted, because that order is one of the things
-    the model sees.
-    """
+    """Render a response schema as the JSON stored with the run it was sent in."""
     return schema.model_json_schema() if schema is not None else None
 
 
 def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:
-    """Read the answer off a parsed response, or off free text when there is none.
-
-    An answer schema declares exactly one field, so a parsed response carries its
-    answer in the only field it has. Anything unparsed, whether free text by
-    design or a refusal, answers with whatever text came back.
-    """
+    """Read the answer off a parsed response, or off free text when there is none."""
     if parsed is None:
         return raw_json or ""
     return str(getattr(parsed, answer_field(type(parsed))))
@@ -358,13 +285,7 @@ def _build_requests(
 
 
 def _price(model: str, pricing_table: PricingTable | None) -> PricingEntry | None:
-    """Look up a model's price, tolerating an absent file so a plan can report it.
-
-    A plan is built before a run is authorized, so a missing price is information
-    here rather than a failure; run refuses to generate without one. The lookup is
-    the configured model id exactly: a price guessed from a similar id is worse
-    than a refusal to run.
-    """
+    """Look up a model's price, tolerating an absent file so a plan can report it."""
     try:
         table = pricing_table if pricing_table is not None else load_pricing()
     except FileNotFoundError:
@@ -373,11 +294,7 @@ def _price(model: str, pricing_table: PricingTable | None) -> PricingEntry | Non
 
 
 def _write_submitted_manifest(manifest: Manifest) -> None:
-    """Save a submitted batch's manifest, surfacing its id if the write fails.
-
-    A batch that the provider accepted but whose manifest never landed can only be
-    fetched if its id reaches the operator, so the failure carries it.
-    """
+    """Save a submitted batch's manifest, surfacing its id if the write fails."""
     try:
         write_manifest(manifest)
     except OSError as error:
@@ -387,48 +304,31 @@ def _write_submitted_manifest(manifest: Manifest) -> None:
         ) from error
 
 
-def _outcome(manifest: Manifest, rows_written: int) -> RunOutcome:
-    """Describe a finished run, whose files are named by its run id and model."""
-    return RunOutcome(
-        run_id=manifest.run_id,
-        manifest=manifest,
-        parquet_path=results_path(manifest.run_id, manifest.model),
-        manifest_path=manifest_path(manifest.run_id),
-        rows_written=rows_written,
-        batch_id=manifest.batch_id,
-    )
-
-
 def _rows(
     results: list[GenResult],
+    costs: list[Cost | None],
     manifest: Manifest,
     spec: ExperimentSpec,
-    batched: bool,
 ) -> list[dict[str, object]]:
-    """Turn every generation into the row the raw parquet stores it as.
-
-    Each arm's schema is serialized once for the whole run rather than per row,
-    off the manifest itself, so a row and the manifest describing it cannot
-    disagree about what was asked.
-    """
-    serialized = {
+    """Turn every generation into the row the raw parquet stores it as."""
+    response_schemas = {
         record.schema_name: json.dumps(record.response_schema, ensure_ascii=False)
         if record.response_schema is not None
         else None
         for record in manifest.arms
     }
     return [
-        _result_to_row(result, manifest, spec, serialized, batched)
-        for result in results
+        _result_to_row(result, cost, manifest, spec, response_schemas)
+        for result, cost in zip(results, costs, strict=True)
     ]
 
 
 def _result_to_row(
     result: GenResult,
+    cost: Cost | None,
     manifest: Manifest,
     spec: ExperimentSpec,
     response_schemas: dict[str | None, str | None],
-    batched: bool,
 ) -> dict[str, object]:
     """Combine the common columns, the experiment's extras, provenance and cost."""
     request = result.request
@@ -464,15 +364,24 @@ def _result_to_row(
         "request_envelope": result.request_envelope,
         "response_envelope": result.response_envelope,
         **_usage_columns(result.usage),
-        **_cost_columns(result.usage, manifest.pricing, batched),
+        **_cost_columns(cost, manifest.pricing),
         "created_at": result.created_at,
     }
 
 
+def _cost(
+    usage: Usage | None, pricing: PricingEntry | None, batched: bool
+) -> Cost | None:
+    """Cost one generation, None when its usage or its model's price is missing."""
+    if usage is None or pricing is None:
+        return None
+    return compute_cost(pricing, usage, batched=batched)
+
+
 def _usage_columns(usage: Usage | None) -> dict[str, object]:
-    """Map token usage to its columns, all null when usage is missing."""
+    """Map token usage to its columns, none of them when the provider reported none."""
     if usage is None:
-        return {column: None for column in USAGE_COLUMNS}
+        return {}
     return {
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,
@@ -482,53 +391,32 @@ def _usage_columns(usage: Usage | None) -> dict[str, object]:
     }
 
 
-def _cost_columns(
-    usage: Usage | None, pricing_entry: PricingEntry | None, batched: bool
-) -> dict[str, object]:
-    """Compute cost columns from usage and price, null when either is absent."""
-    if usage is None or pricing_entry is None:
-        return {column: None for column in COST_COLUMNS}
-    cost = compute_cost(pricing_entry, usage, batched=batched)
+def _cost_columns(cost: Cost | None, pricing: PricingEntry | None) -> dict[str, object]:
+    """Map one generation's cost to its columns, none of them when it has no cost."""
+    if cost is None or pricing is None:
+        return {}
     return {
         "input_cost_usd": cost.input_cost_usd,
         "output_cost_usd": cost.output_cost_usd,
         "total_cost_usd": cost.total_cost_usd,
-        "pricing_version": pricing_entry.last_updated,
+        "pricing_version": pricing.last_updated,
     }
 
 
-def _totals(rows: list[dict[str, object]]) -> UsageTotals:
-    """Sum a run's rows into its token and cost totals in a single pass.
-
-    Costs are summed from the values written to the parquet, already rounded, so
-    the manifest total and the file it describes cannot disagree. A row that
-    errored or was refused carries null tokens and null cost, which count as zero.
-    """
-    tokens = dict.fromkeys(_TOKEN_FIELDS, 0)
-    costs = dict.fromkeys(_COST_FIELDS, 0.0)
-    errors = 0
-    provider_refusals = 0
-    for row in rows:
-        if row.get("error") is not None:
-            errors += 1
-        if row.get("refusal") is not None:
-            provider_refusals += 1
-        for token_field in _TOKEN_FIELDS:
-            count = row.get(token_field)
-            tokens[token_field] += count if isinstance(count, int) else 0
-        for cost_field in _COST_FIELDS:
-            cost = row.get(cost_field)
-            costs[cost_field] += cost if isinstance(cost, float) else 0.0
+def _totals(results: list[GenResult], costs: list[Cost | None]) -> UsageTotals:
+    """Sum a run's results and their costs into its token and cost totals."""
+    usages = [result.usage for result in results if result.usage is not None]
+    priced = [cost for cost in costs if cost is not None]
     return UsageTotals(
-        rows=len(rows),
-        errors=errors,
-        provider_refusals=provider_refusals,
-        prompt_tokens=tokens["prompt_tokens"],
-        completion_tokens=tokens["completion_tokens"],
-        total_tokens=tokens["total_tokens"],
-        cached_tokens=tokens["cached_tokens"],
-        reasoning_tokens=tokens["reasoning_tokens"],
-        input_cost_usd=round_usd(costs["input_cost_usd"]),
-        output_cost_usd=round_usd(costs["output_cost_usd"]),
-        total_cost_usd=round_usd(costs["total_cost_usd"]),
+        rows=len(results),
+        errors=sum(result.error is not None for result in results),
+        provider_refusals=sum(result.refusal is not None for result in results),
+        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
+        completion_tokens=sum(usage.completion_tokens for usage in usages),
+        total_tokens=sum(usage.total_tokens for usage in usages),
+        cached_tokens=sum(usage.cached_tokens for usage in usages),
+        reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
+        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in priced)),
+        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in priced)),
+        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in priced)),
     )

@@ -1,10 +1,4 @@
-"""Repo-root-anchored paths and content hashing.
-
-The prompt tree's shape and the way any piece of content is hashed live here so
-that every stage agrees on both without importing each other. Secrets are not
-here: the API key is the OpenAI backend's business, so a stage that only wants a
-path never imports the code that reads one.
-"""
+"""Repo-root-anchored paths and content hashing. No secrets: those are a backend's."""
 
 import hashlib
 from pathlib import Path
