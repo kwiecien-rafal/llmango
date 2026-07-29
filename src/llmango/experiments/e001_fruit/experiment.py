@@ -12,7 +12,7 @@ from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
 from llmango.spec import OTHER_CATEGORY, ExperimentSpec
 
-FOLDER = "001_fruit"
+FOLDER = "e001_fruit"
 QUESTIONS = ("001a", "001b", "001c", "001d")
 FRUIT_LIST = "fruit_list"
 

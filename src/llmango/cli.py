@@ -12,7 +12,7 @@ from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.pricing import guard_cost
 
 if TYPE_CHECKING:
-    from llmango.charts import AnalyzeOutcome
+    from llmango.analyze import AnalyzeOutcome
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 
@@ -96,8 +96,8 @@ def aggregate(question: QuestionArgument) -> None:
 @app.command()
 @_reports_pipeline_errors
 def analyze(question: QuestionArgument) -> None:
-    """Draw the charts the site embeds from one question's aggregates."""
-    from llmango.charts import analyze_question
+    """Draw the charts the site embeds from a question's experiment's aggregates."""
+    from llmango.analyze import analyze_question
 
     _report_analyze(analyze_question(question))
 
@@ -169,10 +169,17 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
 
 
 def _report_analyze(outcome: "AnalyzeOutcome") -> None:
-    """Report every chart drawn for a question, and its index."""
-    typer.echo(f"Drew {len(outcome.charts)} charts for {outcome.question_id}:")
+    """Report every chart drawn for an experiment, those skipped, and its index."""
+    typer.echo(f"Drew {len(outcome.charts)} charts for {outcome.experiment}:")
     for chart in outcome.charts:
-        typer.echo(f"  {chart.file}  {chart.metric}, {len(chart.arms)} arms")
+        typer.echo(
+            f"  {chart.file}  {', '.join(chart.questions)}, {len(chart.columns)} arms"
+        )
+    if outcome.skipped:
+        typer.echo(
+            f"Skipped for want of aggregates: {', '.join(outcome.skipped)}. "
+            f"Aggregate the questions they read first."
+        )
     typer.echo(f"Index: {outcome.index_path}")
 
 

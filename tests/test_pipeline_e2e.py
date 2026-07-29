@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from llmango.aggregate import aggregate_question
+from llmango.analyze import analyze_question
 from llmango.backends.base import Backend
-from llmango.charts import analyze_question
 from llmango.normalize import normalize_question
 from llmango.runner import plan, run
 from llmango.storage import read_results
 
 _QUESTION = "001a"
-_FOLDER = "001_fruit"
+_FOLDER = "e001_fruit"
 
 _EN_ANSWERS = ["apple", "banana", "banana", ""]
 _PL_ANSWERS = ["jabłko", "banan", "coś", ""]
@@ -73,11 +73,13 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
 
     analyze_outcome = analyze_question(_QUESTION)
 
-    assert [chart.file for chart in analyze_outcome.charts] == ["distribution.svg"]
-    charts = pipeline / "charts" / _QUESTION
-    assert (charts / "distribution.svg").read_text(encoding="utf-8").count("<svg")
+    assert [chart.file for chart in analyze_outcome.charts] == ["language_drift.svg"]
+    assert analyze_outcome.skipped == ["order_effect", "schema_effect"]
+    charts = pipeline / "charts" / _FOLDER
+    assert (charts / "language_drift.svg").read_text(encoding="utf-8").count("<svg")
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
-    distribution = index["charts"][0]
-    assert distribution["columns"] == ["en", "pl"]
-    labels = [row["label"] for row in distribution["rows"]]
+    drift = index["charts"][0]
+    assert drift["questions"] == [_QUESTION]
+    assert drift["columns"] == ["en", "pl"]
+    labels = [row["label"] for row in drift["rows"]]
     assert labels == ["banana", "apple", "other"]

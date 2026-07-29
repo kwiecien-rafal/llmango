@@ -10,12 +10,12 @@ import pytest
 from pydantic import BaseModel
 
 from llmango import aggregate as aggregate_module
-from llmango import charts as charts_module
+from llmango import analyze as analyze_module
 from llmango import manifest as manifest_module
 from llmango import normalize as normalize_module
 from llmango import storage as storage_module
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
-from llmango.experiments.fruit import FruitChoice
+from llmango.experiments.e001_fruit.experiment import FruitChoice
 from llmango.pricing import PricingEntry, PricingTable
 
 
@@ -256,6 +256,6 @@ def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(normalize_module, "MAPPINGS_DIR", tmp_path / "mappings")
     monkeypatch.setattr(aggregate_module, "AGG_DIR", tmp_path / "aggregated")
-    monkeypatch.setattr(charts_module, "AGG_DIR", tmp_path / "aggregated")
-    monkeypatch.setattr(charts_module, "CHARTS_DIR", tmp_path / "charts")
+    monkeypatch.setattr(analyze_module, "AGG_DIR", tmp_path / "aggregated")
+    monkeypatch.setattr(analyze_module, "CHARTS_DIR", tmp_path / "charts")
     return tmp_path

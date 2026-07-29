@@ -66,7 +66,8 @@ def normalize_question(
     frame = read_results(f"{question_id}__*.parquet")
     if frame.is_empty():
         raise FileNotFoundError(
-            f"No raw data for question {question_id} to normalize from. "
+            f"No data for question {question_id} to normalize. "
+            f"Run 'llmango run {question_id}' first."
         )
 
     directory = MAPPINGS_DIR / spec.folder

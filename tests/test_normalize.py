@@ -1,6 +1,6 @@
 """Tests for the normalization pipeline: layers, dedupe, caching and edge rules.
 
-These run against the real 001_fruit prompt tree (fruit_list.yaml, experiment.yaml,
+These run against the real e001_fruit prompt tree (fruit_list.yaml, experiment.yaml,
 normalize.md); only the output directories are redirected into tmp_path. The
 experiment's mapping seed resolves every in-list answer offline, so only off-list
 strings reach the LLM layer.
@@ -15,12 +15,12 @@ import pytest
 
 from llmango import normalize as normalize_module
 from llmango.backends.base import GenRequest, GenResult
-from llmango.experiments.fruit import FruitNormalization
+from llmango.experiments.e001_fruit.experiment import FruitNormalization
 from llmango.normalize import normalize_question
 from llmango.storage import normalized_path, write_results
 
 _QUESTION = "001a"
-_FOLDER = "001_fruit"
+_FOLDER = "e001_fruit"
 
 
 @pytest.fixture

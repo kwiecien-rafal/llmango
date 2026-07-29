@@ -4,7 +4,7 @@ import pytest
 
 from llmango.config import experiment_dir
 from llmango.experiments import SPECS, spec_for
-from llmango.experiments.fruit import FRUIT
+from llmango.experiments.e001_fruit import FRUIT
 
 
 def test_every_declared_question_resolves_to_its_spec() -> None:
@@ -14,7 +14,7 @@ def test_every_declared_question_resolves_to_its_spec() -> None:
 
 def test_only_a_question_id_is_an_identifier() -> None:
     """A number, a bare digit and a folder name all resolve to nothing."""
-    for ref in ("001", "1", "001_fruit"):
+    for ref in ("001", "1", "e001_fruit"):
         with pytest.raises(ValueError, match="Unknown question"):
             spec_for(ref)
 

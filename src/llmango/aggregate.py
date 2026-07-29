@@ -20,12 +20,20 @@ class Distribution(TypedDict):
     other_share: float
 
 
+class Aggregate(TypedDict):
+    """One question's committed numbers: its distributions by schema and language."""
+
+    question_id: str
+    distributions: dict[str, dict[str, Distribution]]
+
+
 def aggregate_question(question_id: str) -> Path:
     """Count each arm's canonical answers into data/aggregated/<question_id>.json."""
     path = normalized_path(question_id)
     if not path.is_file():
         raise FileNotFoundError(
-            f"No normalized data for question {question_id} to aggregate from. "
+            f"No data for question {question_id} to aggregate. "
+            f"Run 'llmango normalize {question_id}' first."
         )
     arms = (
         pl.read_parquet(path)
@@ -74,7 +82,7 @@ def _write_aggregate(
     """Write one question's numbers to data/aggregated/<question_id>.json."""
     AGG_DIR.mkdir(parents=True, exist_ok=True)
     path = AGG_DIR / f"{question_id}.json"
-    body = {"question_id": question_id, "distributions": distributions}
+    body: Aggregate = {"question_id": question_id, "distributions": distributions}
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

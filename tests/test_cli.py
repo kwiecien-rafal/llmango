@@ -79,7 +79,7 @@ def test_report_normalize_shows_parquet_when_written(
 ) -> None:
     _report_normalize(
         NormalizeOutcome(
-            parquet_path=tmp_path / "001_fruit.parquet",
+            parquet_path=tmp_path / "001a.parquet",
             rows=8,
             distinct=7,
             llm_calls=0,

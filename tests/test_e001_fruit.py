@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from llmango import config as config_module
-from llmango.experiments.fruit import (
+from llmango.experiments.e001_fruit.experiment import (
     FOLDER,
     FRUIT_LIST,
     FruitEnum,

@@ -16,7 +16,7 @@ from openai import OpenAI
 from llmango.backends import openai as openai_module
 from llmango.backends.base import GenRequest
 from llmango.backends.openai import OpenAIBackend, build_jsonl
-from llmango.experiments.fruit import FruitChoice
+from llmango.experiments.e001_fruit.experiment import FruitChoice
 
 
 class FakeClient(Protocol):

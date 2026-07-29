@@ -1,6 +1,6 @@
 """Every experiment there is, and which question ids each one owns."""
 
-from llmango.experiments.fruit import FRUIT
+from llmango.experiments.e001_fruit import FRUIT
 from llmango.spec import ExperimentSpec
 
 SPECS: dict[str, ExperimentSpec] = {question: FRUIT for question in FRUIT.questions}

@@ -6,76 +6,36 @@ description: "Asking one forced choice across English, Polish and Japanese, and 
 
 import Figure from "../components/Figure.astro";
 
-# 001 — fruit
+# 001: fruit
 
-<p class="lede">
-Ask a model to pick one fruit from a list. Ask it thousands of times. The answer
-is not one fruit, it is a distribution, and that distribution is the measurement.
-</p>
+-experiment description here, with motivation -
 
-A forced choice with no correct answer is a clean probe. There is nothing to get
-right, so whatever structure shows up in the answers is the model's own prior, not
-knowledge. Two things can then be varied against it: the language of the prompt,
-and the language of the response schema.
-
-## The question
+## questions
 
 Every question in experiment 001 shares one fruit list, one canonical category set
 and one response schema. Each varies exactly one thing:
 
-- **001a** — fixed option order, asked in English, Polish and Japanese. The baseline.
-- **001b** — English only, a second fixed order over the same list. Isolates option
-  position from language.
-- **001c** — a per-sample shuffle across the same three languages, which kills
+- **001a**: fixed option order, asked in English, Polish and Japanese.
+- **001b**: English only, a second fixed order over the same list.
+- **001c**: a per-sample shuffle across the same three languages, which kills
   position as a confound within a language.
-- **001d** — a Polish prompt with three schema arms (English, Polish, and free text
-  with no schema at all), so the response schema is the only variable.
+- **001d**: a Polish prompt with three schema arms (English, Polish, and free text
+  response with no schema at all). The response schema is the only variable.
 
-The prompt carries the language, including the fruit labels. Outside 001d the schema
-stays English and byte-identical across languages, so every language arm sits under
-the same possibly-biasing background condition rather than two variables moving at
-once.
-
-## Preliminary numbers
-
-<p class="note">
-These are smoke-run numbers: five samples per language, enough to prove the pipeline
-end to end and nothing like enough to say anything about a model. They are published
-here because the chart and its table are part of the build, not because they are a
-result. Read them as a worked example of the format, and wait for the full run.
-</p>
+## 001a
 
 <Figure
-  question="001a"
-  file="distribution.svg"
-  alt="Horizontal grouped bar chart of the share of valid answers per fruit for question 001a, with one bar per language for English, Japanese and Polish. Lychee and pomegranate take almost every answer. The same numbers follow in the table below."
-  caption="001a, five samples per language. Far too few to read as a distribution."
+  experiment="e001_fruit"
+  chart="language_drift"
+  alt="lorem_ipsum-alt"
+  caption="001a"
 />
 
-With five samples an arm can only land on multiples of 20%, so the shape above is
-noise with a chart drawn around it. What it does show is the format the real run will
-use: shares rather than counts, so arms of different size stay comparable, categories
-nobody picked dropped rather than drawn as empty rows, and the counts kept beside
-every share instead of hidden behind a tooltip.
+## Fixed order comparison
 
-## What is left out
-
-An answer that names no fruit is not a choice. A model that declines, answers
-nothing, or says it has no preference is excluded from the distribution, as is a
-call that errored before it reached the model at all. Every share on this page is
-therefore a share of valid answers, and the count behind it sits in the table.
-
-## How to reproduce this
-
-Everything on this page is regenerated from a checkout by four commands:
-
-```
-just run 001a -n 5        # generate raw responses
-just normalize 001a       # map free text onto canonical categories
-just aggregate 001a       # reduce to committed JSON
-just analyze 001a         # draw the charts on this page
-```
-
-The raw responses go to Parquet and ship as an open dataset. The aggregated JSON and
-the SVGs above are committed, so the site builds from a fresh checkout with no Python,
-no API key and no pipeline run.
+<Figure
+  experiment="e001_fruit"
+  chart="language_drift"
+  alt="lorem_ipsum-alt"
+  caption="001a vs 001b"
+/>

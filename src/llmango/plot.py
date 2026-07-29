@@ -1,9 +1,4 @@
-"""Draw a question's aggregates as the SVG charts the site embeds.
-
-Takes a question id, reads the committed data/aggregated/<question_id>.json, and
-writes one SVG per chart into site/public/charts/<question_id>/, which Astro
-serves verbatim, alongside an index carrying the numbers behind every chart so
-the site can render a table beside each image.
+"""Everything an experiment needs to draw a chart, and how a figure is written.
 
 matplotlib draws the finished artwork here, so a chart is defined exactly once
 and the file opened locally is the file the site ships. The background is
@@ -11,21 +6,20 @@ transparent and every color reads against both a light and a dark page, so one
 export serves both themes and the site never restyles a chart.
 
 Because the glyphs are outlined paths, no text in an SVG is selectable or
-reachable by a screen reader. The index therefore carries every plotted number
-and the site pairs each chart with a table view. That table is the accessible
-twin of the image, not an optional extra.
+reachable by a screen reader. Every drawing therefore returns the numbers behind
+it alongside the figure, so the site can pair each chart with a table. That table
+is the accessible twin of the image, not an optional extra.
 
-One series is one arm: a question asked under one schema in one language.
-Arms are labeled by whichever of the two actually varies within their question,
-which is what puts 001d's three schema arms in a single chart rather than three
-one-series charts.
+Nothing here imports llmango.experiments, which is what lets an experiment's
+charts module import this one without the two cycling back on each other.
 """
 
-import json
 from collections import Counter
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import matplotlib
 from matplotlib.axes import Axes
@@ -35,15 +29,11 @@ from matplotlib.path import Path as DrawPath
 from matplotlib.ticker import FixedLocator, PercentFormatter
 from matplotlib.typing import RcKeyType
 
-from llmango.aggregate import Distribution
-from llmango.config import AGG_DIR, CHARTS_DIR
+from llmango.aggregate import Aggregate, Distribution
 from llmango.spec import FREE_TEXT, OTHER_CATEGORY
 
-_DISTRIBUTION = "distribution.svg"
-_INDEX = "index.json"
-
-_ARM_COLORS = ("#3987e5", "#d95926", "#199e70")
-_INK = "#7d7b76"
+ARM_COLORS = ("#3987e5", "#d95926", "#199e70")
+INK = "#7d7b76"
 
 _FIG_WIDTH_IN = 5.2
 _BAR_IN = 0.16
@@ -60,10 +50,10 @@ _STYLE: dict[RcKeyType, Any] = {
     "font.family": "sans-serif",
     "font.size": 11,
     "figure.dpi": 96,
-    "text.color": _INK,
-    "axes.labelcolor": _INK,
-    "xtick.color": _INK,
-    "ytick.color": _INK,
+    "text.color": INK,
+    "axes.labelcolor": INK,
+    "xtick.color": INK,
+    "ytick.color": INK,
     "xtick.labelsize": 10.5,
     "ytick.labelsize": 11,
     "axes.titlesize": 12,
@@ -95,143 +85,94 @@ class Series:
 
 
 @dataclass(frozen=True)
-class Chart:
-    """One written chart, and the numbers behind it the site puts in a table."""
+class Drawn:
+    """One finished figure, and the numbers behind it the site puts in a table."""
 
-    metric: str
-    question_id: str
-    file: str
+    figure: Figure
     title: str
     row_label: str
-    arms: list[str]
     columns: list[str]
     rows: list[Row]
 
 
 @dataclass(frozen=True)
-class AnalyzeOutcome:
-    """The charts and the index one analysis run wrote."""
+class ChartDef:
+    """One chart an experiment declares: its name, what it reads, and how it draws.
 
-    question_id: str
-    charts: list[Chart]
-    index_path: Path
+    The questions are the declaration analyze skips on: a chart is drawn only
+    once every question it names has an aggregate, and draw receives those and
+    nothing else.
+    """
+
+    name: str
+    questions: tuple[str, ...]
+    draw: Callable[[dict[str, Aggregate]], "Drawn"]
 
 
-def analyze_question(question_id: str) -> AnalyzeOutcome:
-    """Draw one question's charts from its aggregates into site/public/charts."""
-    arms = _load(question_id)
-    if arms is None:
-        raise FileNotFoundError(
-            f"No aggregated data for question {question_id} to analyze from. "
+def distribution(cells: dict[str, Distribution], title: str) -> Drawn:
+    """Draw labeled arms' category shares, and return the numbers behind them.
+
+    Shares rather than counts, so arms of different size stay comparable; the
+    counts they came from ride along in the table the site draws beside it.
+    """
+    if len(cells) > len(ARM_COLORS):
+        raise ValueError(
+            f"{title} has {len(cells)} arms but the palette holds "
+            f"{len(ARM_COLORS)}. Extend and revalidate the palette against both "
+            f"page surfaces, or split the comparison across charts."
         )
-
-    charts = [_write_distribution(question_id, arms)]
-    return AnalyzeOutcome(
-        question_id=question_id,
-        charts=charts,
-        index_path=_write_index(question_id, charts),
+    categories = _categories(cells.values())
+    series = [
+        _series(cell, label, ARM_COLORS[index], categories)
+        for index, (label, cell) in enumerate(cells.items())
+    ]
+    figure = bars(
+        row_labels=categories,
+        series=series,
+        title=title,
+        value_label="share of valid answers",
+        legend=len(cells) > 1,
+    )
+    return Drawn(
+        figure=figure,
+        title=title,
+        row_label="category",
+        columns=list(cells),
+        rows=_rows(categories, series, list(cells.values())),
     )
 
 
-def _load(question_id: str) -> dict[Arm, Distribution] | None:
-    """Read a question's aggregates as arm -> numbers, or None if absent."""
-    path = AGG_DIR / f"{question_id}.json"
-    if not path.is_file():
-        return None
-    payload: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
-    distributions = cast(dict[str, dict[str, Distribution]], payload["distributions"])
-    return {
-        Arm(schema=schema, lang=lang): cell
-        for schema, langs in sorted(distributions.items())
-        for lang, cell in sorted(langs.items())
-    }
-
-
-def _varies(arms: list[Arm]) -> tuple[bool, bool]:
-    """Whether the schema and the language differ across a question's arms."""
-    return (
-        len({arm.schema for arm in arms}) > 1,
-        len({arm.lang for arm in arms}) > 1,
+def question_distribution(aggregate: Aggregate) -> Drawn:
+    """Draw one question's arms, labeled and titled by whatever varies within it."""
+    arms = _arms(aggregate)
+    labels = _labels(list(arms))
+    return distribution(
+        cells=dict(zip(labels, arms.values(), strict=True)),
+        title=_title(aggregate["question_id"], list(arms), labels),
     )
 
 
-def _labels(arms: list[Arm]) -> list[str]:
-    """Label each arm by whichever of schema and language varies.
+def styled() -> AbstractContextManager[None]:
+    """Apply the chart style, which both drawing and saving read.
 
-    Returned in the order the arms were given, so a caller can zip the labels
-    straight onto the cells they belong to.
+    One context has to span the pair: the fonts and colors are baked in as a
+    figure is built, while the pinned hash salt and the outlined glyphs are read
+    by the SVG writer, and reproducibility needs both.
     """
-    many_schemas, many_langs = _varies(arms)
-    labels: list[str] = []
-    for arm in arms:
-        label = _schema_label(arm.schema)
-        if many_schemas and many_langs:
-            labels.append(f"{arm.lang} / {label}")
-        elif many_schemas:
-            labels.append(label)
-        else:
-            labels.append(arm.lang)
-    return labels
+    return matplotlib.rc_context(_STYLE)
 
 
-def _schema_label(schema: str) -> str:
-    """Name a schema arm the way a legend should read it."""
-    if schema == FREE_TEXT:
-        return "no schema"
-    return f"{schema} schema"
+def save(figure: Figure, path: Path) -> Path:
+    """Save one figure as the transparent, reproducible SVG the site embeds.
 
-
-def _dimension(arms: list[Arm]) -> str:
-    """Name what a question's arms differ in, for the legend title."""
-    many_schemas, many_langs = _varies(arms)
-    if many_schemas and many_langs:
-        return "arm"
-    return "schema" if many_schemas else "language"
-
-
-def _distribution_title(question_id: str, arms: list[Arm], labels: list[str]) -> str:
-    """Title one question's chart, naming whatever its legend cannot.
-
-    Several arms are keyed by a legend, so the title only has to say what
-    separates them. A lone arm gets no legend at all, so the title names it.
+    The date matplotlib would otherwise stamp into the metadata is dropped, so
+    redrawing unchanged aggregates rewrites an identical file instead of a diff.
     """
-    if len(arms) > 1:
-        return f"{question_id}: answer distribution by {_dimension(arms)}"
-    return f"{question_id}: answer distribution ({labels[0]})"
+    figure.savefig(path, format="svg", transparent=True, metadata={"Date": None})
+    return path
 
 
-def _categories(arms: dict[Arm, Distribution]) -> list[str]:
-    """The categories some arm actually picked, most picked first, 'other' last.
-
-    A question's canonical set can hold dozens of values while a run picks a
-    handful, so unpicked categories are dropped rather than drawn as empty rows.
-    """
-    totals: Counter[str] = Counter()
-    for cell in arms.values():
-        totals.update(cell["counts"])
-    return sorted(
-        (name for name, total in totals.items() if total > 0),
-        key=lambda name: (name == OTHER_CATEGORY, -totals[name], name),
-    )
-
-
-def _share(cell: Distribution, category: str) -> float:
-    """One category's share of an arm's valid answers, 0.0 when it picked none."""
-    total = cell["n"]
-    if not total:
-        return 0.0
-    return round(cell["counts"].get(category, 0) / total, 4)
-
-
-def _peak_labels(values: list[float], texts: list[str]) -> list[str | None]:
-    """Label only a series' largest bar, so direct labels stay worth reading."""
-    if not values or max(values) <= 0:
-        return [None] * len(values)
-    peak = max(range(len(values)), key=lambda index: values[index])
-    return [texts[index] if index == peak else None for index in range(len(values))]
-
-
-def _draw(
+def bars(
     row_labels: list[str],
     series: list[Series],
     title: str,
@@ -281,6 +222,133 @@ def _draw(
     return figure
 
 
+def _arms(aggregate: Aggregate) -> dict[Arm, Distribution]:
+    """Read a question's aggregate as arm -> numbers, in a stable order."""
+    return {
+        Arm(schema=schema, lang=lang): cell
+        for schema, langs in sorted(aggregate["distributions"].items())
+        for lang, cell in sorted(langs.items())
+    }
+
+
+def _varies(arms: list[Arm]) -> tuple[bool, bool]:
+    """Whether the schema and the language differ across a question's arms."""
+    return (
+        len({arm.schema for arm in arms}) > 1,
+        len({arm.lang for arm in arms}) > 1,
+    )
+
+
+def _labels(arms: list[Arm]) -> list[str]:
+    """Label each arm by whichever of schema and language varies.
+
+    Returned in the order the arms were given, so a caller can zip the labels
+    straight onto the cells they belong to.
+    """
+    many_schemas, many_langs = _varies(arms)
+    labels: list[str] = []
+    for arm in arms:
+        label = _schema_label(arm.schema)
+        if many_schemas and many_langs:
+            labels.append(f"{arm.lang} / {label}")
+        elif many_schemas:
+            labels.append(label)
+        else:
+            labels.append(arm.lang)
+    return labels
+
+
+def _schema_label(schema: str) -> str:
+    """Name a schema arm the way a legend should read it."""
+    if schema == FREE_TEXT:
+        return "no schema"
+    return f"{schema} schema"
+
+
+def _dimension(arms: list[Arm]) -> str:
+    """Name what a question's arms differ in, for the legend title."""
+    many_schemas, many_langs = _varies(arms)
+    if many_schemas and many_langs:
+        return "arm"
+    return "schema" if many_schemas else "language"
+
+
+def _title(question_id: str, arms: list[Arm], labels: list[str]) -> str:
+    """Title one question's chart, naming whatever its legend cannot.
+
+    Several arms are keyed by a legend, so the title only has to say what
+    separates them. A lone arm gets no legend at all, so the title names it.
+    """
+    if len(arms) > 1:
+        return f"{question_id}: answer distribution by {_dimension(arms)}"
+    return f"{question_id}: answer distribution ({labels[0]})"
+
+
+def _categories(cells: Iterable[Distribution]) -> list[str]:
+    """The categories some arm actually picked, most picked first, 'other' last.
+
+    A question's canonical set can hold dozens of values while a run picks a
+    handful, so unpicked categories are dropped rather than drawn as empty rows.
+    """
+    totals: Counter[str] = Counter()
+    for cell in cells:
+        totals.update(cell["counts"])
+    return sorted(
+        (name for name, total in totals.items() if total > 0),
+        key=lambda name: (name == OTHER_CATEGORY, -totals[name], name),
+    )
+
+
+def _share(cell: Distribution, category: str) -> float:
+    """One category's share of an arm's valid answers, 0.0 when it picked none."""
+    total = cell["n"]
+    if not total:
+        return 0.0
+    return round(cell["counts"].get(category, 0) / total, 4)
+
+
+def _series(
+    cell: Distribution, label: str, color: str, categories: list[str]
+) -> Series:
+    """Turn one arm's counts into the bars and sparse labels that draw it."""
+    values = [_share(cell, category) for category in categories]
+    texts = [
+        f"{value:.0%}  {cell['counts'].get(category, 0)}/{cell['n']}"
+        for category, value in zip(categories, values, strict=True)
+    ]
+    return Series(
+        label=label, color=color, values=values, labels=_peak_labels(values, texts)
+    )
+
+
+def _peak_labels(values: list[float], texts: list[str]) -> list[str | None]:
+    """Label only a series' largest bar, so direct labels stay worth reading."""
+    if not values or max(values) <= 0:
+        return [None] * len(values)
+    peak = max(range(len(values)), key=lambda index: values[index])
+    return [texts[index] if index == peak else None for index in range(len(values))]
+
+
+def _rows(
+    categories: list[str], series: list[Series], cells: list[Distribution]
+) -> list[Row]:
+    """Describe every plotted number, one row per category, for the table view."""
+    return [
+        {
+            "label": category,
+            "cells": [
+                {
+                    "value": entry.values[index],
+                    "count": cell["counts"].get(category, 0),
+                    "n": cell["n"],
+                }
+                for entry, cell in zip(series, cells, strict=True)
+            ],
+        }
+        for index, category in enumerate(categories)
+    ]
+
+
 def _settle(figure: Figure) -> None:
     """Resolve the layout so the data transform is final.
 
@@ -312,7 +380,7 @@ def _frame(
     axes.set_yticks(range(len(row_labels)), labels=row_labels)
     axes.set_xlabel(value_label, fontsize=10)
     axes.set_title(title, loc="left", pad=30 if legend else 10)
-    axes.grid(axis="x", color=_INK, alpha=0.25, linewidth=0.6)
+    axes.grid(axis="x", color=INK, alpha=0.25, linewidth=0.6)
     axes.set_axisbelow(True)
     axes.tick_params(length=0)
     for spine in axes.spines.values():
@@ -332,7 +400,7 @@ def _annotate(axes: Axes, series: list[Series], offsets: list[float]) -> None:
                     va="center",
                     ha="left",
                     fontsize=9.5,
-                    color=_INK,
+                    color=INK,
                 )
 
 
@@ -398,112 +466,3 @@ def _bar_path(
             DrawPath.CLOSEPOLY,
         ],
     )
-
-
-def _distribution_figure(
-    arms: dict[Arm, Distribution], labels: list[str], title: str
-) -> tuple[Figure, list[Row]]:
-    """Draw one question's category shares, and return the numbers behind them.
-
-    Shares rather than counts, so arms of different size stay comparable; the
-    counts they came from ride along in the table the site draws beside it.
-    """
-    if len(arms) > len(_ARM_COLORS):
-        raise ValueError(
-            f"{title} has {len(arms)} arms but the palette holds "
-            f"{len(_ARM_COLORS)}. Extend and revalidate the palette against both "
-            f"page surfaces, or split the question across charts."
-        )
-    categories = _categories(arms)
-    series: list[Series] = []
-    for index, (cell, label) in enumerate(zip(arms.values(), labels, strict=True)):
-        values = [_share(cell, category) for category in categories]
-        texts = [
-            f"{value:.0%}  {cell['counts'].get(category, 0)}/{cell['n']}"
-            for category, value in zip(categories, values, strict=True)
-        ]
-        series.append(
-            Series(
-                label=label,
-                color=_ARM_COLORS[index],
-                values=values,
-                labels=_peak_labels(values, texts),
-            )
-        )
-
-    figure = _draw(
-        row_labels=categories,
-        series=series,
-        title=title,
-        value_label="share of valid answers",
-        legend=len(arms) > 1,
-    )
-    rows = [
-        {
-            "label": category,
-            "cells": [
-                {
-                    "value": entry.values[index],
-                    "count": cell["counts"].get(category, 0),
-                    "n": cell["n"],
-                }
-                for entry, cell in zip(series, arms.values(), strict=True)
-            ],
-        }
-        for index, category in enumerate(categories)
-    ]
-    return figure, rows
-
-
-def _write_distribution(question_id: str, arms: dict[Arm, Distribution]) -> Chart:
-    """Draw one question's distribution and describe it for the index."""
-    labels = _labels(list(arms))
-    title = _distribution_title(question_id, list(arms), labels)
-    with matplotlib.rc_context(_STYLE):
-        figure, rows = _distribution_figure(arms, labels, title)
-        _write_svg(question_id, _DISTRIBUTION, figure)
-    return Chart(
-        metric="distribution",
-        question_id=question_id,
-        file=_DISTRIBUTION,
-        title=title,
-        row_label="category",
-        arms=labels,
-        columns=labels,
-        rows=rows,
-    )
-
-
-def _write_index(question_id: str, charts: list[Chart]) -> Path:
-    """Write the index the site reads for its chart list and its table views.
-
-    The Chart dataclass is serialized wholesale, so a field added to it reaches
-    the site instead of being silently dropped from the index.
-    """
-    body = {
-        "question_id": question_id,
-        "charts": [asdict(chart) for chart in charts],
-    }
-    path = _chart_dir(question_id) / _INDEX
-    path.write_text(
-        json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    return path
-
-
-def _write_svg(question_id: str, name: str, figure: Figure) -> Path:
-    """Save one figure as the transparent, reproducible SVG the site embeds.
-
-    The date matplotlib would otherwise stamp into the metadata is dropped, so
-    redrawing unchanged aggregates rewrites an identical file instead of a diff.
-    """
-    path = _chart_dir(question_id) / name
-    figure.savefig(path, format="svg", transparent=True, metadata={"Date": None})
-    return path
-
-
-def _chart_dir(question_id: str) -> Path:
-    """The served directory a question's charts are written into."""
-    directory = CHARTS_DIR / question_id
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory

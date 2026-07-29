@@ -1,38 +1,25 @@
 ---
 import Article from "../layouts/Article.astro";
-import { questions } from "../data/charts";
 ---
 
 <Article
   title="llmango"
   description="Measuring how much genuine randomness an LLM has under a forced choice, and how that choice shifts with language."
 >
-  <h1>llmango</h1>
-  <p class="lede">
-    How much genuine randomness does a language model have under a forced choice,
-    and how much does that choice shift with the language you ask in?
-  </p>
+  <h1>🥭 LLMango</h1>
   <p>
-    One question, asked across several languages and schema variants, thousands of
-    samples each, then aggregated into distributions. Every run is pinned to a
-    manifest, every raw response is kept, and every chart on this site is drawn by
-    the same pipeline that produced the numbers.
+    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+    tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+    quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+    consequat.
   </p>
 
   <h2>Experiments</h2>
-  <ul class="listing">
-    <li>
-      <a href="/001-fruit">001 &mdash; fruit</a>
-      <p>
-        Pick one fruit from a list. Four questions vary option order, prompt
-        language and response schema, one at a time.
-      </p>
-    </li>
-  </ul>
-
-  <p class="meta">
-    {questions.length} question{questions.length === 1 ? "" : "s"} charted.
-    Raw responses ship as an open dataset; aggregates and charts are committed to
-    the repository.
-  </p>
+  <a class="card" href="/001-fruit">
+    <h3>001: Fruit</h3>
+    <p>
+      Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+      tempor incididunt ut labore et dolore magna aliqua.
+    </p>
+  </a>
 </Article>

@@ -58,7 +58,7 @@ venvPath = "."
 venv = ".venv"
 
 [[tool.pyright.executionEnvironments]]
-root = "src/llmango/charts.py"
+root = "src/llmango/plot.py"
 reportUnknownMemberType = false
 
 [tool.pytest.ini_options]

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from llmango.experiments.fruit import FRUIT, FruitChoice, WyborOwocu
+from llmango.experiments.e001_fruit.experiment import FRUIT, FruitChoice, WyborOwocu
 from llmango.questions import (
     LanguageAsk,
     QuestionConfig,
@@ -13,7 +13,7 @@ from llmango.questions import (
     load_template,
 )
 
-FOLDER = "001_fruit"
+FOLDER = "e001_fruit"
 
 
 def _ask(**schemas_by_language: list[str | None]) -> list[LanguageAsk]:

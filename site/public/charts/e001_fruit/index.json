@@ -1,0 +1,61 @@
+{
+  "experiment": "e001_fruit",
+  "charts": [
+    {
+      "name": "language_drift",
+      "file": "language_drift.svg",
+      "questions": [
+        "001a"
+      ],
+      "title": "001a: answer distribution by language",
+      "row_label": "category",
+      "columns": [
+        "en",
+        "ja",
+        "pl"
+      ],
+      "rows": [
+        {
+          "label": "pomegranate",
+          "cells": [
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 5
+            },
+            {
+              "value": 1.0,
+              "count": 5,
+              "n": 5
+            },
+            {
+              "value": 0.6,
+              "count": 3,
+              "n": 5
+            }
+          ]
+        },
+        {
+          "label": "lychee",
+          "cells": [
+            {
+              "value": 1.0,
+              "count": 5,
+              "n": 5
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 5
+            },
+            {
+              "value": 0.4,
+              "count": 2,
+              "n": 5
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -38,34 +38,34 @@ def test_placeholders_reads_the_names_a_template_asks_for() -> None:
 
 
 def test_input_file_is_found_at_the_experiment_level(prompts_dir: Path) -> None:
-    _write(prompts_dir / "001_fruit" / "fruit_list.yaml", "- apple\n")
-    sources = load_input_sources("001_fruit", "001a", ["fruit_list"])
+    _write(prompts_dir / "e001_fruit" / "fruit_list.yaml", "- apple\n")
+    sources = load_input_sources("e001_fruit", "001a", ["fruit_list"])
     assert sources["fruit_list"].data == ["apple"]
 
 
 def test_a_questions_own_file_wins_over_the_experiments(prompts_dir: Path) -> None:
-    _write(prompts_dir / "001_fruit" / "fruit_list.yaml", "- apple\n")
-    _write(prompts_dir / "001_fruit" / "001a" / "fruit_list.yaml", "- banana\n")
-    shared = load_input_sources("001_fruit", "001b", ["fruit_list"])["fruit_list"]
-    own = load_input_sources("001_fruit", "001a", ["fruit_list"])["fruit_list"]
+    _write(prompts_dir / "e001_fruit" / "fruit_list.yaml", "- apple\n")
+    _write(prompts_dir / "e001_fruit" / "001a" / "fruit_list.yaml", "- banana\n")
+    shared = load_input_sources("e001_fruit", "001b", ["fruit_list"])["fruit_list"]
+    own = load_input_sources("e001_fruit", "001a", ["fruit_list"])["fruit_list"]
     assert shared.data == ["apple"]
     assert own.data == ["banana"]
     assert own.sha256 != shared.sha256
 
 
 def test_an_input_may_have_no_file(prompts_dir: Path) -> None:
-    source = load_input_sources("001_fruit", "001a", ["computed"])["computed"]
+    source = load_input_sources("e001_fruit", "001a", ["computed"])["computed"]
     assert source.data is None
     assert source.sha256 == sha256_text("")
 
 
 def test_source_hash_tracks_the_file_text(prompts_dir: Path) -> None:
-    path = prompts_dir / "001_fruit" / "fruit_list.yaml"
+    path = prompts_dir / "e001_fruit" / "fruit_list.yaml"
     _write(path, "- apple\n")
-    first = load_input_sources("001_fruit", None, ["fruit_list"])["fruit_list"].sha256
+    first = load_input_sources("e001_fruit", None, ["fruit_list"])["fruit_list"].sha256
     assert first == sha256_text("- apple\n")
     _write(path, "- apple\n- banana\n")
-    second = load_input_sources("001_fruit", None, ["fruit_list"])["fruit_list"].sha256
+    second = load_input_sources("e001_fruit", None, ["fruit_list"])["fruit_list"].sha256
     assert second != first
 
 
@@ -77,7 +77,7 @@ def test_resolve_passes_the_declaration_through_untouched(prompts_dir: Path) -> 
         return ResolvedInput(text="a, b", value=["a", "b"])
 
     declarations = {"fruit_list": {"order": "swap", "pairs": [[1, 2]]}}
-    sources = load_input_sources("001_fruit", "001a", ["fruit_list"])
+    sources = load_input_sources("e001_fruit", "001a", ["fruit_list"])
     resolved = resolve(build, sources, declarations, "pl", 3, "001a")
 
     assert resolved["fruit_list"].value == ["a", "b"]

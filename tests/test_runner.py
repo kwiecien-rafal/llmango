@@ -11,7 +11,7 @@ import pytest
 from conftest import FakeBackend
 from llmango import runner as runner_module
 from llmango.backends.base import GenRequest, GenResult, Usage
-from llmango.experiments.fruit import FruitChoice, WyborOwocu
+from llmango.experiments.e001_fruit.experiment import FruitChoice, WyborOwocu
 from llmango.manifest import Manifest, read_manifest
 from llmango.pricing import PricingTable
 from llmango.runner import RunPlan, fetch_batch, plan, run

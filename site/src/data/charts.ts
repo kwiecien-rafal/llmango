@@ -4,6 +4,9 @@
  * Every number the site shows comes from here. The pipeline owns the numbers
  * and the drawings; this module only looks them up, so the site can never
  * disagree with the chart it is sitting next to.
+ *
+ * A chart is looked up by the experiment that declares it and the name it is
+ * declared under, so a page cites a chart the same way the experiment names it.
  */
 
 export type Cell = {
@@ -19,18 +22,17 @@ export type Row = {
 };
 
 export type Chart = {
-  metric: string;
-  question_id: string | null;
+  name: string;
   file: string;
+  questions: string[];
   title: string;
   row_label: string;
-  arms: string[];
   columns: string[];
   rows: Row[];
 };
 
 export type ChartIndex = {
-  question_id: string;
+  experiment: string;
   charts: Chart[];
 };
 
@@ -39,28 +41,25 @@ const modules = import.meta.glob<ChartIndex>("../../public/charts/*/index.json",
   import: "default",
 });
 
-export const questions: ChartIndex[] = Object.values(modules).sort((a, b) =>
-  a.question_id.localeCompare(b.question_id),
-);
+const indexes: ChartIndex[] = Object.values(modules);
 
-export function question(id: string): ChartIndex {
-  const found = questions.find((entry) => entry.question_id === id);
+/** One declared chart, or a build failure naming what the page asked for. */
+export function chart(experiment: string, name: string): Chart {
+  const index = indexes.find((entry) => entry.experiment === experiment);
+  if (!index) {
+    throw new Error(
+      `No charts for experiment ${experiment}. Run 'llmango analyze' first.`,
+    );
+  }
+  const found = index.charts.find((entry) => entry.name === name);
   if (!found) {
-    throw new Error(`No charts for question ${id}. Run 'llmango analyze' first.`);
+    throw new Error(`No chart ${name} in experiment ${experiment}.`);
   }
   return found;
 }
 
-export function chart(questionId: string, file: string): Chart {
-  const found = question(questionId).charts.find((entry) => entry.file === file);
-  if (!found) {
-    throw new Error(`No chart ${file} for question ${questionId}.`);
-  }
-  return found;
-}
-
-export function chartSrc(questionId: string, file: string): string {
-  return `/charts/${questionId}/${file}`;
+export function chartSrc(experiment: string, file: string): string {
+  return `/charts/${experiment}/${file}`;
 }
 
 /** Everything in a cell beyond the plotted share, such as the error count. */
