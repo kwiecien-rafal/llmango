@@ -4,13 +4,13 @@ import hashlib
 import random
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import polars as pl
 
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
-from llmango.spec import ExperimentSpec
+from llmango.spec import OTHER_CATEGORY, ExperimentSpec
 
 FOLDER = "001_fruit"
 QUESTIONS = ("001a", "001b", "001c", "001d")
@@ -31,7 +31,7 @@ class WyborOwocu(LLMResponse):
 
 
 class FruitEnum(StrEnum):
-    """Canonical fruit categories; a culture-specific fruit keeps its own value."""
+    """Canonical fruit categories, closed by 'other' for anything unnamed here."""
 
     APPLE = "apple"
     BANANA = "banana"
@@ -65,13 +65,13 @@ class FruitEnum(StrEnum):
     GUAVA = "guava"
     PASSIONFRUIT = "passionfruit"
     DURIAN = "durian"
+    OTHER = OTHER_CATEGORY
 
 
 class FruitNormalization(LLMResponse):
     """A raw fruit answer mapped to a canonical category."""
 
-    raw: str
-    canonical: FruitEnum | Literal["other"]
+    canonical: FruitEnum
     is_valid: bool
     multiple: bool
 

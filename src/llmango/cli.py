@@ -10,13 +10,12 @@ from llmango import runner
 from llmango.aggregate import AggregateOutcome, aggregate_question
 from llmango.experiments import spec_for
 from llmango.normalize import NormalizeOutcome, normalize_question
+from llmango.pricing import guard_cost
 
 if TYPE_CHECKING:
     from llmango.charts import AnalyzeOutcome
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
-
-COST_GUARD_CALLS = 100
 
 QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
@@ -69,7 +68,7 @@ def run(
     _report_plan(planned)
     if dry_run:
         return
-    _guard_cost(planned.manifest.samples_total, force)
+    guard_cost(planned.manifest.samples_total, force)
     _report_outcome(runner.run(planned, batch=batch))
 
 
@@ -77,10 +76,6 @@ def run(
 @_reports_pipeline_errors
 def normalize(
     question: QuestionArgument,
-    model: Annotated[
-        str | None,
-        typer.Option("--model", help="Override the normalization model."),
-    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Report LLM usage without calling it.")
     ] = False,
@@ -89,21 +84,14 @@ def normalize(
     ] = False,
 ) -> None:
     """Map raw answers to canonical categories and write a normalized Parquet file."""
-    _report_normalize(
-        normalize_question(
-            question,
-            model=model,
-            max_llm_calls=None if force else COST_GUARD_CALLS,
-            dry_run=dry_run,
-        )
-    )
+    _report_normalize(normalize_question(question, force=force, dry_run=dry_run))
 
 
 @app.command()
 @_reports_pipeline_errors
 def aggregate(question: QuestionArgument) -> None:
     """Aggregate one question's normalized answers into the JSON the charts read."""
-    _require_question(question)
+    spec_for(question)
     _report_aggregate(aggregate_question(question))
 
 
@@ -113,7 +101,7 @@ def analyze(question: QuestionArgument) -> None:
     """Draw the charts the site embeds from one question's aggregates."""
     from llmango.charts import analyze_question
 
-    _require_question(question)
+    spec_for(question)
     _report_analyze(analyze_question(question))
 
 
@@ -126,20 +114,6 @@ def batch_fetch(
     outcome = runner.fetch_batch(run_id)
     typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     typer.echo(f"Parquet: {outcome.parquet_path}")
-
-
-def _guard_cost(samples_total: int, force: bool) -> None:
-    """Refuse a large paid run, counting every sample across every arm."""
-    if samples_total > COST_GUARD_CALLS and not force:
-        raise ValueError(
-            f"Refusing a large run of {samples_total} samples without --force. "
-            f"The unforced limit is {COST_GUARD_CALLS} samples."
-        )
-
-
-def _require_question(question: str) -> None:
-    """Reject an id no experiment declares, which the later stages never look up."""
-    spec_for(question)
 
 
 def _report_plan(plan: runner.RunPlan) -> None:

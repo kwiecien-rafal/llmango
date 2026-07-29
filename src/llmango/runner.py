@@ -33,7 +33,24 @@ from llmango.questions import Arm, PromptTemplate, Question, load_question
 from llmango.spec import ExperimentSpec, answer_field, schema_name
 from llmango.storage import results_path, write_results
 
-type Generation = tuple[GenResult, Cost | None]
+
+@dataclass(frozen=True)
+class Sample:
+    """One arm's sample: the prompt it asks and the provenance its row records."""
+
+    arm: Arm
+    sample_idx: int
+    prompt_inputs: str
+    prompt: str
+
+
+@dataclass(frozen=True)
+class Generation:
+    """One sample, the result it came back as, and what that cost."""
+
+    sample: Sample
+    result: GenResult
+    cost: Cost | None
 
 
 @dataclass(frozen=True)
@@ -42,7 +59,20 @@ class RunPlan:
 
     spec: ExperimentSpec
     manifest: Manifest
-    requests: list[GenRequest]
+    samples: list[Sample]
+
+    @property
+    def requests(self) -> list[GenRequest]:
+        """Render each planned sample as the request this run sends for it."""
+        return [
+            GenRequest(
+                model=self.manifest.model,
+                prompt=sample.prompt,
+                response_schema=sample.arm.schema,
+                temperature=self.manifest.temperature,
+            )
+            for sample in self.samples
+        ]
 
 
 @dataclass(frozen=True)
@@ -102,7 +132,7 @@ def plan(
     return RunPlan(
         spec=spec,
         manifest=manifest,
-        requests=_build_requests(manifest, spec, arms, question.templates, sources),
+        samples=_build_samples(manifest, spec, arms, question.templates, sources),
     )
 
 
@@ -131,8 +161,7 @@ def run(
         _write_submitted_manifest(manifest)
         return RunOutcome(manifest=manifest, rows_written=0)
 
-    results = backend.generate_many(plan.requests)
-    return _persist(manifest, plan.spec, results, batched=False)
+    return _persist(plan, backend.generate_many(plan.requests), batched=False)
 
 
 def fetch_batch(run_id: str, backend: Backend | None = None) -> RunOutcome:
@@ -144,21 +173,21 @@ def fetch_batch(run_id: str, backend: Backend | None = None) -> RunOutcome:
 
     submitted = _plan_from_manifest(manifest)
     results = backend.fetch(manifest.batch_id, submitted.requests)
-    return _persist(manifest, submitted.spec, results, batched=True)
+    return _persist(submitted, results, batched=True)
 
 
-def _persist(
-    manifest: Manifest, spec: ExperimentSpec, results: list[GenResult], batched: bool
-) -> RunOutcome:
+def _persist(plan: RunPlan, results: list[GenResult], batched: bool) -> RunOutcome:
     """Write a run's rows and its manifest, costing each generation once."""
+    manifest = plan.manifest
     generations = [
-        (result, _cost(result.usage, manifest.pricing, batched)) for result in results
+        Generation(sample, result, _cost(result.usage, manifest.pricing, batched))
+        for sample, result in zip(plan.samples, results, strict=True)
     ]
-    rows = _rows(generations, manifest, spec)
+    rows = _rows(generations, manifest, plan.spec)
     for arm in manifest.arms:
         arm.usage = _totals(_of_arm(generations, arm))
     manifest.usage = _totals(generations)
-    write_results(rows, manifest.run_id, manifest.model, spec.extra_raw_dtypes)
+    write_results(rows, manifest.run_id, manifest.model, plan.spec.extra_raw_dtypes)
     write_manifest(manifest)
     return RunOutcome(manifest=manifest, rows_written=len(rows))
 
@@ -181,7 +210,7 @@ def _plan_from_manifest(manifest: Manifest) -> RunPlan:
     return RunPlan(
         spec=spec,
         manifest=manifest,
-        requests=_build_requests(manifest, spec, arms, question.templates, sources),
+        samples=_build_samples(manifest, spec, arms, question.templates, sources),
     )
 
 
@@ -248,15 +277,15 @@ def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:
     return str(getattr(parsed, answer_field(type(parsed))))
 
 
-def _build_requests(
+def _build_samples(
     manifest: Manifest,
     spec: ExperimentSpec,
     arms: list[Arm],
     templates: dict[str, PromptTemplate],
     sources: dict[str, InputSource],
-) -> list[GenRequest]:
-    """Render one request per arm and sample from the run's templates."""
-    requests: list[GenRequest] = []
+) -> list[Sample]:
+    """Render one sample per arm and index from the run's templates."""
+    samples: list[Sample] = []
     for arm in arms:
         template = templates[arm.lang]
         for sample_idx in range(manifest.samples_per_arm):
@@ -268,26 +297,20 @@ def _build_requests(
                 sample_idx,
                 manifest.question_id,
             )
-            prompt = render(template.text, resolved)
             recorded = {
                 name: value.value
                 for name, value in resolved.items()
                 if value.value is not None
             }
-            requests.append(
-                GenRequest(
-                    question_id=manifest.question_id,
-                    lang=arm.lang,
-                    model=manifest.model,
-                    prompt=prompt,
-                    prompt_sha256=sha256_text(prompt),
+            samples.append(
+                Sample(
+                    arm=arm,
                     sample_idx=sample_idx,
-                    response_schema=arm.schema,
-                    temperature=manifest.temperature,
                     prompt_inputs=json.dumps(recorded, ensure_ascii=False),
+                    prompt=render(template.text, resolved),
                 )
             )
-    return requests
+    return samples
 
 
 def _price(model: str, pricing_table: PricingTable | None) -> PricingEntry | None:
@@ -321,35 +344,34 @@ def _rows(
         for record in manifest.arms
     }
     return [
-        _result_to_row(result, cost, manifest, spec, response_schemas)
-        for result, cost in generations
+        _result_to_row(generation, manifest, spec, response_schemas)
+        for generation in generations
     ]
 
 
 def _result_to_row(
-    result: GenResult,
-    cost: Cost | None,
+    generation: Generation,
     manifest: Manifest,
     spec: ExperimentSpec,
     response_schemas: dict[str | None, str | None],
 ) -> dict[str, object]:
     """Combine the common columns, the experiment's extras, provenance and cost."""
-    request = result.request
+    sample, result = generation.sample, generation.result
     answer = _answer(result.parsed, result.raw_json)
     extra = (
         spec.extra_raw_columns(result.parsed, answer) if spec.extra_raw_columns else {}
     )
     return {
-        "question_id": request.question_id,
-        "lang": request.lang,
-        "model": request.model,
+        "question_id": manifest.question_id,
+        "lang": sample.arm.lang,
+        "model": manifest.model,
         "provider": manifest.provider,
         "run_id": manifest.run_id,
-        "sample_idx": request.sample_idx,
-        "temperature": request.temperature,
-        "prompt_sha256": request.prompt_sha256,
-        "prompt": request.prompt,
-        "prompt_inputs": request.prompt_inputs,
+        "sample_idx": sample.sample_idx,
+        "temperature": manifest.temperature,
+        "prompt_sha256": sha256_text(sample.prompt),
+        "prompt": sample.prompt,
+        "prompt_inputs": sample.prompt_inputs,
         "raw_json": result.raw_json,
         "answer": answer,
         **extra,
@@ -360,11 +382,11 @@ def _result_to_row(
         "response_id": result.response_id,
         "service_tier": result.service_tier,
         "provider_created_at": result.provider_created_at,
-        "response_schema": response_schemas[schema_name(request.response_schema)],
+        "response_schema": response_schemas[schema_name(sample.arm.schema)],
         "request_envelope": result.request_envelope,
         "response_envelope": result.response_envelope,
         **_usage_columns(result.usage),
-        **_cost_columns(cost, manifest.pricing),
+        **_cost_columns(generation.cost, manifest.pricing),
         "created_at": result.created_at,
     }
 
@@ -406,20 +428,23 @@ def _cost_columns(cost: Cost | None, pricing: PricingEntry | None) -> dict[str, 
 def _of_arm(generations: list[Generation], arm: ArmRecord) -> list[Generation]:
     """Select the generations one arm of a run produced."""
     return [
-        (result, cost)
-        for result, cost in generations
-        if (result.request.lang, schema_name(result.request.response_schema))
+        generation
+        for generation in generations
+        if (generation.sample.arm.lang, schema_name(generation.sample.arm.schema))
         == (arm.lang, arm.schema_name)
     ]
 
 
 def _totals(generations: list[Generation]) -> UsageTotals:
     """Sum generations and their costs into their token and cost totals."""
-    usages = [result.usage for result, _ in generations if result.usage is not None]
-    priced = [cost for _, cost in generations if cost is not None]
+    results = [generation.result for generation in generations]
+    usages = [result.usage for result in results if result.usage is not None]
+    priced = [
+        generation.cost for generation in generations if generation.cost is not None
+    ]
     return UsageTotals(
-        errors=sum(result.error is not None for result, _ in generations),
-        provider_refusals=sum(result.refusal is not None for result, _ in generations),
+        errors=sum(result.error is not None for result in results),
+        provider_refusals=sum(result.refusal is not None for result in results),
         prompt_tokens=sum(usage.prompt_tokens for usage in usages),
         completion_tokens=sum(usage.completion_tokens for usage in usages),
         total_tokens=sum(usage.total_tokens for usage in usages),

@@ -15,7 +15,6 @@ from pydantic import BaseModel, ValidationError
 
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.config import REPO_ROOT
-from llmango.spec import FREE_TEXT, schema_name
 
 _ENDPOINT = "/v1/chat/completions"
 _COMPLETION_WINDOW = "24h"
@@ -68,10 +67,9 @@ def _request_envelope(request: GenRequest) -> str:
     return json.dumps(_request_body(request), ensure_ascii=False)
 
 
-def _custom_id(request: GenRequest) -> str:
-    """Tie one request to its batched response by arm, language and sample."""
-    schema = schema_name(request.response_schema) or FREE_TEXT
-    return f"{schema}::{request.lang}::{request.sample_idx}"
+def _custom_id(index: int) -> str:
+    """Tie one request to its batched response by its place in the submitted list."""
+    return str(index)
 
 
 def build_jsonl(requests: list[GenRequest]) -> str:
@@ -79,14 +77,14 @@ def build_jsonl(requests: list[GenRequest]) -> str:
     lines = [
         json.dumps(
             {
-                "custom_id": _custom_id(request),
+                "custom_id": _custom_id(index),
                 "method": "POST",
                 "url": _ENDPOINT,
                 "body": _request_body(request),
             },
             ensure_ascii=False,
         )
-        for request in requests
+        for index, request in enumerate(requests)
     ]
     return "\n".join(lines)
 
@@ -292,9 +290,18 @@ class OpenAIBackend(Backend):
             if file_id is not None:
                 lines.update(self._read_lines(file_id))
 
+        expected = {_custom_id(index) for index in range(len(requests))}
+        unknown = sorted(set(lines) - expected)
+        if unknown:
+            raise RuntimeError(
+                f"Batch {batch_id} returned {len(unknown)} ids this run did not "
+                f"send ({', '.join(unknown[:3])}). A line is matched to its request "
+                f"by position, so the two must be the same list."
+            )
+
         results: list[GenResult] = []
-        for request in requests:
-            line = lines.get(_custom_id(request))
+        for index, request in enumerate(requests):
+            line = lines.get(_custom_id(index))
             if line is None:
                 result = GenResult.failed(
                     request,

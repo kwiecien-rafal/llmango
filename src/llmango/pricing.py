@@ -1,4 +1,4 @@
-"""Pricing reference for costing one generation, from data/pricing.json."""
+"""Pricing reference for costing one generation, and the guard on how many to make."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from llmango.backends.base import Usage
 from llmango.config import PRICING_FILE
+
+COST_GUARD_CALLS = 100
 
 _SIGNIFICANT_DIGITS = 10
 
@@ -36,6 +38,15 @@ class Cost:
     input_cost_usd: float
     output_cost_usd: float
     total_cost_usd: float
+
+
+def guard_cost(calls: int, force: bool) -> None:
+    """Refuse to make more paid calls than the unforced limit allows."""
+    if calls > COST_GUARD_CALLS and not force:
+        raise ValueError(
+            f"Refusing {calls} paid calls without --force; the unforced limit is "
+            f"{COST_GUARD_CALLS}."
+        )
 
 
 def load_pricing(path: Path = PRICING_FILE) -> PricingTable:

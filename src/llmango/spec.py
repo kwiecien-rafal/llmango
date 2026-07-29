@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum
 
 import polars as pl
 from pydantic import BaseModel
@@ -28,6 +29,18 @@ def answer_field(schema: type[BaseModel]) -> str:
     return fields[0]
 
 
+def canonical_values(schema: type[BaseModel]) -> frozenset[str]:
+    """Read the closed category set off a normalization schema's canonical field."""
+    field = schema.model_fields.get("canonical")
+    annotation = field.annotation if field is not None else None
+    if not (isinstance(annotation, type) and issubclass(annotation, Enum)):
+        raise ValueError(
+            f"Normalization schema {schema.__name__} must declare a canonical field "
+            f"typed as an Enum naming every category it may return."
+        )
+    return frozenset(str(member.value) for member in annotation)
+
+
 def schema_name(schema: type[BaseModel] | None) -> str | None:
     """The class name a response schema is recorded under, None for free text."""
     return schema.__name__ if schema is not None else None
@@ -49,9 +62,11 @@ class ExperimentSpec:
     extra_normalized_columns: ExtraNormalizedColumns | None = None
 
     def __post_init__(self) -> None:
-        """Reject on import a registered schema not shaped like an answer schema."""
+        """Reject on import a schema this experiment declares but no stage can read."""
         for schema in self.schemas:
             answer_field(schema)
+        if self.normalization_schema is not None:
+            canonical_values(self.normalization_schema)
 
     def schema_named(self, name: str) -> type[BaseModel]:
         """Return the registered response schema a question.yaml names."""

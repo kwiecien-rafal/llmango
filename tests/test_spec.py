@@ -1,13 +1,26 @@
 """Tests for the experiment spec: its registered schemas and its optional hooks."""
 
+from enum import StrEnum
+
 import pytest
 
 from llmango.schemas import LLMResponse
-from llmango.spec import ExperimentSpec, answer_field
+from llmango.spec import ExperimentSpec, answer_field, canonical_values
 
 
 class ThrowawayResponse(LLMResponse):
     value: str
+
+
+class ThrowawayEnum(StrEnum):
+    APPLE = "apple"
+    OTHER = "other"
+
+
+class ThrowawayNormalization(LLMResponse):
+    canonical: ThrowawayEnum
+    is_valid: bool
+    multiple: bool
 
 
 def _spec() -> ExperimentSpec:
@@ -41,6 +54,27 @@ def test_a_schema_with_more_than_one_field_is_refused_on_declaration() -> None:
     with pytest.raises(ValueError, match="exactly one"):
         ExperimentSpec(
             folder="900_throwaway", questions=("900a",), schemas=(TwoFields,)
+        )
+
+
+def test_the_canonical_set_is_read_off_the_normalization_schema() -> None:
+    assert canonical_values(ThrowawayNormalization) == frozenset({"apple", "other"})
+
+
+def test_an_open_canonical_field_is_refused_on_declaration() -> None:
+    """A category set the schema does not close would let normalize invent one."""
+
+    class OpenCanonical(LLMResponse):
+        canonical: str
+        is_valid: bool
+        multiple: bool
+
+    with pytest.raises(ValueError, match="typed as an Enum"):
+        ExperimentSpec(
+            folder="900_throwaway",
+            questions=("900a",),
+            schemas=(ThrowawayResponse,),
+            normalization_schema=OpenCanonical,
         )
 
 

@@ -16,10 +16,8 @@ from llmango.storage import read_results
 _QUESTION = "001a"
 _FOLDER = "001_fruit"
 
-_ANSWERS = {
-    "en": ["apple", "banana", "banana", ""],
-    "pl": ["jabłko", "banan", "coś", ""],
-}
+_EN_ANSWERS = ["apple", "banana", "banana", ""]
+_PL_ANSWERS = ["jabłko", "banan", "coś", ""]
 
 _CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True, "multiple": False}}}
 
@@ -43,7 +41,7 @@ def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
 def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
-    backend: Backend = make_fake_backend(_ANSWERS)
+    backend: Backend = make_fake_backend(_EN_ANSWERS + _PL_ANSWERS)
     planned = plan(_QUESTION, samples_per_arm=4, languages=["en", "pl"])
     run_outcome = run(planned, backend)
     assert run_outcome.rows_written == 8

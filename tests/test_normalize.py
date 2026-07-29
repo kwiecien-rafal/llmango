@@ -177,6 +177,25 @@ def test_a_refusal_names_no_category(env: Path) -> None:
     assert frame["canonical"].to_list() == [None]
 
 
+def test_an_errored_call_is_never_adjudicated(env: Path) -> None:
+    """A call that failed carries no answer, so it is not a refusal either."""
+    _write_raw(
+        [
+            _raw_row("en", "", error="rate limited"),
+            _raw_row("en", "", sample_idx=1),
+            _raw_row("en", "apple", sample_idx=2),
+        ]
+    )
+
+    outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
+
+    frame = pl.read_parquet(normalized_path(_QUESTION)).sort("sample_idx")
+    assert outcome.rows == 3
+    assert outcome.distinct == 2
+    assert frame["is_valid"].to_list() == [None, False, True]
+    assert frame["canonical"].to_list() == [None, None, "apple"]
+
+
 def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
     """The pipeline's three columns first, then whatever the experiment appends."""
     _write_raw([_raw_row("en", "apple")])
@@ -209,13 +228,11 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
 
 
 def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
-    result = FruitNormalization(
-        raw="banana and apple", canonical="banana", is_valid=True, multiple=True
-    )
+    result = FruitNormalization(canonical="banana", is_valid=True, multiple=True)
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
 
-    outcome = normalize_question(_QUESTION, backend=backend, model="gpt-5.6-luna")
+    outcome = normalize_question(_QUESTION, backend=backend)
 
     assert outcome.llm_calls == 1
     assert backend.calls == 1
@@ -232,14 +249,12 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
 
 
 def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) -> None:
-    result = FruitNormalization(
-        raw="starfruit", canonical="other", is_valid=True, multiple=False
-    )
+    result = FruitNormalization(canonical="other", is_valid=True, multiple=False)
     backend = FlakyBackend(result, failing="durian")
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
 
     with pytest.raises(ValueError, match="unparsed"):
-        normalize_question(_QUESTION, backend=backend, model="gpt-5.6-luna")
+        normalize_question(_QUESTION, backend=backend)
 
     assert not normalized_path(_QUESTION).is_file()
     cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
@@ -259,10 +274,12 @@ def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
 
 
 def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
-    _write_raw([_raw_row("en", "starfruit")])
+    """Only the answers no offline layer resolved count against the limit."""
+    off_list = [_raw_row("en", f"starfruit {index}", index) for index in range(101)]
+    _write_raw(off_list)
 
     with pytest.raises(ValueError, match="unforced limit"):
-        normalize_question(_QUESTION, backend=ExplodingBackend(), max_llm_calls=0)
+        normalize_question(_QUESTION, backend=ExplodingBackend())
 
 
 def test_mapping_values_must_be_canonical(env: Path) -> None:

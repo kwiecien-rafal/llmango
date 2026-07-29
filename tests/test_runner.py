@@ -106,7 +106,7 @@ def test_plan_builds_every_request_and_writes_nothing(
     planned = _plan(pricing_table, samples_per_arm=2, languages=["en", "pl"])
 
     assert len(planned.requests) == 4
-    assert [request.lang for request in planned.requests] == ["en", "en", "pl", "pl"]
+    assert [sample.arm.lang for sample in planned.samples] == ["en", "en", "pl", "pl"]
     assert all(request.prompt for request in planned.requests)
     assert planned.manifest.pricing is not None
     assert not (data_dirs / "runs").exists()

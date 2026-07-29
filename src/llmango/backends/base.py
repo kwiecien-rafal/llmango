@@ -12,15 +12,10 @@ from pydantic import BaseModel
 class GenRequest:
     """One prompt to generate one response for, free text when it has no schema."""
 
-    question_id: str
-    lang: str
     model: str
     prompt: str
-    prompt_sha256: str
-    sample_idx: int
     response_schema: type[BaseModel] | None
     temperature: float = 1.0
-    prompt_inputs: str = "{}"
 
 
 @dataclass(frozen=True)

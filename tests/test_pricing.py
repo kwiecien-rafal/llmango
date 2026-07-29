@@ -1,4 +1,4 @@
-"""Tests for the pricing reference: loading and cost computation."""
+"""Tests for the pricing reference: loading, costing and the paid-call guard."""
 
 import json
 from pathlib import Path
@@ -7,11 +7,24 @@ import pytest
 
 from llmango.backends.base import Usage
 from llmango.pricing import (
+    COST_GUARD_CALLS,
     PricingEntry,
     compute_cost,
+    guard_cost,
     load_pricing,
     round_usd,
 )
+
+
+def test_the_guard_refuses_more_paid_calls_than_the_limit() -> None:
+    guard_cost(COST_GUARD_CALLS, force=False)
+
+    with pytest.raises(ValueError, match="without --force"):
+        guard_cost(COST_GUARD_CALLS + 1, force=False)
+
+
+def test_force_allows_any_number_of_paid_calls() -> None:
+    guard_cost(COST_GUARD_CALLS * 10, force=True)
 
 
 def _entry() -> PricingEntry:

@@ -168,14 +168,17 @@ def build_fake_openai_client(
 
 
 class FakeBackend(Backend):
-    """Deterministic backend answering answers[lang][sample_idx], or "apple"."""
+    """Deterministic backend answering a scripted list in request order, or "apple"."""
 
-    def __init__(self, answers: dict[str, list[str]] | None = None) -> None:
-        self._answers = answers or {}
+    def __init__(self, answers: list[str] | None = None) -> None:
+        self._answers = list(answers or [])
         self.submitted: list[list[GenRequest]] = []
 
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
-        return [self._generate(request) for request in requests]
+        return [
+            self._generate(request, self._scripted(index))
+            for index, request in enumerate(requests)
+        ]
 
     def submit(self, requests: list[GenRequest]) -> str:
         self.submitted.append(requests)
@@ -184,9 +187,10 @@ class FakeBackend(Backend):
     def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
         return self.generate_many(requests)
 
-    def _generate(self, request: GenRequest) -> GenResult:
-        scripted = self._answers.get(request.lang)
-        fruit = scripted[request.sample_idx] if scripted else "apple"
+    def _scripted(self, index: int) -> str:
+        return self._answers[index] if index < len(self._answers) else "apple"
+
+    def _generate(self, request: GenRequest, fruit: str) -> GenResult:
         parsed = FruitChoice(fruit=fruit)
         now = datetime.now(UTC)
         return GenResult(

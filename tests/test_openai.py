@@ -16,7 +16,7 @@ from openai import OpenAI
 from llmango.backends import openai as openai_module
 from llmango.backends.base import GenRequest
 from llmango.backends.openai import OpenAIBackend, build_jsonl
-from llmango.experiments.fruit import FruitChoice, WyborOwocu
+from llmango.experiments.fruit import FruitChoice
 
 
 class FakeClient(Protocol):
@@ -28,14 +28,14 @@ class FakeClient(Protocol):
 FakeClientFactory = Callable[..., FakeClient]
 
 
-def _request(lang: str = "en", sample_idx: int = 0) -> GenRequest:
+_EN_PROMPT = "Pick one random fruit (en)"
+_PL_PROMPT = "Pick one random fruit (pl)"
+
+
+def _request(prompt: str = _EN_PROMPT) -> GenRequest:
     return GenRequest(
-        question_id="001a",
-        lang=lang,
         model="gpt-5.6-luna",
-        prompt=f"Pick one random fruit ({lang})",
-        prompt_sha256="deadbeef",
-        sample_idx=sample_idx,
+        prompt=prompt,
         response_schema=FruitChoice,
         temperature=0.5,
     )
@@ -85,7 +85,7 @@ def test_generate_many_answers_every_request_in_order(
     client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
     backend = OpenAIBackend(client=cast(OpenAI, client))
 
-    requests = [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)]
+    requests = [_request(), _request(_PL_PROMPT)]
     results = backend.generate_many(requests)
 
     assert [result.request for result in results] == requests
@@ -282,39 +282,24 @@ def _batch_backend(
 
 
 def test_build_jsonl_encodes_each_request() -> None:
-    requests = [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)]
+    requests = [_request(), _request(_PL_PROMPT)]
 
     lines = build_jsonl(requests).splitlines()
 
     assert len(lines) == 2
     first = json.loads(lines[0])
-    assert first["custom_id"] == "FruitChoice::en::0"
+    assert first["custom_id"] == "0"
     assert first["method"] == "POST"
     assert first["url"] == "/v1/chat/completions"
     assert first["body"]["model"] == "gpt-5.6-luna"
     assert first["body"]["temperature"] == 0.5
-    assert first["body"]["messages"] == [
-        {"role": "user", "content": "Pick one random fruit (en)"}
-    ]
+    assert first["body"]["messages"] == [{"role": "user", "content": _EN_PROMPT}]
     schema = first["body"]["response_format"]["json_schema"]
     assert schema["name"] == "FruitChoice"
     assert schema["strict"] is True
     assert schema["schema"]["additionalProperties"] is False
 
-    assert json.loads(lines[1])["custom_id"] == "FruitChoice::pl::1"
-
-
-def test_a_batch_names_every_arm_of_a_run_apart() -> None:
-    """One batch covers every arm, so 001d's three ways of asking pl cannot collide."""
-    requests = [
-        replace(_request(lang="pl"), response_schema=schema)
-        for schema in (FruitChoice, WyborOwocu, None)
-    ]
-
-    lines = build_jsonl(requests).splitlines()
-
-    custom_ids = [json.loads(line)["custom_id"] for line in lines]
-    assert custom_ids == ["FruitChoice::pl::0", "WyborOwocu::pl::0", "none::pl::0"]
+    assert json.loads(lines[1])["custom_id"] == "1"
 
 
 def test_build_jsonl_omits_response_format_for_free_text() -> None:
@@ -355,18 +340,14 @@ def test_submit_uploads_the_jsonl_and_creates_a_batch() -> None:
 
 
 def test_fetch_parses_output_lines_back_to_requests() -> None:
-    requests = [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)]
-    content = "\n".join(
-        [
-            _output_line("FruitChoice::pl::1", "banan"),
-            _output_line("FruitChoice::en::0", "mango"),
-        ]
-    )
+    """Lines come back in any order, so each is matched to its own request."""
+    requests = [_request(), _request(_PL_PROMPT)]
+    content = "\n".join([_output_line("1", "banan"), _output_line("0", "mango")])
     backend, _ = _batch_backend(content_text=content)
 
     results = backend.fetch("batch-1", requests)
 
-    assert [result.request.lang for result in results] == ["en", "pl"]
+    assert [result.request.prompt for result in results] == [_EN_PROMPT, _PL_PROMPT]
     assert cast(FruitChoice, results[0].parsed).fruit == "mango"
     assert cast(FruitChoice, results[1].parsed).fruit == "banan"
     assert results[0].model_snapshot == "gpt-5.6-luna-2026-01-01"
@@ -375,7 +356,7 @@ def test_fetch_parses_output_lines_back_to_requests() -> None:
 
 def test_fetch_captures_provenance_and_usage() -> None:
     record = {
-        "custom_id": "FruitChoice::en::0",
+        "custom_id": "0",
         "response": {
             "status_code": 200,
             "body": {
@@ -422,7 +403,7 @@ def test_fetch_captures_provenance_and_usage() -> None:
 
 def test_fetch_captures_a_refusal() -> None:
     record = {
-        "custom_id": "FruitChoice::en::0",
+        "custom_id": "0",
         "response": {
             "status_code": 200,
             "body": {
@@ -447,17 +428,22 @@ def test_fetch_captures_a_refusal() -> None:
 
 
 def test_fetch_marks_missing_lines_as_errors() -> None:
-    output = _output_line("FruitChoice::en::0", "mango")
-    backend, _ = _batch_backend(content_text=output)
+    backend, _ = _batch_backend(content_text=_output_line("0", "mango"))
 
-    results = backend.fetch(
-        "batch-1",
-        [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)],
-    )
+    results = backend.fetch("batch-1", [_request(), _request(_PL_PROMPT)])
 
     assert results[0].parsed is not None
     assert results[1].parsed is None
     assert results[1].error == "missing from batch output"
+
+
+def test_fetch_refuses_a_batch_it_did_not_send() -> None:
+    """A line is matched by position, so an id this run never sent is not guesswork."""
+    stale = _output_line("FruitChoice::en::0", "mango")
+    backend, _ = _batch_backend(content_text=stale)
+
+    with pytest.raises(RuntimeError, match="did not send"):
+        backend.fetch("batch-1", [_request()])
 
 
 def test_fetch_raises_when_the_batch_is_not_complete() -> None:
@@ -469,7 +455,7 @@ def test_fetch_raises_when_the_batch_is_not_complete() -> None:
 
 def test_fetch_captures_unparseable_content_without_aborting() -> None:
     truncated = {
-        "custom_id": "FruitChoice::en::0",
+        "custom_id": "0",
         "response": {
             "status_code": 200,
             "body": {
@@ -484,14 +470,10 @@ def test_fetch_captures_unparseable_content_without_aborting() -> None:
         },
         "error": None,
     }
-    answered = _output_line("FruitChoice::pl::1", "mango")
-    content = "\n".join([json.dumps(truncated), answered])
+    content = "\n".join([json.dumps(truncated), _output_line("1", "mango")])
     backend, _ = _batch_backend(content_text=content)
 
-    results = backend.fetch(
-        "batch-1",
-        [_request(lang="en", sample_idx=0), _request(lang="pl", sample_idx=1)],
-    )
+    results = backend.fetch("batch-1", [_request(), _request(_PL_PROMPT)])
 
     assert results[0].parsed is None
     assert results[0].error is not None
@@ -500,7 +482,7 @@ def test_fetch_captures_unparseable_content_without_aborting() -> None:
 
 def test_fetch_reads_errored_requests_from_the_error_file() -> None:
     error_record = {
-        "custom_id": "FruitChoice::en::0",
+        "custom_id": "0",
         "response": None,
         "error": {"code": "rate_limit_exceeded", "message": "slow down"},
     }
