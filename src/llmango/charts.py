@@ -23,7 +23,6 @@ one-series charts.
 
 import json
 from collections import Counter
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -36,6 +35,7 @@ from matplotlib.path import Path as DrawPath
 from matplotlib.ticker import FixedLocator, PercentFormatter
 from matplotlib.typing import RcKeyType
 
+from llmango.aggregate import Distribution
 from llmango.config import AGG_DIR, CHARTS_DIR
 from llmango.spec import FREE_TEXT, OTHER_CATEGORY
 
@@ -69,7 +69,6 @@ _STYLE: dict[RcKeyType, Any] = {
     "axes.titlesize": 12,
 }
 
-Cell = Mapping[str, Any]
 Row = dict[str, Any]
 
 
@@ -123,7 +122,7 @@ def analyze_question(question_id: str) -> AnalyzeOutcome:
     arms = _load(question_id)
     if arms is None:
         raise FileNotFoundError(
-            f"No aggregates for {question_id}. Run 'llmango aggregate' first."
+            f"No aggregated data for question {question_id} to analyze from. "
         )
 
     charts = [_write_distribution(question_id, arms)]
@@ -134,13 +133,13 @@ def analyze_question(question_id: str) -> AnalyzeOutcome:
     )
 
 
-def _load(question_id: str) -> dict[Arm, Cell] | None:
+def _load(question_id: str) -> dict[Arm, Distribution] | None:
     """Read a question's aggregates as arm -> numbers, or None if absent."""
     path = AGG_DIR / f"{question_id}.json"
     if not path.is_file():
         return None
     payload: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
-    distributions = cast(dict[str, dict[str, Cell]], payload["distributions"])
+    distributions = cast(dict[str, dict[str, Distribution]], payload["distributions"])
     return {
         Arm(schema=schema, lang=lang): cell
         for schema, langs in sorted(distributions.items())
@@ -201,7 +200,7 @@ def _distribution_title(question_id: str, arms: list[Arm], labels: list[str]) ->
     return f"{question_id}: answer distribution ({labels[0]})"
 
 
-def _categories(arms: dict[Arm, Cell]) -> list[str]:
+def _categories(arms: dict[Arm, Distribution]) -> list[str]:
     """The categories some arm actually picked, most picked first, 'other' last.
 
     A question's canonical set can hold dozens of values while a run picks a
@@ -209,19 +208,19 @@ def _categories(arms: dict[Arm, Cell]) -> list[str]:
     """
     totals: Counter[str] = Counter()
     for cell in arms.values():
-        totals.update(cast(Mapping[str, int], cell["counts"]))
+        totals.update(cell["counts"])
     return sorted(
         (name for name, total in totals.items() if total > 0),
         key=lambda name: (name == OTHER_CATEGORY, -totals[name], name),
     )
 
 
-def _share(cell: Cell, category: str) -> float:
+def _share(cell: Distribution, category: str) -> float:
     """One category's share of an arm's valid answers, 0.0 when it picked none."""
-    total = int(cell["n"])
+    total = cell["n"]
     if not total:
         return 0.0
-    return round(int(cell["counts"].get(category, 0)) / total, 4)
+    return round(cell["counts"].get(category, 0) / total, 4)
 
 
 def _peak_labels(values: list[float], texts: list[str]) -> list[str | None]:
@@ -402,7 +401,7 @@ def _bar_path(
 
 
 def _distribution_figure(
-    arms: dict[Arm, Cell], labels: list[str], title: str
+    arms: dict[Arm, Distribution], labels: list[str], title: str
 ) -> tuple[Figure, list[Row]]:
     """Draw one question's category shares, and return the numbers behind them.
 
@@ -420,7 +419,7 @@ def _distribution_figure(
     for index, (cell, label) in enumerate(zip(arms.values(), labels, strict=True)):
         values = [_share(cell, category) for category in categories]
         texts = [
-            f"{value:.0%}  {int(cell['counts'].get(category, 0))}/{int(cell['n'])}"
+            f"{value:.0%}  {cell['counts'].get(category, 0)}/{cell['n']}"
             for category, value in zip(categories, values, strict=True)
         ]
         series.append(
@@ -445,8 +444,8 @@ def _distribution_figure(
             "cells": [
                 {
                     "value": entry.values[index],
-                    "count": int(cell["counts"].get(category, 0)),
-                    "n": int(cell["n"]),
+                    "count": cell["counts"].get(category, 0),
+                    "n": cell["n"],
                 }
                 for entry, cell in zip(series, arms.values(), strict=True)
             ],
@@ -456,7 +455,7 @@ def _distribution_figure(
     return figure, rows
 
 
-def _write_distribution(question_id: str, arms: dict[Arm, Cell]) -> Chart:
+def _write_distribution(question_id: str, arms: dict[Arm, Distribution]) -> Chart:
     """Draw one question's distribution and describe it for the index."""
     labels = _labels(list(arms))
     title = _distribution_title(question_id, list(arms), labels)

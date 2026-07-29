@@ -47,10 +47,17 @@ def test_dry_run_reports_every_arm_of_one_plan(data_dirs: Path) -> None:
 def test_an_experiment_reference_is_not_a_question(
     data_dirs: Path, command: str
 ) -> None:
-    """Only a question id resolves, and the error says which ones exist."""
+    """No stage resolves '001', and each names the id it refused."""
     result = runner.invoke(app, [command, "001"])
 
     assert result.exit_code == 1
+    assert "001" in result.output
+
+
+def test_normalize_names_the_questions_that_exist(data_dirs: Path) -> None:
+    """Only the stages that consult the registry can list the ids that do resolve."""
+    result = runner.invoke(app, ["normalize", "001"])
+
     assert "Unknown question: '001'" in result.output
     assert "001a, 001b, 001c, 001d" in result.output
 

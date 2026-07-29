@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from llmango import runner
-from llmango.aggregate import AggregateOutcome, aggregate_question
-from llmango.experiments import spec_for
+from llmango.aggregate import aggregate_question
 from llmango.normalize import NormalizeOutcome, normalize_question
 from llmango.pricing import guard_cost
 
@@ -91,8 +90,7 @@ def normalize(
 @_reports_pipeline_errors
 def aggregate(question: QuestionArgument) -> None:
     """Aggregate one question's normalized answers into the JSON the charts read."""
-    spec_for(question)
-    _report_aggregate(aggregate_question(question))
+    typer.echo(f"Aggregate: {aggregate_question(question)}")
 
 
 @app.command()
@@ -101,7 +99,6 @@ def analyze(question: QuestionArgument) -> None:
     """Draw the charts the site embeds from one question's aggregates."""
     from llmango.charts import analyze_question
 
-    spec_for(question)
     _report_analyze(analyze_question(question))
 
 
@@ -169,11 +166,6 @@ def _report_normalize(outcome: NormalizeOutcome) -> None:
     )
     if written:
         typer.echo(f"Parquet: {outcome.parquet_path}")
-
-
-def _report_aggregate(outcome: AggregateOutcome) -> None:
-    """Report where a question's aggregates landed."""
-    typer.echo(f"Aggregate: {outcome.path}")
 
 
 def _report_analyze(outcome: "AnalyzeOutcome") -> None:

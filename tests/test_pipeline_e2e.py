@@ -19,7 +19,7 @@ _FOLDER = "001_fruit"
 _EN_ANSWERS = ["apple", "banana", "banana", ""]
 _PL_ANSWERS = ["jabłko", "banan", "coś", ""]
 
-_CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True, "multiple": False}}}
+_CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True}}}
 
 
 @pytest.fixture

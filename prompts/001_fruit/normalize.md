@@ -5,4 +5,4 @@ Answer: {raw}
 
 Choose the closest canonical category. Set is_valid to false when the answer is
 a refusal, an empty response, or otherwise names no fruit. When several fruits
-are named, pick the first one mentioned and set multiple to true.
+are named, pick the first one mentioned.

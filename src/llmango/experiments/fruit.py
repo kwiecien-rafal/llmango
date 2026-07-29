@@ -73,7 +73,6 @@ class FruitNormalization(LLMResponse):
 
     canonical: FruitEnum
     is_valid: bool
-    multiple: bool
 
 
 _QUALIFIERS = {"a", "an", "the", "fresh", "ripe"}

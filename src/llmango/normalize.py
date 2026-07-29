@@ -24,7 +24,7 @@ _CACHE_FILE = "normalization_cache.json"
 _PROMPT_FILE = "normalize.md"
 
 _STRIP_CHARS = string.punctuation + string.whitespace + "«»„“”‘’¿¡。、「」『』"
-_RESOLUTION_COLUMNS = ("canonical", "is_valid", "multiple")
+_RESOLUTION_COLUMNS = ("canonical", "is_valid")
 _ANSWERED = pl.col("error").is_null()
 
 
@@ -35,7 +35,6 @@ class Resolution(BaseModel):
 
     canonical: str | None
     is_valid: bool
-    multiple: bool
 
 
 type Cache = dict[str, dict[str, Resolution]]
@@ -66,7 +65,9 @@ def normalize_question(
 
     frame = read_results(f"{question_id}__*.parquet")
     if frame.is_empty():
-        raise FileNotFoundError(f"No raw results to normalize for {question_id}.")
+        raise FileNotFoundError(
+            f"No raw data for question {question_id} to normalize from. "
+        )
 
     directory = MAPPINGS_DIR / spec.folder
     mapping = _load_mapping(directory, spec, schema)
@@ -128,10 +129,10 @@ def _resolve_offline(
 ) -> Resolution | None:
     """Resolve one answer without an LLM: refusal, mapping table, then cache."""
     if not answer.strip():
-        return Resolution(canonical=None, is_valid=False, multiple=False)
+        return Resolution(canonical=None, is_valid=False)
     canonical = mapping.get(_preprocess(answer, spec))
     if canonical is not None:
-        return Resolution(canonical=canonical, is_valid=True, multiple=False)
+        return Resolution(canonical=canonical, is_valid=True)
     return cache.get(lang, {}).get(answer)
 
 
@@ -195,7 +196,6 @@ def _join_resolutions(
             "answer": answer,
             "canonical": resolution.canonical,
             "is_valid": resolution.is_valid,
-            "multiple": resolution.multiple,
         }
         for (lang, answer), resolution in resolutions.items()
     ]
@@ -204,7 +204,6 @@ def _join_resolutions(
         "answer": pl.String(),
         "canonical": pl.String(),
         "is_valid": pl.Boolean(),
-        "multiple": pl.Boolean(),
     }
     joined = frame.join(
         pl.DataFrame(rows, schema=schema), on=["lang", "answer"], how="left"

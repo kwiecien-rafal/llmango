@@ -162,7 +162,7 @@ def test_only_the_question_asked_for_is_read(env: Path) -> None:
 
 
 def test_a_question_with_no_raw_results_says_so(env: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="No raw results to normalize for 001a"):
+    with pytest.raises(FileNotFoundError, match="No data for question 001a"):
         normalize_question(_QUESTION)
 
 
@@ -197,24 +197,23 @@ def test_an_errored_call_is_never_adjudicated(env: Path) -> None:
 
 
 def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
-    """The pipeline's three columns first, then whatever the experiment appends."""
+    """The pipeline's two columns first, then whatever the experiment appends."""
     _write_raw([_raw_row("en", "apple")])
 
     normalize_question(_QUESTION)
 
     columns = pl.read_parquet(normalized_path(_QUESTION)).columns
     start = columns.index("answer")
-    assert columns[start : start + 5] == [
+    assert columns[start : start + 4] == [
         "answer",
         "canonical",
         "is_valid",
-        "multiple",
         "chosen_position",
     ]
 
 
 def test_cache_hit_skips_the_llm(env: Path) -> None:
-    cache = {"en": {"kiwi": {"canonical": "kiwi", "is_valid": True, "multiple": False}}}
+    cache = {"en": {"kiwi": {"canonical": "kiwi", "is_valid": True}}}
     (normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json").write_text(
         json.dumps(cache), encoding="utf-8"
     )
@@ -228,7 +227,7 @@ def test_cache_hit_skips_the_llm(env: Path) -> None:
 
 
 def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
-    result = FruitNormalization(canonical="banana", is_valid=True, multiple=True)
+    result = FruitNormalization(canonical="banana", is_valid=True)
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
 
@@ -239,17 +238,16 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
 
     frame = pl.read_parquet(normalized_path(_QUESTION))
     assert frame["canonical"].to_list() == ["banana"]
-    assert frame["multiple"].to_list() == [True]
     assert frame["answer"].to_list() == ["banana and apple"]
 
     cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8"))
     entry = cache["en"]["banana and apple"]
-    assert entry == {"canonical": "banana", "is_valid": True, "multiple": True}
+    assert entry == {"canonical": "banana", "is_valid": True}
 
 
 def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) -> None:
-    result = FruitNormalization(canonical="other", is_valid=True, multiple=False)
+    result = FruitNormalization(canonical="other", is_valid=True)
     backend = FlakyBackend(result, failing="durian")
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
 

@@ -33,7 +33,6 @@ def _row(
         "answer": answer,
         "canonical": canonical,
         "is_valid": is_valid,
-        "multiple": False,
         "error": error,
     }
 
@@ -46,7 +45,6 @@ def _write_normalized(rows: list[dict[str, object]], question: str = _QUESTION) 
         "answer": pl.String(),
         "canonical": pl.String(),
         "is_valid": pl.Boolean(),
-        "multiple": pl.Boolean(),
         "error": pl.String(),
     }
     write_normalized(pl.DataFrame(rows, schema=schema), question)
@@ -148,12 +146,16 @@ def test_an_arm_that_named_nothing_has_no_entry(env: Path) -> None:
 
 
 def test_missing_normalized_parquet_raises(env: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="No normalized parquet"):
+    with pytest.raises(FileNotFoundError, match="No data for question 001a"):
         aggregate_question(_QUESTION)
 
 
-def test_empty_normalized_parquet_raises(env: Path) -> None:
+def test_a_parquet_with_nothing_to_count_raises(env: Path) -> None:
+    """An empty file and one where every answer declined fail the same way."""
     _write_normalized([])
+    with pytest.raises(ValueError, match="No valid answers"):
+        aggregate_question(_QUESTION)
 
-    with pytest.raises(ValueError, match="no rows"):
+    _write_normalized([_row("en", "", "", False)])
+    with pytest.raises(ValueError, match="No valid answers"):
         aggregate_question(_QUESTION)
