@@ -1,20 +1,23 @@
-"""Tests for the normalization pipeline: layers, dedupe, caching and edge rules.
+"""Tests for the normalization pipeline: layers, dedupe, promotion and edge rules.
 
 These run against the real e001_fruit prompt tree (fruit_list.yaml, experiment.yaml,
-normalize.md); only the output directories are redirected into tmp_path. The
-experiment's mapping seed resolves every in-list answer offline, so only off-list
-strings reach the LLM layer.
+normalize.md); the output paths and the map normalize writes are redirected into
+tmp_path. The experiment's fruit labels resolve every in-list answer offline, so
+only off-list strings reach the LLM layer.
 """
 
-import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
 import pytest
+import yaml
 
 from llmango import normalize as normalize_module
 from llmango.backends.base import GenRequest, GenResult
+from llmango.experiments import spec_for
+from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.experiments.e001_fruit.experiment import FruitNormalization
 from llmango.normalize import normalize_question
 from llmango.rows import dtypes
@@ -24,11 +27,14 @@ _QUESTION = "001a"
 _FOLDER = "e001_fruit"
 
 
-@pytest.fixture
-def env(data_dirs: Path) -> Path:
-    """Redirect outputs into tmp_path; the prompt tree stays the real one."""
-    (data_dirs / "mappings" / _FOLDER).mkdir(parents=True)
-    return data_dirs
+def _map_path() -> Path:
+    """The map the normalizer both reads and promotes its LLM verdicts into."""
+    return fruit_module._NORMALIZATION_MAP
+
+
+def _stored() -> dict[str, str | None]:
+    """Read back what normalize promoted into the map."""
+    return yaml.safe_load(_map_path().read_text(encoding="utf-8")) or {}
 
 
 _RUN_ID = "001a__en__20260720T101500Z"
@@ -121,7 +127,7 @@ class FlakyBackend(StubBackend):
         return super()._generate(request)
 
 
-def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
+def test_fruit_labels_resolve_offline_and_dedupe(data_dirs: Path) -> None:
     _write_raw(
         [
             _raw_row("en", "apple"),
@@ -147,7 +153,7 @@ def test_fruit_labels_resolve_offline_and_dedupe(env: Path) -> None:
     assert frame["is_valid"].to_list() == [True] * 5
 
 
-def test_only_the_question_asked_for_is_read(env: Path) -> None:
+def test_only_the_question_asked_for_is_read(data_dirs: Path) -> None:
     """A sibling question's answers belong to its own normalized file, not this one."""
     _write_raw([_raw_row("en", "apple")])
     _write_raw(
@@ -162,12 +168,12 @@ def test_only_the_question_asked_for_is_read(env: Path) -> None:
     assert not normalized_path("001b").is_file()
 
 
-def test_a_question_with_no_raw_results_says_so(env: Path) -> None:
+def test_a_question_with_no_raw_results_says_so(data_dirs: Path) -> None:
     with pytest.raises(FileNotFoundError, match="No data for question 001a"):
         normalize_question(_QUESTION)
 
 
-def test_a_refusal_names_no_category(env: Path) -> None:
+def test_a_refusal_names_no_category(data_dirs: Path) -> None:
     _write_raw([_raw_row("en", "")])
 
     outcome = normalize_question(_QUESTION)
@@ -178,7 +184,7 @@ def test_a_refusal_names_no_category(env: Path) -> None:
     assert frame["canonical"].to_list() == [None]
 
 
-def test_an_errored_call_is_never_adjudicated(env: Path) -> None:
+def test_an_errored_call_is_never_adjudicated(data_dirs: Path) -> None:
     """A call that failed carries no answer, so it is not a refusal either."""
     _write_raw(
         [
@@ -197,7 +203,7 @@ def test_an_errored_call_is_never_adjudicated(env: Path) -> None:
     assert frame["canonical"].to_list() == [None, None, "apple"]
 
 
-def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
+def test_added_columns_sit_next_to_the_answer(data_dirs: Path) -> None:
     """The pipeline's two columns first, then whatever the experiment appends."""
     _write_raw([_raw_row("en", "apple")])
 
@@ -213,21 +219,33 @@ def test_added_columns_sit_next_to_the_answer(env: Path) -> None:
     ]
 
 
-def test_cache_hit_skips_the_llm(env: Path) -> None:
-    cache = {"en": {"kiwi": {"canonical": "kiwi", "is_valid": True}}}
-    (normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json").write_text(
-        json.dumps(cache), encoding="utf-8"
-    )
+def test_a_stored_answer_skips_the_llm(data_dirs: Path) -> None:
+    _map_path().write_text("kiwi: other\n", encoding="utf-8")
     _write_raw([_raw_row("en", "kiwi")])
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
     frame = pl.read_parquet(normalized_path(_QUESTION))
     assert outcome.llm_calls == 0
-    assert frame["canonical"].to_list() == ["kiwi"]
+    assert frame["canonical"].to_list() == ["other"]
 
 
-def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
+def test_a_stored_null_means_the_answer_named_no_fruit(data_dirs: Path) -> None:
+    """A null value is how the map records an answer that named nothing countable."""
+    _map_path().write_text("nie wiem:\n", encoding="utf-8")
+    _write_raw([_raw_row("pl", "nie wiem")])
+
+    outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
+
+    frame = pl.read_parquet(normalized_path(_QUESTION))
+    assert outcome.llm_calls == 0
+    assert frame["canonical"].to_list() == [None]
+    assert frame["is_valid"].to_list() == [False]
+
+
+def test_multiple_fruits_take_the_first_and_promote_to_the_map(
+    data_dirs: Path,
+) -> None:
     result = FruitNormalization(canonical="banana", is_valid=True)
     backend = StubBackend(result)
     _write_raw([_raw_row("en", "banana and apple")])
@@ -241,13 +259,25 @@ def test_multiple_fruits_take_the_first_and_promote_to_cache(env: Path) -> None:
     assert frame["canonical"].to_list() == ["banana"]
     assert frame["answer"].to_list() == ["banana and apple"]
 
-    cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
-    cache = json.loads(cache_path.read_text(encoding="utf-8"))
-    entry = cache["en"]["banana and apple"]
-    assert entry == {"canonical": "banana", "is_valid": True}
+    assert _stored()["banana and apple"] == "banana"
 
 
-def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) -> None:
+def test_an_answer_naming_no_fruit_is_promoted_as_null(data_dirs: Path) -> None:
+    """The schema forces a category on a refusal; the map must not record it."""
+    backend = StubBackend(FruitNormalization(canonical="other", is_valid=False))
+    _write_raw([_raw_row("pl", "nie mam zdania")])
+
+    normalize_question(_QUESTION, backend=backend)
+
+    assert _stored()["nie mam zdania"] is None
+    frame = pl.read_parquet(normalized_path(_QUESTION))
+    assert frame["canonical"].to_list() == [None]
+    assert frame["is_valid"].to_list() == [False]
+
+
+def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(
+    data_dirs: Path,
+) -> None:
     result = FruitNormalization(canonical="other", is_valid=True)
     backend = FlakyBackend(result, failing="durian")
     _write_raw([_raw_row("en", "starfruit"), _raw_row("en", "durian", sample_idx=1)])
@@ -256,13 +286,12 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(env: Path) 
         normalize_question(_QUESTION, backend=backend)
 
     assert not normalized_path(_QUESTION).is_file()
-    cache_path = normalize_module.MAPPINGS_DIR / _FOLDER / "normalization_cache.json"
-    cache = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert "starfruit" in cache["en"]
-    assert "durian" not in cache["en"]
+    stored = _stored()
+    assert "starfruit" in stored
+    assert "durian" not in stored
 
 
-def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
+def test_punctuation_and_whitespace_resolve_offline(data_dirs: Path) -> None:
     _write_raw([_raw_row("en", "apple!"), _raw_row("en", "  Apple.  ", sample_idx=1)])
 
     outcome = normalize_question(_QUESTION)
@@ -272,7 +301,7 @@ def test_punctuation_and_whitespace_resolve_offline(env: Path) -> None:
     assert frame["canonical"].to_list() == ["apple", "apple"]
 
 
-def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
+def test_cost_guard_blocks_a_large_run_without_force(data_dirs: Path) -> None:
     """Only the answers no offline layer resolved count against the limit."""
     off_list = [_raw_row("en", f"starfruit {index}", index) for index in range(101)]
     _write_raw(off_list)
@@ -281,17 +310,21 @@ def test_cost_guard_blocks_a_large_run_without_force(env: Path) -> None:
         normalize_question(_QUESTION, backend=ExplodingBackend())
 
 
-def test_mapping_values_must_be_canonical(env: Path) -> None:
-    (normalize_module.MAPPINGS_DIR / _FOLDER / "mapping.yaml").write_text(
-        "starfruit: notafruit\n", encoding="utf-8"
+def test_normalization_map_values_must_be_canonical(
+    data_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An experiment mapping an answer onto a category its schema omits is an error."""
+    spec = replace(
+        spec_for(_QUESTION), normalization_map=lambda: {"starfruit": "notafruit"}
     )
+    monkeypatch.setattr(normalize_module, "spec_for", lambda _: spec)
     _write_raw([_raw_row("en", "apple")])
 
     with pytest.raises(ValueError, match="canonical set"):
         normalize_question(_QUESTION)
 
 
-def test_dry_run_counts_llm_work_without_calling_or_writing(env: Path) -> None:
+def test_dry_run_counts_llm_work_without_calling_or_writing(data_dirs: Path) -> None:
     _write_raw([_raw_row("en", "apple"), _raw_row("en", "starfruit", sample_idx=1)])
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend(), dry_run=True)

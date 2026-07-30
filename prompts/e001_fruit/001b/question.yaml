@@ -5,4 +5,4 @@ ask:
 inputs:
   fruit_list:
     order: fixed
-    order_ids: [pineapple, grape, watermelon, orange, pear, pomegranate, banana, lychee, apple, mango]
+    order_ids: [pineapple, grape, watermelon, orange, strawberry, pomegranate, banana, lychee, apple, mango]

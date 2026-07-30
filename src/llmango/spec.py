@@ -15,6 +15,8 @@ OTHER_CATEGORY = "other"
 
 ArmKey = tuple[str, str | None]
 
+NormalizationMap = dict[str, str | None]
+
 ExtraRawColumns = Callable[[BaseModel | None, str], dict[str, object]]
 ExtraRawDtypes = dict[str, pl.DataType]
 ExtraNormalizedColumns = Callable[[pl.DataFrame], dict[str, pl.Series]]
@@ -60,7 +62,8 @@ class ExperimentSpec:
     normalization_schema: type[BaseModel] | None = None
     preprocess: Callable[[str], str] | None = None
     build_input: BuildInput | None = None
-    mapping_seed: Callable[[], dict[str, str]] | None = None
+    normalization_map: Callable[[], NormalizationMap] | None = None
+    promote_normalizations: Callable[[NormalizationMap], None] | None = None
     extra_raw_columns: ExtraRawColumns | None = None
     extra_raw_dtypes: ExtraRawDtypes = field(default_factory=ExtraRawDtypes)
     extra_normalized_columns: ExtraNormalizedColumns | None = None

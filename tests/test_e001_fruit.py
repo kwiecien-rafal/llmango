@@ -7,14 +7,16 @@ import polars as pl
 import pytest
 
 from llmango import config as config_module
+from llmango.experiments.e001_fruit import experiment as experiment_module
 from llmango.experiments.e001_fruit.experiment import (
     FOLDER,
     FRUIT_LIST,
     FruitEnum,
     build_input,
     extra_normalized_columns,
-    mapping_seed,
+    normalization_map,
     preprocess,
+    promote_normalizations,
 )
 from llmango.inputs import InputRequest, load_input_sources
 from llmango.questions import load_question
@@ -120,24 +122,52 @@ def test_unknown_input_name_raises() -> None:
         build_input(request)
 
 
-def test_mapping_seed_covers_every_label_in_every_language() -> None:
-    seed = mapping_seed()
-    assert seed["apple"] == "apple"
-    assert seed["jabłko"] == "apple"
-    assert seed["りんご"] == "apple"
-    assert set(seed.values()) <= {member.value for member in FruitEnum}
+def test_normalization_map_covers_every_label_in_every_language() -> None:
+    mapping = normalization_map()
+    assert mapping["apple"] == "apple"
+    assert mapping["jabłko"] == "apple"
+    assert mapping["りんご"] == "apple"
 
 
-def test_mapping_seed_covers_a_questions_own_fruit_list(prompts_dir: Path) -> None:
+def test_normalization_map_adds_the_spellings_the_labels_miss() -> None:
+    """normalization_map.yaml carries the plurals and inflections, nothing else."""
+    mapping = normalization_map()
+    assert mapping["apples"] == "apple"
+    assert mapping["truskawki"] == "strawberry"
+
+
+def test_normalization_map_names_only_canonical_categories() -> None:
+    assert set(normalization_map().values()) <= {member.value for member in FruitEnum}
+
+
+def test_normalization_map_covers_a_questions_own_fruit_list(prompts_dir: Path) -> None:
     experiment = prompts_dir / FOLDER
     (experiment / "001b").mkdir(parents=True)
     (experiment / f"{FRUIT_LIST}.yaml").write_text(_SHARED_LIST, encoding="utf-8")
     (experiment / "001b" / f"{FRUIT_LIST}.yaml").write_text(_OWN_LIST, encoding="utf-8")
 
-    seed = mapping_seed()
+    mapping = normalization_map()
 
-    assert seed["jabłko"] == "apple"
-    assert seed["wiśnia"] == "cherry"
+    assert mapping["jabłko"] == "apple"
+    assert mapping["wiśnia"] == "cherry"
+
+
+def test_promoted_answers_come_back_out_of_the_map(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What normalize promotes is readable again, header kept, keys sorted."""
+    stored = tmp_path / "normalization_map.yaml"
+    stored.write_text("kiwi: other\n", encoding="utf-8")
+    monkeypatch.setattr(experiment_module, "_NORMALIZATION_MAP", stored)
+
+    promote_normalizations({"banana and apple": "banana", "nie wiem": None})
+
+    text = stored.read_text(encoding="utf-8")
+    assert text.startswith("# Answer -> canonical fruit")
+    mapping = normalization_map()
+    assert mapping["kiwi"] == "other"
+    assert mapping["banana and apple"] == "banana"
+    assert mapping["nie wiem"] is None
 
 
 def test_preprocess_drops_articles_and_qualifiers() -> None:

@@ -1,26 +1,22 @@
 """Map one question's raw answers onto canonical categories, cheapest layer first."""
 
-import json
 import string
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
-import yaml
 from pydantic import BaseModel, ConfigDict
 
 from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
-from llmango.config import MAPPINGS_DIR, experiment_dir
+from llmango.config import experiment_dir
 from llmango.experiments import spec_for
 from llmango.pricing import guard_cost
 from llmango.questions import load_experiment_config
-from llmango.spec import ExperimentSpec, canonical_values
+from llmango.spec import ExperimentSpec, NormalizationMap, canonical_values
 from llmango.storage import read_results, write_normalized
 
-_MAPPING_FILE = "mapping.yaml"
-_CACHE_FILE = "normalization_cache.json"
 _PROMPT_FILE = "normalize.md"
 
 _STRIP_CHARS = string.punctuation + string.whitespace + "«»„“”‘’¿¡。、「」『』"
@@ -35,9 +31,6 @@ class Resolution(BaseModel):
 
     canonical: str | None
     is_valid: bool
-
-
-type Cache = dict[str, dict[str, Resolution]]
 
 
 @dataclass(frozen=True)
@@ -70,15 +63,13 @@ def normalize_question(
             f"Run 'llmango run {question_id}' first."
         )
 
-    directory = MAPPINGS_DIR / spec.folder
-    mapping = _load_mapping(directory, spec, schema)
-    cache = _load_cache(directory)
+    mapping = _load_mapping(spec, schema)
     pairs = _distinct_pairs(frame)
 
     resolutions: dict[tuple[str, str], Resolution] = {}
     unresolved: list[tuple[str, str]] = []
     for lang, answer in pairs:
-        offline = _resolve_offline(lang, answer, spec, mapping, cache)
+        offline = _resolve_offline(answer, spec, mapping)
         if offline is not None:
             resolutions[(lang, answer)] = offline
         else:
@@ -94,8 +85,9 @@ def normalize_question(
 
     if unresolved:
         guard_cost(len(unresolved), force)
-        resolutions.update(_resolve_online(unresolved, spec, schema, backend, cache))
-        _save_cache(directory, cache)
+        resolved = _resolve_online(unresolved, spec, schema, backend)
+        _promote(resolved, spec)
+        resolutions.update(resolved)
         _require_all_resolved(unresolved, resolutions)
 
     normalized = _join_resolutions(frame, resolutions, spec)
@@ -122,19 +114,16 @@ def _distinct_pairs(frame: pl.DataFrame) -> list[tuple[str, str]]:
 
 
 def _resolve_offline(
-    lang: str,
-    answer: str,
-    spec: ExperimentSpec,
-    mapping: dict[str, str],
-    cache: Cache,
+    answer: str, spec: ExperimentSpec, mapping: NormalizationMap
 ) -> Resolution | None:
-    """Resolve one answer without an LLM: refusal, mapping table, then cache."""
+    """Resolve one answer without an LLM: an empty answer, then the mapping table."""
     if not answer.strip():
         return Resolution(canonical=None, is_valid=False)
-    canonical = mapping.get(_preprocess(answer, spec))
-    if canonical is not None:
-        return Resolution(canonical=canonical, is_valid=True)
-    return cache.get(lang, {}).get(answer)
+    key = _preprocess(answer, spec)
+    if key not in mapping:
+        return None
+    canonical = mapping[key]
+    return Resolution(canonical=canonical, is_valid=canonical is not None)
 
 
 def _resolve_online(
@@ -142,9 +131,8 @@ def _resolve_online(
     spec: ExperimentSpec,
     schema: type[BaseModel],
     backend: Backend | None,
-    cache: Cache,
 ) -> dict[tuple[str, str], Resolution]:
-    """Ask the LLM for what no offline layer resolved, caching what parses."""
+    """Ask the LLM for what no offline layer resolved, keeping what parses."""
     config = load_experiment_config(spec.folder)
     template = _load_prompt(spec.folder)
     backend = backend or backend_for(config.normalize_provider)
@@ -163,10 +151,29 @@ def _resolve_online(
     for (lang, answer), result in zip(unresolved, results, strict=True):
         if result.parsed is None:
             continue
-        resolution = Resolution.model_validate(result.parsed, from_attributes=True)
-        resolved[(lang, answer)] = resolution
-        cache.setdefault(lang, {})[answer] = resolution
+        resolved[(lang, answer)] = _verdict(result.parsed)
     return resolved
+
+
+def _verdict(parsed: BaseModel) -> Resolution:
+    """Read one LLM verdict, dropping the category an invalid answer had to pick."""
+    resolution = Resolution.model_validate(parsed, from_attributes=True)
+    if resolution.is_valid:
+        return resolution
+    return Resolution(canonical=None, is_valid=False)
+
+
+def _promote(resolved: dict[tuple[str, str], Resolution], spec: ExperimentSpec) -> None:
+    """Store what was just paid for, keyed as the next run will look it up."""
+    promote = spec.promote_normalizations
+    if promote is None or not resolved:
+        return
+    promote(
+        {
+            _preprocess(answer, spec): resolution.canonical
+            for (_, answer), resolution in resolved.items()
+        }
+    )
 
 
 def _require_all_resolved(
@@ -180,8 +187,8 @@ def _require_all_resolved(
     preview = ", ".join(f"{lang}:{answer!r}" for lang, answer in failed[:3])
     raise ValueError(
         f"{len(failed)} of {len(unresolved)} answers came back unparsed and were "
-        f"not written: {preview}. Everything else is cached, so a rerun retries "
-        f"only these."
+        f"not written: {preview}. Everything else is in the map, so a rerun "
+        f"retries only these."
     )
 
 
@@ -227,63 +234,22 @@ def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
     return frame.select(kept[:cut] + added + kept[cut:])
 
 
-def _load_mapping(
-    directory: Path, spec: ExperimentSpec, schema: type[BaseModel]
-) -> dict[str, str]:
-    """Load the deterministic mapping: the experiment's labels, then mapping.yaml."""
-    mapping = _seed_mapping(spec)
-    path = directory / _MAPPING_FILE
-    if path.is_file():
-        raw_map: dict[str, str] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        mapping.update(
-            (_preprocess(key, spec), value) for key, value in raw_map.items()
-        )
-    invalid = sorted(set(mapping.values()) - canonical_values(schema))
+def _load_mapping(spec: ExperimentSpec, schema: type[BaseModel]) -> NormalizationMap:
+    """Preprocess the experiment's answer-to-category map, empty when it has none."""
+    if spec.normalization_map is None:
+        return {}
+    mapping = {
+        _preprocess(answer, spec): canonical
+        for answer, canonical in spec.normalization_map().items()
+    }
+    named = {canonical for canonical in mapping.values() if canonical is not None}
+    invalid = sorted(named - canonical_values(schema))
     if invalid:
         raise ValueError(
-            f"mapping has values outside the canonical set: {', '.join(invalid)}"
+            f"{spec.folder} maps answers to values outside the canonical set: "
+            f"{', '.join(invalid)}"
         )
     return mapping
-
-
-def _seed_mapping(spec: ExperimentSpec) -> dict[str, str]:
-    """Preprocess the experiment's label-to-canonical seed, empty when it has none."""
-    if spec.mapping_seed is None:
-        return {}
-    return {
-        _preprocess(label, spec): canonical
-        for label, canonical in spec.mapping_seed().items()
-    }
-
-
-def _load_cache(directory: Path) -> Cache:
-    """Load the promoted LLM resolutions, nested as {lang: {raw: resolution}}."""
-    path = directory / _CACHE_FILE
-    if not path.is_file():
-        return {}
-    entries: dict[str, dict[str, object]] = json.loads(path.read_text(encoding="utf-8"))
-    return {
-        lang: {
-            raw: Resolution.model_validate(fields) for raw, fields in answers.items()
-        }
-        for lang, answers in entries.items()
-    }
-
-
-def _save_cache(directory: Path, cache: Cache) -> None:
-    """Write the promoted LLM resolutions back, sorted so the file stays committable."""
-    directory.mkdir(parents=True, exist_ok=True)
-    entries = {
-        lang: {
-            raw: resolution.model_dump(mode="json")
-            for raw, resolution in answers.items()
-        }
-        for lang, answers in cache.items()
-    }
-    (directory / _CACHE_FILE).write_text(
-        json.dumps(entries, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
 
 
 def _load_prompt(folder: str) -> str:

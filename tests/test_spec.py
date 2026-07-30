@@ -92,4 +92,5 @@ def test_prompt_input_hooks_are_optional() -> None:
     spec = _spec()
 
     assert spec.build_input is None
-    assert spec.mapping_seed is None
+    assert spec.normalization_map is None
+    assert spec.promote_normalizations is None

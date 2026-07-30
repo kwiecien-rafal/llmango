@@ -12,8 +12,8 @@
   labels: { en: mango, pl: mango, ja: マンゴー }
 - canonical: grape
   labels: { en: grape, pl: winogrono, ja: ぶどう }
-- canonical: pear
-  labels: { en: pear, pl: gruszka, ja: 梨 }
+- canonical: strawberry
+  labels: { en: strawberry, pl: truskawka, ja: いちご }
 - canonical: watermelon
   labels: { en: watermelon, pl: arbuz, ja: スイカ }
 - canonical: pineapple

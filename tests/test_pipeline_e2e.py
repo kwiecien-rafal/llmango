@@ -9,6 +9,7 @@ import pytest
 from llmango.aggregate import aggregate_question
 from llmango.analyze import analyze_question
 from llmango.backends.base import Backend
+from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.normalize import normalize_question
 from llmango.runner import plan, run
 from llmango.storage import read_results
@@ -20,16 +21,13 @@ _EN_ANSWERS = ["apple", "banana", "banana", ""]
 _PL_ANSWERS = ["jabłko", "banan", "coś", ""]
 _JA_ANSWERS = ["りんご", "バナナ", "バナナ", ""]
 
-_CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True}}}
+_STORED_MAP = "coś: other\n"
 
 
 @pytest.fixture
 def pipeline(data_dirs: Path) -> Path:
-    directory = data_dirs / "mappings" / _FOLDER
-    directory.mkdir(parents=True)
-    (directory / "normalization_cache.json").write_text(
-        json.dumps(_CACHE), encoding="utf-8"
-    )
+    """Seed the one off-list answer, so the pipeline needs no normalization call."""
+    fruit_module._NORMALIZATION_MAP.write_text(_STORED_MAP, encoding="utf-8")
     return data_dirs
 
 
