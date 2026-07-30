@@ -169,21 +169,22 @@ def build_fake_openai_client(
 
 
 class FakeBackend(Backend):
-    """Deterministic backend answering a scripted list in request order, or "apple"."""
+    """Deterministic backend answering a scripted list in call order, or "apple"."""
 
     def __init__(self, answers: list[str] | None = None) -> None:
         self._answers = list(answers or [])
+        self.calls = 0
 
-    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
-        return [
-            self._generate(request, self._scripted(index))
-            for index, request in enumerate(requests)
-        ]
+    def generate(self, request: GenRequest) -> GenResult:
+        fruit = self._scripted(self.calls)
+        self.calls += 1
+
+        return self._result(request, fruit)
 
     def _scripted(self, index: int) -> str:
         return self._answers[index] if index < len(self._answers) else "apple"
 
-    def _generate(self, request: GenRequest, fruit: str) -> GenResult:
+    def _result(self, request: GenRequest, fruit: str) -> GenResult:
         parsed = FruitChoice(fruit=fruit)
         now = datetime.now(UTC)
         return GenResult(

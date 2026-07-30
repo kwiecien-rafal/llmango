@@ -1,5 +1,6 @@
-"""Tests for Parquet storage: round-trip, dtypes and how runs pool."""
+"""Tests for raw JSONL storage: appending, dtypes, truncation and how runs pool."""
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import pytest
 
 from llmango import storage as storage_module
 from llmango.rows import column_dtypes
-from llmango.storage import read_results, results_path, write_results
+from llmango.storage import append_result, read_results, results_path
 
 _RUN_ID = "001a__20260720T101500000Z"
 
@@ -33,7 +34,7 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
         "error": None,
         "response_id": "chatcmpl-fake",
         "service_tier": "default",
-        "provider_created_at": datetime(2026, 7, 20, tzinfo=UTC),
+        "provider_created_at": datetime(2026, 7, 20, 10, 15, 0, 123456, tzinfo=UTC),
         "response_schema": '{"title": "FruitChoice"}',
         "request_envelope": '{"model": "gpt-5.6-luna"}',
         "response_envelope": '{"id": "chatcmpl-fake"}',
@@ -50,6 +51,15 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
     }
 
 
+def _append(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
+    for row in rows:
+        append_result(row, run_id)
+
+
+def _read(pattern: str = "*.jsonl") -> pl.DataFrame:
+    return read_results(pattern, column_dtypes({}))
+
+
 @pytest.fixture(autouse=True)
 def _raw_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Write every run of these tests into tmp_path."""
@@ -57,21 +67,27 @@ def _raw_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_write_then_read_round_trips() -> None:
-    rows = [_row(0, "apple"), _row(1, "mango")]
+def test_append_then_read_round_trips() -> None:
+    _append([_row(0, "apple"), _row(1, "mango")])
 
-    path = write_results(rows, _RUN_ID, column_dtypes({}))
-
-    assert path == results_path(_RUN_ID)
-    frame = read_results("*.parquet")
+    frame = _read()
     assert frame.height == 2
     assert frame["answer"].to_list() == ["apple", "mango"]
 
 
-def test_column_dtypes_are_pinned() -> None:
-    write_results([_row(0, "apple")], _RUN_ID, column_dtypes({}))
+def test_every_result_is_on_disk_before_the_next_one_is_asked_for() -> None:
+    """Persisting per call is the point: what came back survives what follows."""
+    results_file = append_result(_row(0, "apple"), _RUN_ID)
 
-    frame = read_results("*.parquet")
+    assert results_file == results_path(_RUN_ID)
+    assert results_file.read_text(encoding="utf-8").count("\n") == 1
+    assert json.loads(results_file.read_text(encoding="utf-8"))["answer"] == "apple"
+
+
+def test_column_dtypes_are_pinned() -> None:
+    _append([_row(0, "apple")])
+
+    frame = _read()
     assert frame.schema["sample_idx"] == pl.Int64
     assert frame.schema["temperature"] == pl.Float64
     assert frame.schema["raw_json"] == pl.String
@@ -85,17 +101,55 @@ def test_column_dtypes_are_pinned() -> None:
     assert frame.schema["created_at"] == pl.Datetime(time_unit="us", time_zone="UTC")
 
 
+def test_a_timestamp_survives_json_to_the_microsecond() -> None:
+    """JSON has no datetime, so the storage seam encodes and restores both ways."""
+    _append([_row(0, "apple")])
+
+    frame = _read().select(
+        pl.col("provider_created_at").dt.microsecond().alias("micros"),
+        (
+            pl.col("provider_created_at")
+            == datetime(2026, 7, 20, 10, 15, 0, 123456, tzinfo=UTC)
+        ).alias("exact"),
+    )
+    assert frame["micros"].to_list() == [123456]
+    assert frame["exact"].to_list() == [True]
+
+
+def test_a_null_timestamp_stays_null() -> None:
+    _append([{**_row(0, "apple"), "provider_created_at": None}])
+
+    frame = _read()
+    assert frame.schema["provider_created_at"] == pl.Datetime(
+        time_unit="us", time_zone="UTC"
+    )
+    assert frame.select(pl.col("provider_created_at").is_null())["provider_created_at"][
+        0
+    ]
+
+
 def test_declared_dtypes_pin_a_column_that_is_null_in_every_row() -> None:
-    """Declared dtypes keep a parquet schema from varying with one run's data."""
-    row = {**_row(0, "apple"), "ripeness": None}
+    """Declared dtypes keep a frame's schema from varying with one run's data."""
+    _append([{**_row(0, "apple"), "ripeness": None}])
 
-    write_results([row], _RUN_ID, column_dtypes({"ripeness": pl.String()}))
+    frame = read_results("*.jsonl", column_dtypes({"ripeness": pl.String()}))
+    assert frame.schema["ripeness"] == pl.String
 
-    assert read_results("*.parquet").schema["ripeness"] == pl.String
+
+def test_a_half_written_final_line_is_dropped_rather_than_failing_the_read() -> None:
+    """A killed run can cut its last line mid-write; the rest is still every result."""
+    _append([_row(0, "apple"), _row(1, "mango")])
+    results_file = results_path(_RUN_ID)
+    text = results_file.read_text(encoding="utf-8")
+    results_file.write_text(text + '{"question_id": "001a", "lan', encoding="utf-8")
+
+    frame = _read()
+    assert frame.height == 2
+    assert frame["answer"].to_list() == ["apple", "mango"]
 
 
 def test_result_file_is_named_after_its_run() -> None:
-    assert results_path(_RUN_ID).name == f"{_RUN_ID}.parquet"
+    assert results_path(_RUN_ID).name == f"{_RUN_ID}.jsonl"
 
 
 def test_read_results_pools_every_run_of_one_question() -> None:
@@ -106,13 +160,13 @@ def test_read_results_pools_every_run_of_one_question() -> None:
     """
     later = "001a__20260721T101500000Z"
 
-    write_results([_row(0, "apple"), _row(1, "mango")], _RUN_ID, column_dtypes({}))
-    write_results([_row(0, "pear")], later, column_dtypes({}))
+    _append([_row(0, "apple"), _row(1, "mango")])
+    _append([_row(0, "pear")], run_id=later)
 
-    frame = read_results("001a__*.parquet")
+    frame = _read("001a__*.jsonl")
     assert frame.height == 3
     assert frame["answer"].to_list() == ["apple", "mango", "pear"]
 
 
 def test_read_results_is_empty_when_no_files() -> None:
-    assert read_results("*.parquet").is_empty()
+    assert _read().is_empty()

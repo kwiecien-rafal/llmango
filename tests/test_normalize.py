@@ -20,8 +20,7 @@ from llmango.experiments import spec_for
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.experiments.e001_fruit.experiment import FruitNormalization
 from llmango.normalize import normalize_question
-from llmango.rows import column_dtypes
-from llmango.storage import normalized_path, write_results
+from llmango.storage import append_result, normalized_path
 
 _QUESTION = "001a"
 
@@ -68,8 +67,9 @@ def _raw_row(
     }
 
 
-def _write_raw(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
-    write_results(rows, run_id, column_dtypes({}))
+def _write_raw(raw_rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
+    for raw_row in raw_rows:
+        append_result(raw_row, run_id)
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
@@ -85,7 +85,7 @@ def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
 class ExplodingBackend:
     """Backend that fails the test if the LLM layer ever calls it."""
 
-    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
+    def generate(self, request: GenRequest) -> GenResult:
         raise AssertionError("the LLM layer should not have been called")
 
 
@@ -96,10 +96,7 @@ class StubBackend:
         self._result = result
         self.calls = 0
 
-    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
-        return [self._generate(request) for request in requests]
-
-    def _generate(self, request: GenRequest) -> GenResult:
+    def generate(self, request: GenRequest) -> GenResult:
         self.calls += 1
         return GenResult(
             request=request,
@@ -120,10 +117,23 @@ class FlakyBackend(StubBackend):
         super().__init__(result)
         self._failing = failing
 
-    def _generate(self, request: GenRequest) -> GenResult:
+    def generate(self, request: GenRequest) -> GenResult:
         if self._failing in request.prompt:
             return GenResult.failed(request, "rate limited", datetime.now(UTC))
-        return super()._generate(request)
+        return super().generate(request)
+
+
+class CrashingBackend(StubBackend):
+    """Backend that answers until a given answer, which dies the way a network does."""
+
+    def __init__(self, result: FruitNormalization, dies_on: str) -> None:
+        super().__init__(result)
+        self._dies_on = dies_on
+
+    def generate(self, request: GenRequest) -> GenResult:
+        if self._dies_on in request.prompt:
+            raise RuntimeError("connection dropped")
+        return super().generate(request)
 
 
 def test_fruit_labels_resolve_offline_and_dedupe(data_dirs: Path) -> None:
@@ -288,6 +298,21 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(
     stored = _stored()
     assert "starfruit" in stored
     assert "durian" not in stored
+
+
+def test_a_crash_mid_batch_keeps_what_was_already_paid_for(data_dirs: Path) -> None:
+    """Each verdict is promoted as it lands, so a crash costs the call in flight."""
+    result = FruitNormalization(canonical="other", is_valid=True)
+    backend = CrashingBackend(result, dies_on="durian")
+    _write_raw([_raw_row("en", "apricot"), _raw_row("en", "durian", sample_idx=1)])
+
+    with pytest.raises(RuntimeError, match="connection dropped"):
+        normalize_question(_QUESTION, backend=backend)
+
+    stored = _stored()
+    assert stored["apricot"] == "other"
+    assert "durian" not in stored
+    assert not normalized_path(_QUESTION).is_file()
 
 
 def test_punctuation_and_whitespace_resolve_offline(data_dirs: Path) -> None:

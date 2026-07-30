@@ -77,7 +77,7 @@ class ArmRecord(BaseModel):
 
 
 class Manifest(BaseModel):
-    """One finished run's exact configuration, environment and usage, written once."""
+    """One run's configuration, environment and usage."""
 
     run_id: str
     question_id: str
@@ -86,6 +86,7 @@ class Manifest(BaseModel):
     temperature: float
     samples_total: int
     samples_per_arm: int
+    samples_written: int = 0
     arms: list[ArmRecord]
     inputs: InputDeclarations = Field(default_factory=dict)
     input_sha256: dict[str, str] = Field(default_factory=dict)
@@ -107,9 +108,11 @@ def manifest_path(run_id: str) -> Path:
 
 
 def write_manifest(manifest: Manifest) -> Path:
-    """Write a manifest to runs/<run_id>.json."""
+    """Restate a manifest at runs/<run_id>.json, never leaving it half-written."""
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path = manifest_path(manifest.run_id)
-    path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    manifest_file = manifest_path(manifest.run_id)
+    partial = manifest_file.with_suffix(".partial")
+    partial.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    partial.replace(manifest_file)
 
-    return path
+    return manifest_file

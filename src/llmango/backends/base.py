@@ -71,9 +71,9 @@ class GenResult:
 
 
 class Backend(Protocol):
-    """One provider, turning a run's requests into results."""
+    """One provider, turning one request at a time into a result."""
 
     @abstractmethod
-    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
-        """Turn many requests into validated results, one per request in order."""
+    def generate(self, request: GenRequest) -> GenResult:
+        """Turn one request into a validated result."""
         ...

@@ -25,7 +25,6 @@ FakeClientFactory = Callable[..., FakeClient]
 
 
 _EN_PROMPT = "Pick one random fruit (en)"
-_PL_PROMPT = "Pick one random fruit (pl)"
 
 
 def _request(prompt: str = _EN_PROMPT) -> GenRequest:
@@ -72,20 +71,6 @@ def test_generate_parses_the_structured_response(
     assert result.refusal is None
     assert result.error is None
     assert isinstance(result.created_at, datetime)
-
-
-def test_generate_many_answers_every_request_in_order(
-    make_openai_client: FakeClientFactory,
-) -> None:
-    parsed = FruitChoice(fruit="mango")
-    client = make_openai_client(parsed=parsed, content=parsed.model_dump_json())
-    backend = OpenAIBackend(client=cast(OpenAI, client))
-
-    requests = [_request(), _request(_PL_PROMPT)]
-    results = backend.generate_many(requests)
-
-    assert [result.request for result in results] == requests
-    assert len(client.calls) == 2
 
 
 def test_generate_captures_provenance_and_usage(

@@ -13,6 +13,7 @@ from llmango.backends.base import Backend, GenRequest
 from llmango.config import NORMALIZE_MODEL, NORMALIZE_PROVIDER, get_experiment_dir
 from llmango.experiments import spec_for
 from llmango.pricing import guard_cost
+from llmango.rows import column_dtypes
 from llmango.spec import ExperimentSpec, NormalizationMap, canonical_values
 from llmango.storage import read_results, write_normalized
 
@@ -55,7 +56,9 @@ def normalize_question(
     if schema is None:
         raise ValueError(f"Experiment {spec.folder} has no normalization schema.")
 
-    frame = read_results(f"{question_id}__*.parquet")
+    frame = read_results(
+        f"{question_id}__*.jsonl", column_dtypes(spec.extra_raw_dtypes)
+    )
     if frame.is_empty():
         raise FileNotFoundError(
             f"No data for question {question_id} to normalize. "
@@ -85,7 +88,6 @@ def normalize_question(
     if unresolved:
         guard_cost(len(unresolved), force)
         resolved = _resolve_online(unresolved, spec, schema, backend)
-        _promote(resolved, spec)
         resolutions.update(resolved)
         _require_all_resolved(unresolved, resolutions)
 
@@ -134,25 +136,27 @@ def _resolve_online(
     schema: type[BaseModel],
     backend: Backend | None,
 ) -> dict[tuple[str, str], Resolution]:
-    """Ask the LLM for what no offline layer resolved, keeping what parses."""
+    """Ask the LLM for what no offline layer resolved, storing each as it lands."""
     prompt_template = _load_prompt(spec.folder)
     backend = backend or backend_for(NORMALIZE_PROVIDER)
-    requests = [
-        GenRequest(
-            model=NORMALIZE_MODEL,
-            prompt=prompt_template.replace("{lang}", lang).replace("{raw}", answer),
-            response_schema=schema,
-            temperature=0.0,
-        )
-        for lang, answer in unresolved
-    ]
-    results = backend.generate_many(requests)
 
     resolved: dict[tuple[str, str], Resolution] = {}
-    for (lang, answer), result in zip(unresolved, results, strict=True):
+    for lang, answer in unresolved:
+        result = backend.generate(
+            GenRequest(
+                model=NORMALIZE_MODEL,
+                prompt=prompt_template.replace("{lang}", lang).replace("{raw}", answer),
+                response_schema=schema,
+                temperature=0.0,
+            )
+        )
         if result.parsed is None:
             continue
-        resolved[(lang, answer)] = _verdict(result.parsed)
+
+        resolution = _verdict(result.parsed)
+        _promote(answer, resolution, spec)
+        resolved[(lang, answer)] = resolution
+
     return resolved
 
 
@@ -166,19 +170,14 @@ def _verdict(parsed: BaseModel) -> Resolution:
     return Resolution(canonical=None, is_valid=False)
 
 
-def _promote(resolved: dict[tuple[str, str], Resolution], spec: ExperimentSpec) -> None:
+def _promote(answer: str, resolution: Resolution, spec: ExperimentSpec) -> None:
     """Store what was just paid for, keyed as the next run will look it up."""
     promote = spec.promote_normalizations
 
-    if promote is None or not resolved:
+    if promote is None:
         return
 
-    promote(
-        {
-            _preprocess(answer, spec): resolution.canonical
-            for (_, answer), resolution in resolved.items()
-        }
-    )
+    promote({_preprocess(answer, spec): resolution.canonical})
 
 
 def _require_all_resolved(

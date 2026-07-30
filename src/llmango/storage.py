@@ -1,6 +1,9 @@
-"""Parquet storage: where a run's results land, and how they are read back."""
+"""Result storage: raw appended a call at a time, normalized written whole."""
 
+import io
+import json
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -9,30 +12,38 @@ from llmango.config import NORMALIZED_DIR, RAW_DIR
 
 
 def results_path(run_id: str) -> Path:
-    """Return the Parquet path for one run."""
-    return RAW_DIR / f"{run_id}.parquet"
+    """Return the JSONL path one run appends its results to."""
+    return RAW_DIR / f"{run_id}.jsonl"
 
 
-def write_results(
-    raw_rows: list[dict[str, object]],
-    run_id: str,
-    dtypes: Mapping[str, pl.DataType],
-) -> Path:
-    """Write one run's rows to a single Parquet file under the declared dtypes."""
+def append_result(raw_row: dict[str, object], run_id: str) -> Path:
+    """Append one result to its run's JSONL, closed so a kill keeps what came back."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    path = results_path(run_id)
-    pl.DataFrame(raw_rows, schema_overrides=dtypes).write_parquet(path)
+    results_file = results_path(run_id)
+    with results_file.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(raw_row, ensure_ascii=False, default=_json_default) + "\n"
+        )
 
-    return path
+    return results_file
 
 
-def read_results(pattern: str = "*.parquet") -> pl.DataFrame:
-    """Read and concatenate raw result files matching a glob under data/raw/."""
-    paths = sorted(RAW_DIR.glob(pattern))
-    if not paths:
+def read_results(pattern: str, dtypes: Mapping[str, pl.DataType]) -> pl.DataFrame:
+    """Read the raw files matching a glob under data/raw/, back under their dtypes."""
+    results_files = sorted(RAW_DIR.glob(pattern))
+    if not results_files:
         return pl.DataFrame()
 
-    return pl.concat(pl.read_parquet(path) for path in paths)
+    frame = pl.concat(
+        pl.read_ndjson(_complete_lines(results_file), schema=_text_timestamps(dtypes))
+        for results_file in results_files
+    )
+
+    return frame.with_columns(
+        pl.col(_timestamp_columns(dtypes)).str.to_datetime(
+            time_unit="us", time_zone="UTC"
+        )
+    )
 
 
 def normalized_path(question_id: str) -> Path:
@@ -41,9 +52,39 @@ def normalized_path(question_id: str) -> Path:
 
 
 def write_normalized(frame: pl.DataFrame, question_id: str) -> Path:
-    """Write a question's normalized frame to a single Parquet file and return it."""
+    """Write a question's normalized frame whole, so what it publishes is complete."""
     NORMALIZED_DIR.mkdir(parents=True, exist_ok=True)
-    path = normalized_path(question_id)
-    frame.write_parquet(path)
+    normalized_file = normalized_path(question_id)
+    partial = normalized_file.with_suffix(".partial")
+    frame.write_parquet(partial)
+    partial.replace(normalized_file)
 
-    return path
+    return normalized_file
+
+
+def _json_default(value: object) -> str:
+    """Encode what JSON carries no type for, which is every timestamp column."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    raise TypeError(f"A raw row holds no {type(value).__name__}.")
+
+
+def _text_timestamps(dtypes: Mapping[str, pl.DataType]) -> dict[str, pl.DataType]:
+    """The declared dtypes as JSON holds them, every timestamp a string."""
+    return {
+        name: pl.String() if isinstance(dtype, pl.Datetime) else dtype
+        for name, dtype in dtypes.items()
+    }
+
+
+def _timestamp_columns(dtypes: Mapping[str, pl.DataType]) -> list[str]:
+    """The columns read back as text, which the declared dtypes make datetimes."""
+    return [name for name, dtype in dtypes.items() if isinstance(dtype, pl.Datetime)]
+
+
+def _complete_lines(results_file: Path) -> io.StringIO:
+    """Drop the final line a killed run left half-written, which no reader can parse."""
+    text = results_file.read_text(encoding="utf-8")
+
+    return io.StringIO(text[: text.rfind("\n") + 1])

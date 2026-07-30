@@ -83,70 +83,22 @@ def column_dtypes(extra: ExtraRawDtypes) -> dict[str, pl.DataType]:
     return {**LEADING_COLUMNS, **TRAILING_COLUMNS, **extra}
 
 
-def cost_samples(
-    samples: list[Sample], gen_results: list[GenResult], pricing: PricingEntry | None
-) -> list[CostedSample]:
-    """Pair each sample with the result it came back as, costing every one once."""
-    return [
-        CostedSample(sample, gen_result, _cost(gen_result.usage, pricing))
-        for sample, gen_result in zip(samples, gen_results, strict=True)
-    ]
+def cost_sample(
+    sample: Sample, gen_result: GenResult, pricing: PricingEntry | None
+) -> CostedSample:
+    """Pair one sample with the result it came back as, costing it once."""
+    return CostedSample(sample, gen_result, _cost(gen_result.usage, pricing))
 
 
-def build_rows(
-    costed_samples: list[CostedSample], manifest: Manifest, spec: ExperimentSpec
-) -> list[dict[str, object]]:
-    """Turn every costed sample into the row the raw parquet stores it as."""
-    response_schemas = {
+def schema_columns(manifest: Manifest) -> dict[str | None, str | None]:
+    """Serialize each arm's response schema once, for every row that arm writes."""
+    return {
         record.schema_name: _schema_column(record.response_schema)
         for record in manifest.arms
     }
 
-    return [
-        _row(costed_sample, manifest, spec, response_schemas)
-        for costed_sample in costed_samples
-    ]
 
-
-def usage_totals(costed_samples: list[CostedSample]) -> UsageTotals:
-    """Sum a run's costed samples into their token and cost totals."""
-    gen_results = [costed_sample.result for costed_sample in costed_samples]
-    usages = [
-        gen_result.usage for gen_result in gen_results if gen_result.usage is not None
-    ]
-    costs = [
-        costed_sample.cost
-        for costed_sample in costed_samples
-        if costed_sample.cost is not None
-    ]
-
-    return UsageTotals(
-        errors=sum(gen_result.error is not None for gen_result in gen_results),
-        provider_refusals=sum(
-            gen_result.refusal is not None for gen_result in gen_results
-        ),
-        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
-        completion_tokens=sum(usage.completion_tokens for usage in usages),
-        total_tokens=sum(usage.total_tokens for usage in usages),
-        cached_tokens=sum(usage.cached_tokens for usage in usages),
-        reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
-        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in costs)),
-        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in costs)),
-        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in costs)),
-    )
-
-
-def usage_by_arm(costed_samples: list[CostedSample]) -> dict[ArmKey, UsageTotals]:
-    """Total what each arm of a run used, in one pass over its costed samples."""
-    grouped: dict[ArmKey, list[CostedSample]] = defaultdict(list)
-
-    for costed_sample in costed_samples:
-        grouped[costed_sample.sample.arm.key].append(costed_sample)
-
-    return {key: usage_totals(group) for key, group in grouped.items()}
-
-
-def _row(
+def build_row(
     costed_sample: CostedSample,
     manifest: Manifest,
     spec: ExperimentSpec,
@@ -189,6 +141,44 @@ def _row(
         **_cost_columns(costed_sample.cost, manifest.pricing),
         "created_at": gen_result.created_at,
     }
+
+
+def usage_totals(costed_samples: list[CostedSample]) -> UsageTotals:
+    """Sum a run's costed samples into their token and cost totals."""
+    gen_results = [costed_sample.result for costed_sample in costed_samples]
+    usages = [
+        gen_result.usage for gen_result in gen_results if gen_result.usage is not None
+    ]
+    costs = [
+        costed_sample.cost
+        for costed_sample in costed_samples
+        if costed_sample.cost is not None
+    ]
+
+    return UsageTotals(
+        errors=sum(gen_result.error is not None for gen_result in gen_results),
+        provider_refusals=sum(
+            gen_result.refusal is not None for gen_result in gen_results
+        ),
+        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
+        completion_tokens=sum(usage.completion_tokens for usage in usages),
+        total_tokens=sum(usage.total_tokens for usage in usages),
+        cached_tokens=sum(usage.cached_tokens for usage in usages),
+        reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
+        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in costs)),
+        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in costs)),
+        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in costs)),
+    )
+
+
+def usage_by_arm(costed_samples: list[CostedSample]) -> dict[ArmKey, UsageTotals]:
+    """Total what each arm of a run used, in one pass over its costed samples."""
+    grouped: dict[ArmKey, list[CostedSample]] = defaultdict(list)
+
+    for costed_sample in costed_samples:
+        grouped[costed_sample.sample.arm.key].append(costed_sample)
+
+    return {key: usage_totals(group) for key, group in grouped.items()}
 
 
 def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:

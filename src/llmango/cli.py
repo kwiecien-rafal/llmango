@@ -48,7 +48,7 @@ def run(
         bool, typer.Option("--force", help="Allow a large paid run.")
     ] = False,
 ) -> None:
-    """Run question across language-schema arms and persist raw results to Parquet."""
+    """Run question across language-schema arms, appending each result as it lands."""
     from llmango import runner
 
     planned = runner.plan(question, samples_per_arm=samples)
@@ -123,10 +123,17 @@ def _report_plan(plan: "RunPlan") -> None:
 
 def _report_outcome(outcome: "RunOutcome") -> None:
     """Report what a run wrote, what it used and where both landed."""
-    usage = outcome.manifest.usage
-    typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
+    manifest = outcome.manifest
+    usage = manifest.usage
+    if outcome.finished:
+        typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
+    else:
+        typer.echo(
+            f"Run {outcome.run_id}: stopped after {manifest.samples_written} of "
+            f"{manifest.samples_total} rows. Rerun to add the rest."
+        )
     typer.echo(f"Usage:    {usage.total_tokens} tokens, ${usage.total_cost_usd:.6f}")
-    typer.echo(f"Parquet:  {outcome.parquet_path}")
+    typer.echo(f"Results:  {outcome.results_path}")
     typer.echo(f"Manifest: {outcome.manifest_path}")
 
 

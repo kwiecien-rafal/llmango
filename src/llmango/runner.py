@@ -17,13 +17,14 @@ from llmango.manifest import (
     Manifest,
     UsageTotals,
     build_run_id,
+    manifest_path,
     write_manifest,
 )
 from llmango.pricing import PricingEntry, guard_run, load_pricing
 from llmango.questions import Arm, PromptTemplate, Question, load_question
 from llmango.rows import CostedSample, Sample
 from llmango.spec import schema_name
-from llmango.storage import write_results
+from llmango.storage import append_result, results_path
 
 
 @dataclass(frozen=True)
@@ -59,14 +60,23 @@ class RunOutcome:
     """What a run wrote, and where it wrote it."""
 
     manifest: Manifest
-    rows_written: int
-    parquet_path: Path
+    results_path: Path
     manifest_path: Path
 
     @property
     def run_id(self) -> str:
         """The id naming this run's files."""
         return self.manifest.run_id
+
+    @property
+    def rows_written(self) -> int:
+        """How many results reached disk, which a run that died leaves short."""
+        return self.manifest.samples_written
+
+    @property
+    def finished(self) -> bool:
+        """Whether every call the run planned came back and was persisted."""
+        return self.manifest.samples_written == self.manifest.samples_total
 
 
 def plan(question_id: str, *, samples_per_arm: int = 1) -> RunPlan:
@@ -83,7 +93,7 @@ def plan(question_id: str, *, samples_per_arm: int = 1) -> RunPlan:
 def run(
     plan: RunPlan, backend: Backend | None = None, *, force: bool = False
 ) -> RunOutcome:
-    """Execute a planned run and persist its results and manifest."""
+    """Execute a planned run, persisting each result before the next call goes out."""
     question = plan.question
     spec = question.spec
     price = guard_run(question.model, plan.price, plan.samples_total, force)
@@ -91,33 +101,36 @@ def run(
 
     created_at = datetime.now(UTC)
     run_id = build_run_id(question.question_id, created_at)
+    manifest = _open_manifest(plan, run_id, created_at, price)
+    write_manifest(manifest)
+    schemas = rows.schema_columns(manifest)
 
-    gen_results = backend.generate_many(plan.requests)
-
-    costed_samples = rows.cost_samples(plan.samples, gen_results, price)
-    manifest = _manifest(plan, run_id, created_at, price, costed_samples)
-    raw_rows = rows.build_rows(costed_samples, manifest, spec)
+    costed_samples: list[CostedSample] = []
+    try:
+        for sample, request in zip(plan.samples, plan.requests, strict=True):
+            costed_samples.append(
+                rows.cost_sample(sample, backend.generate(request), price)
+            )
+            append_result(
+                rows.build_row(costed_samples[-1], manifest, spec, schemas), run_id
+            )
+            manifest = _with_usage(manifest, costed_samples)
+            write_manifest(manifest)
+    except KeyboardInterrupt:
+        pass
 
     return RunOutcome(
         manifest=manifest,
-        rows_written=len(raw_rows),
-        parquet_path=write_results(
-            raw_rows, run_id, rows.column_dtypes(spec.extra_raw_dtypes)
-        ),
-        manifest_path=write_manifest(manifest),
+        results_path=results_path(run_id),
+        manifest_path=manifest_path(run_id),
     )
 
 
-def _manifest(
-    plan: RunPlan,
-    run_id: str,
-    created_at: datetime,
-    price: PricingEntry,
-    costed_samples: list[CostedSample],
+def _open_manifest(
+    plan: RunPlan, run_id: str, created_at: datetime, price: PricingEntry
 ) -> Manifest:
-    """Record what a run was, once it is known what every arm of it used."""
+    """Record what a run is about to do, before its first call is paid for."""
     question = plan.question
-    by_arm = rows.usage_by_arm(costed_samples)
 
     return Manifest(
         run_id=run_id,
@@ -128,25 +141,40 @@ def _manifest(
         samples_total=plan.samples_total,
         samples_per_arm=plan.samples_per_arm,
         arms=[
-            _arm_record(arm, question.prompt_templates[arm.lang], by_arm[arm.key])
+            _arm_record(arm, question.prompt_templates[arm.lang])
             for arm in question.arms
         ],
         inputs=question.inputs,
         input_sha256=question.input_sha256,
         pricing=price,
-        usage=rows.usage_totals(costed_samples),
+        usage=UsageTotals(),
         created_at=created_at,
     )
 
 
-def _arm_record(arm: Arm, template: PromptTemplate, usage: UsageTotals) -> ArmRecord:
-    """Record one arm as the manifest pins it: what it asked, and what it used."""
+def _with_usage(manifest: Manifest, costed_samples: list[CostedSample]) -> Manifest:
+    """Restate a manifest from everything that has come back so far."""
+    by_arm = rows.usage_by_arm(costed_samples)
+
+    return manifest.model_copy(
+        update={
+            "samples_written": len(costed_samples),
+            "arms": [
+                arm.model_copy(update={"usage": by_arm.get(arm.key)})
+                for arm in manifest.arms
+            ],
+            "usage": rows.usage_totals(costed_samples),
+        }
+    )
+
+
+def _arm_record(arm: Arm, template: PromptTemplate) -> ArmRecord:
+    """Record one arm as the manifest pins it, before it has used anything."""
     return ArmRecord(
         lang=arm.lang,
         schema_name=schema_name(arm.schema),
         response_schema=_schema_json(arm.schema),
         template_sha256=template.sha256,
-        usage=usage,
     )
 
 

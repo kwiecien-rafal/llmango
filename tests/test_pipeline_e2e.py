@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from llmango.aggregate import aggregate_question
@@ -11,8 +12,9 @@ from llmango.analyze import analyze_question
 from llmango.backends.base import Backend
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.normalize import normalize_question
+from llmango.rows import column_dtypes
 from llmango.runner import plan, run
-from llmango.storage import read_results
+from llmango.storage import normalized_path, read_results
 
 _QUESTION = "001a"
 _FOLDER = "e001_fruit"
@@ -45,7 +47,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     run_outcome = run(planned, backend)
     assert run_outcome.rows_written == 12
 
-    raw = read_results("*.parquet")
+    raw = read_results("*.jsonl", column_dtypes({}))
     assert raw.height == 12
     assert all(rid == "chatcmpl-fake" for rid in raw["response_id"].to_list())
     assert all(
@@ -56,6 +58,11 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     assert normalize_outcome.rows == 12
     assert normalize_outcome.distinct == 10
     assert normalize_outcome.llm_calls == 0
+
+    normalized = pl.read_parquet(normalized_path(_QUESTION))
+    timestamp = pl.Datetime(time_unit="us", time_zone="UTC")
+    assert normalized.schema["created_at"] == timestamp
+    assert normalized.schema["provider_created_at"] == timestamp
 
     aggregate_question(_QUESTION)
 

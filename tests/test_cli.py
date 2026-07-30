@@ -1,16 +1,48 @@
-"""Tests for the CLI surface: cost guardrails, dry-run plan and normalize report."""
+"""Tests for the CLI surface: cost guardrails, dry-run plan and stage reports."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from llmango.cli import _report_normalize, app
+from llmango.cli import _report_normalize, _report_outcome, app
+from llmango.manifest import Manifest, UsageTotals
 from llmango.normalize import NormalizeOutcome
+from llmango.pricing import PricingEntry
 from llmango.questions import load_question
+from llmango.runner import RunOutcome
 from llmango.spec import FREE_TEXT
 
 runner = CliRunner()
+
+_RUN_ID = "001a__20260720T101500000Z"
+
+
+def _outcome(samples_written: int, tmp_path: Path) -> RunOutcome:
+    """One run's outcome, as a run of six samples that got that far would report."""
+    manifest = Manifest(
+        run_id=_RUN_ID,
+        question_id="001a",
+        provider="openai",
+        model="gpt-5.6-luna",
+        temperature=1.0,
+        samples_total=6,
+        samples_per_arm=2,
+        samples_written=samples_written,
+        arms=[],
+        pricing=PricingEntry(
+            input=0.05, cached_input=0.005, output=0.4, last_updated="2026-07-24"
+        ),
+        usage=UsageTotals(),
+        created_at=datetime(2026, 7, 20, tzinfo=UTC),
+    )
+
+    return RunOutcome(
+        manifest=manifest,
+        results_path=tmp_path / f"{_RUN_ID}.jsonl",
+        manifest_path=tmp_path / f"{_RUN_ID}.json",
+    )
 
 
 def test_large_run_is_refused_without_force() -> None:
@@ -60,6 +92,27 @@ def test_normalize_names_the_questions_that_exist(data_dirs: Path) -> None:
 
     assert "Unknown question: '001'" in result.output
     assert "001a, 001b, 001c, 001d" in result.output
+
+
+def test_report_outcome_reports_a_finished_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _report_outcome(_outcome(6, tmp_path))
+
+    out = capsys.readouterr().out
+    assert f"Run {_RUN_ID}: wrote 6 rows." in out
+    assert f"Results:  {tmp_path / f'{_RUN_ID}.jsonl'}" in out
+
+
+def test_report_outcome_says_when_a_run_stopped_short(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A partial run is more samples short, not a failure, so it says how to finish."""
+    _report_outcome(_outcome(3, tmp_path))
+
+    out = capsys.readouterr().out
+    assert "stopped after 3 of 6 rows" in out
+    assert "Rerun to add the rest." in out
 
 
 def test_report_normalize_omits_parquet_on_dry_run(

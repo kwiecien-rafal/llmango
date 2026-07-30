@@ -24,6 +24,13 @@ venv/
 data/raw/*
 !data/raw/.gitkeep
 
+# Normalized results, pushed to HuggingFace rather than committed
+data/normalized/*
+!data/normalized/.gitkeep
+
+# Manifests being restated mid-run
+runs/*.partial
+
 # The drawn charts under site/public/charts/ are the site's source of truth and
 # are committed. Only the site's build output and tooling are ignored.
 site/dist/

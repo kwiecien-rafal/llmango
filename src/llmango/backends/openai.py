@@ -134,6 +134,3 @@ class OpenAIBackend(Backend):
             response_envelope=response_envelope,
             usage=_usage_from_sdk(completion.usage),
         )
-
-    def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
-        return [self.generate(request) for request in requests]
