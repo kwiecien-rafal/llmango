@@ -27,6 +27,6 @@ def test_sha256_text_is_deterministic() -> None:
 
 
 def test_prompt_tree_helpers_nest_a_question_under_its_experiment() -> None:
-    experiment = config.experiment_dir("e001_fruit")
+    experiment = config.get_experiment_dir("e001_fruit")
     assert experiment == config.PROMPTS_DIR / "e001_fruit"
-    assert config.question_dir("e001_fruit", "001a") == experiment / "001a"
+    assert config.get_question_dir("e001_fruit", "001a") == experiment / "001a"

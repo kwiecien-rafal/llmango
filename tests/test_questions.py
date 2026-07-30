@@ -1,4 +1,4 @@
-"""Tests for experiment and question config loading."""
+"""Tests for question config and prompt template loading."""
 
 from dataclasses import replace
 
@@ -6,15 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from llmango import questions as questions_module
-from llmango.config import question_dir
+from llmango.config import get_question_dir
 from llmango.experiments.e001_fruit.experiment import FRUIT, FruitChoice, WyborOwocu
 from llmango.questions import (
     LanguageAsk,
     QuestionConfig,
     _resolve_arms,
-    load_experiment_config,
+    load_prompt_template,
     load_question,
-    load_template,
 )
 
 FOLDER = "e001_fruit"
@@ -26,12 +25,6 @@ def _ask(**schemas_by_language: list[str | None]) -> list[LanguageAsk]:
         LanguageAsk(language=language, schemas=schemas)
         for language, schemas in schemas_by_language.items()
     ]
-
-
-def test_load_experiment_config_reads_the_manifest() -> None:
-    config = load_experiment_config(FOLDER)
-    assert config.normalize_provider == "openai"
-    assert config.normalize_model == "gpt-5.4-mini"
 
 
 def test_a_question_declares_who_answers_it() -> None:
@@ -68,7 +61,7 @@ def test_a_question_loads_its_inputs_and_hashes_them() -> None:
     """The question owns the data behind its inputs, so it can hash and build them."""
     question = load_question("001a")
 
-    source = question.sources["fruit_list"]
+    source = question.input_sources["fruit_list"]
     assert source.data is not None
     assert question.input_sha256 == {"fruit_list": source.sha256}
 
@@ -140,7 +133,7 @@ def test_a_language_declared_twice_raises() -> None:
 def test_every_declared_language_has_a_template() -> None:
     question = load_question("001a")
     for lang in question.languages:
-        template = load_template(question_dir(FOLDER, "001a"), lang)
+        template = load_prompt_template(get_question_dir(FOLDER, "001a"), lang)
         assert template.lang == lang
         assert "{fruit_list}" in template.text
 
@@ -164,4 +157,4 @@ def test_load_question_unknown_raises() -> None:
 
 def test_load_template_missing_language_raises() -> None:
     with pytest.raises(FileNotFoundError):
-        load_template(question_dir(FOLDER, "001a"), "xx")
+        load_prompt_template(get_question_dir(FOLDER, "001a"), "xx")

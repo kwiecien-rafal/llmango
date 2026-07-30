@@ -1,4 +1,4 @@
-"""Experiment and question config, and the prompt templates they name."""
+"""Question config, and the prompt templates and inputs a question names."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,17 +19,7 @@ from llmango.inputs import (
 )
 from llmango.spec import FREE_TEXT, ArmKey, ExperimentSpec, schema_name
 
-_EXPERIMENT_FILE = "experiment.yaml"
 _QUESTION_FILE = "question.yaml"
-
-
-class ExperimentConfig(BaseModel):
-    """Parsed contents of an experiment's experiment.yaml manifest."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    normalize_provider: str = "openai"
-    normalize_model: str
 
 
 class LanguageAsk(BaseModel):
@@ -148,15 +138,6 @@ class Question:
             )
             for name, declaration in self.inputs.items()
         }
-
-
-def load_experiment_config(folder: str) -> ExperimentConfig:
-    """Load and validate an experiment's experiment.yaml manifest."""
-    experiment_yaml_file = get_experiment_dir(folder) / _EXPERIMENT_FILE
-    if not experiment_yaml_file.is_file():
-        raise FileNotFoundError(f"Missing experiment manifest: {experiment_yaml_file}")
-    data = yaml.safe_load(experiment_yaml_file.read_text(encoding="utf-8"))
-    return ExperimentConfig.model_validate(data)
 
 
 def load_question(question_id: str) -> Question:

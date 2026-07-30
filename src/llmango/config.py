@@ -1,4 +1,4 @@
-"""Repo-root-anchored paths and content hashing. No secrets: those are a backend's."""
+"""Repo-root-anchored paths, pipeline settings and content hashing."""
 
 import hashlib
 from pathlib import Path
@@ -14,6 +14,9 @@ RUNS_DIR = REPO_ROOT / "runs"
 SITE_DIR = REPO_ROOT / "site"
 CHARTS_DIR = SITE_DIR / "public" / "charts"
 PRICING_FILE = DATA_DIR / "pricing.json"
+
+NORMALIZE_PROVIDER = "openai"
+NORMALIZE_MODEL = "gpt-5.4-mini"
 
 
 def sha256_text(text: str) -> str:

@@ -10,10 +10,9 @@ from pydantic import BaseModel, ConfigDict
 
 from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
-from llmango.config import get_experiment_dir
+from llmango.config import NORMALIZE_MODEL, NORMALIZE_PROVIDER, get_experiment_dir
 from llmango.experiments import spec_for
 from llmango.pricing import guard_cost
-from llmango.questions import load_experiment_config
 from llmango.spec import ExperimentSpec, NormalizationMap, canonical_values
 from llmango.storage import read_results, write_normalized
 
@@ -133,12 +132,11 @@ def _resolve_online(
     backend: Backend | None,
 ) -> dict[tuple[str, str], Resolution]:
     """Ask the LLM for what no offline layer resolved, keeping what parses."""
-    config = load_experiment_config(spec.folder)
     template = _load_prompt(spec.folder)
-    backend = backend or backend_for(config.normalize_provider)
+    backend = backend or backend_for(NORMALIZE_PROVIDER)
     requests = [
         GenRequest(
-            model=config.normalize_model,
+            model=NORMALIZE_MODEL,
             prompt=template.replace("{lang}", lang).replace("{raw}", answer),
             response_schema=schema,
             temperature=0.0,

@@ -1,7 +1,7 @@
 """Tests for the normalization pipeline: layers, dedupe, promotion and edge rules.
 
-These run against the real e001_fruit prompt tree (fruit_list.yaml, experiment.yaml,
-normalize.md); the output paths and the map normalize writes are redirected into
+These run against the real e001_fruit prompt tree (fruit_list.yaml, normalize.md);
+the output paths and the map normalize writes are redirected into
 tmp_path. The experiment's fruit labels resolve every in-list answer offline, so
 only off-list strings reach the LLM layer.
 """
@@ -24,7 +24,6 @@ from llmango.rows import dtypes
 from llmango.storage import normalized_path, write_results
 
 _QUESTION = "001a"
-_FOLDER = "e001_fruit"
 
 
 def _map_path() -> Path:
