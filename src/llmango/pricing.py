@@ -1,11 +1,13 @@
 """Pricing reference for costing one generation, and the guard on how many to make."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import BaseModel
 
 from llmango.backends.base import Usage
-from llmango.config import PRICING_FILE
+
+PRICING_FILE = Path(__file__).with_name("pricing.json")
 
 COST_GUARD_CALLS = 100
 
@@ -53,7 +55,7 @@ def guard_run(
     """Refuse a run that is unpriced or too large, and return the price it will use."""
     if price is None:
         raise ValueError(
-            f"No price for model '{model}'. Add it to data/pricing.json, prices "
+            f"No price for model '{model}'. Add it to {PRICING_FILE.name}, prices "
             f"per 1M tokens, before generating."
         )
     guard_cost(calls, force)
@@ -62,11 +64,11 @@ def guard_run(
 
 
 def load_pricing() -> PricingTable:
-    """Load and validate the pricing reference from data/pricing.json."""
+    """Load and validate the pricing reference that ships beside this module."""
     if not PRICING_FILE.is_file():
         raise FileNotFoundError(
-            f"No pricing file at {PRICING_FILE}. Create data/pricing.json with the "
-            f"models you plan to run, prices per 1M tokens, before generating."
+            f"No pricing file at {PRICING_FILE}. Create it with the models you plan "
+            f"to run, prices per 1M tokens, before generating."
         )
 
     return PricingTable.model_validate_json(PRICING_FILE.read_text(encoding="utf-8"))

@@ -13,10 +13,9 @@ AGG_DIR = DATA_DIR / "aggregated"
 RUNS_DIR = REPO_ROOT / "runs"
 SITE_DIR = REPO_ROOT / "site"
 CHARTS_DIR = SITE_DIR / "public" / "charts"
-PRICING_FILE = DATA_DIR / "pricing.json"
 
 NORMALIZE_PROVIDER = "openai"
-NORMALIZE_MODEL = "gpt-5.4-mini"
+NORMALIZE_MODEL = "gpt-5.6-luna"
 
 
 def sha256_text(text: str) -> str:
