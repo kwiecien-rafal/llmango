@@ -19,7 +19,7 @@ def results_path(run_id: str, model: str) -> Path:
 
 
 def write_results(
-    rows: list[dict[str, object]],
+    raw_rows: list[dict[str, object]],
     run_id: str,
     model: str,
     dtypes: Mapping[str, pl.DataType],
@@ -27,7 +27,7 @@ def write_results(
     """Write one run's rows to a single Parquet file under the declared dtypes."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     path = results_path(run_id, model)
-    pl.DataFrame(rows, schema_overrides=dtypes).write_parquet(path)
+    pl.DataFrame(raw_rows, schema_overrides=dtypes).write_parquet(path)
     return path
 
 

@@ -129,5 +129,5 @@ def test_load_pricing_raises_when_missing(
 
 
 def test_committed_pricing_file_includes_the_generation_model() -> None:
-    table = load_pricing()
-    assert "gpt-5.6-luna" in table.models
+    pricing_table = load_pricing()
+    assert "gpt-5.6-luna" in pricing_table.models

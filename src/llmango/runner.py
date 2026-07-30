@@ -96,12 +96,12 @@ def run(
 
     costed_samples = rows.cost_samples(plan.samples, gen_results, price)
     manifest = _manifest(plan, run_id, created_at, price, costed_samples)
-    table = rows.build_rows(costed_samples, manifest, spec)
+    raw_rows = rows.build_rows(costed_samples, manifest, spec)
     return RunOutcome(
         manifest=manifest,
-        rows_written=len(table),
+        rows_written=len(raw_rows),
         parquet_path=write_results(
-            table, run_id, question.model, rows.column_dtypes(spec.extra_raw_dtypes)
+            raw_rows, run_id, question.model, rows.column_dtypes(spec.extra_raw_dtypes)
         ),
         manifest_path=write_manifest(manifest),
     )
@@ -179,7 +179,7 @@ def _build_samples(question: Question, samples_per_arm: int) -> list[Sample]:
 def _price(model: str) -> PricingEntry | None:
     """Look up a model's price, tolerating an absent file so a plan can report it."""
     try:
-        table = load_pricing()
+        pricing_table = load_pricing()
     except FileNotFoundError:
         return None
-    return table.models.get(model)
+    return pricing_table.models.get(model)
