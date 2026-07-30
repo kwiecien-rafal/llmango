@@ -144,6 +144,7 @@ def load_question(question_id: str) -> Question:
     """Load and validate a question by its id (e.g. 001a)."""
     spec = spec_for(question_id)
     question_dir = get_question_dir(spec.folder, question_id)
+
     question_yaml_path = question_dir / _QUESTION_FILE
     if not question_yaml_path.is_file():
         raise FileNotFoundError(f"Missing question manifest: {question_yaml_path}")
@@ -151,6 +152,7 @@ def load_question(question_id: str) -> Question:
     question_config = QuestionConfig.model_validate(
         yaml.safe_load(question_yaml_path.read_text("utf-8"))
     )
+
     languages = [entry.language for entry in question_config.ask]
     prompt_templates = _load_prompt_templates(question_dir, languages)
     input_sources = load_input_sources(
@@ -161,6 +163,7 @@ def load_question(question_id: str) -> Question:
         validate_placeholders(
             prompt_template.text, question_config.inputs, f"{question_id}/{lang}.md"
         )
+
     if question_config.inputs and spec.build_input is None:
         raise ValueError(
             f"Question {question_id} declares prompt input(s) "
@@ -186,7 +189,9 @@ def load_prompt_template(question_dir: Path, lang: str) -> PromptTemplate:
     prompt_template_path = question_dir / f"{lang}.md"
     if not prompt_template_path.is_file():
         raise FileNotFoundError(f"Missing prompt template: {prompt_template_path}")
+
     text = prompt_template_path.read_text(encoding="utf-8")
+
     return PromptTemplate(
         lang=lang, path=prompt_template_path, text=text, sha256=sha256_text(text)
     )
@@ -203,6 +208,7 @@ def _load_prompt_templates(
         raise FileNotFoundError(
             f"Missing prompt templates in {question_dir}: {', '.join(missing)}"
         )
+
     return {lang: load_prompt_template(question_dir, lang) for lang in languages}
 
 

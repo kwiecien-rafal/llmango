@@ -57,6 +57,7 @@ def guard_run(
             f"per 1M tokens, before generating."
         )
     guard_cost(calls, force)
+
     return price
 
 
@@ -67,6 +68,7 @@ def load_pricing() -> PricingTable:
             f"No pricing file at {PRICING_FILE}. Create data/pricing.json with the "
             f"models you plan to run, prices per 1M tokens, before generating."
         )
+
     return PricingTable.model_validate_json(PRICING_FILE.read_text(encoding="utf-8"))
 
 
@@ -84,6 +86,7 @@ def compute_cost(entry: PricingEntry, usage: Usage) -> Cost:
         + usage.cached_tokens / 1_000_000 * cached_rate
     )
     output_cost = round_usd(usage.completion_tokens / 1_000_000 * entry.output)
+
     return Cost(
         input_cost_usd=input_cost,
         output_cost_usd=output_cost,

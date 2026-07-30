@@ -101,6 +101,7 @@ def build_rows(
         record.schema_name: _schema_column(record.response_schema)
         for record in manifest.arms
     }
+
     return [
         _row(costed_sample, manifest, spec, response_schemas)
         for costed_sample in costed_samples
@@ -118,6 +119,7 @@ def usage_totals(costed_samples: list[CostedSample]) -> UsageTotals:
         for costed_sample in costed_samples
         if costed_sample.cost is not None
     ]
+
     return UsageTotals(
         errors=sum(gen_result.error is not None for gen_result in gen_results),
         provider_refusals=sum(
@@ -137,8 +139,10 @@ def usage_totals(costed_samples: list[CostedSample]) -> UsageTotals:
 def usage_by_arm(costed_samples: list[CostedSample]) -> dict[ArmKey, UsageTotals]:
     """Total what each arm of a run used, in one pass over its costed samples."""
     grouped: dict[ArmKey, list[CostedSample]] = defaultdict(list)
+
     for costed_sample in costed_samples:
         grouped[costed_sample.sample.arm.key].append(costed_sample)
+
     return {key: usage_totals(group) for key, group in grouped.items()}
 
 
@@ -156,6 +160,7 @@ def _row(
         if spec.extra_raw_columns
         else {}
     )
+
     return {
         "question_id": manifest.question_id,
         "lang": sample.arm.lang,
@@ -190,6 +195,7 @@ def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:
     """Read the answer off a parsed response, or off free text when there is none."""
     if parsed is None:
         return raw_json or ""
+
     return str(getattr(parsed, answer_field(type(parsed))))
 
 
@@ -197,6 +203,7 @@ def _schema_column(response_schema: dict[str, object] | None) -> str | None:
     """Serialize an arm's response schema once, for every row that arm wrote."""
     if response_schema is None:
         return None
+
     return json.dumps(response_schema, ensure_ascii=False)
 
 
@@ -204,6 +211,7 @@ def _cost(usage: Usage | None, pricing: PricingEntry | None) -> Cost | None:
     """Cost one sample, None when its usage or its model's price is missing."""
     if usage is None or pricing is None:
         return None
+
     return compute_cost(pricing, usage)
 
 

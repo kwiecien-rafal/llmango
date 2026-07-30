@@ -97,6 +97,7 @@ def run(
     costed_samples = rows.cost_samples(plan.samples, gen_results, price)
     manifest = _manifest(plan, run_id, created_at, price, costed_samples)
     raw_rows = rows.build_rows(costed_samples, manifest, spec)
+
     return RunOutcome(
         manifest=manifest,
         rows_written=len(raw_rows),
@@ -117,6 +118,7 @@ def _manifest(
     """Record what a run was, once it is known what every arm of it used."""
     question = plan.question
     by_arm = rows.usage_by_arm(costed_samples)
+
     return Manifest(
         run_id=run_id,
         question_id=question.question_id,
@@ -173,6 +175,7 @@ def _build_samples(question: Question, samples_per_arm: int) -> list[Sample]:
                     prompt=render(template.text, resolved),
                 )
             )
+
     return samples
 
 
@@ -182,4 +185,5 @@ def _price(model: str) -> PricingEntry | None:
         pricing_table = load_pricing()
     except FileNotFoundError:
         return None
+
     return pricing_table.models.get(model)

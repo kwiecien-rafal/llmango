@@ -90,6 +90,7 @@ def normalize_question(
         _require_all_resolved(unresolved, resolutions)
 
     normalized = _join_resolutions(frame, resolutions, spec)
+
     return NormalizeOutcome(
         parquet_path=write_normalized(normalized, question_id),
         rows=frame.height,
@@ -118,10 +119,12 @@ def _resolve_offline(
     """Resolve one answer without an LLM: an empty answer, then the mapping table."""
     if not answer.strip():
         return Resolution(canonical=None, is_valid=False)
+
     key = _preprocess(answer, spec)
     if key not in mapping:
         return None
     canonical = mapping[key]
+
     return Resolution(canonical=canonical, is_valid=canonical is not None)
 
 
@@ -132,12 +135,12 @@ def _resolve_online(
     backend: Backend | None,
 ) -> dict[tuple[str, str], Resolution]:
     """Ask the LLM for what no offline layer resolved, keeping what parses."""
-    template = _load_prompt(spec.folder)
+    prompt_template = _load_prompt(spec.folder)
     backend = backend or backend_for(NORMALIZE_PROVIDER)
     requests = [
         GenRequest(
             model=NORMALIZE_MODEL,
-            prompt=template.replace("{lang}", lang).replace("{raw}", answer),
+            prompt=prompt_template.replace("{lang}", lang).replace("{raw}", answer),
             response_schema=schema,
             temperature=0.0,
         )
@@ -156,16 +159,20 @@ def _resolve_online(
 def _verdict(parsed: BaseModel) -> Resolution:
     """Read one LLM verdict, dropping the category an invalid answer had to pick."""
     resolution = Resolution.model_validate(parsed, from_attributes=True)
+
     if resolution.is_valid:
         return resolution
+
     return Resolution(canonical=None, is_valid=False)
 
 
 def _promote(resolved: dict[tuple[str, str], Resolution], spec: ExperimentSpec) -> None:
     """Store what was just paid for, keyed as the next run will look it up."""
     promote = spec.promote_normalizations
+
     if promote is None or not resolved:
         return
+
     promote(
         {
             _preprocess(answer, spec): resolution.canonical
@@ -180,8 +187,10 @@ def _require_all_resolved(
 ) -> None:
     """Fail rather than let a call that answered nothing become a category."""
     failed = [pair for pair in unresolved if pair not in resolutions]
+
     if not failed:
         return
+
     preview = ", ".join(f"{lang}:{answer!r}" for lang, answer in failed[:3])
     raise ValueError(
         f"{len(failed)} of {len(unresolved)} answers came back unparsed and were "
@@ -221,6 +230,7 @@ def _join_resolutions(
     )
     add = spec.extra_normalized_columns
     extra = add(joined) if add is not None else {}
+
     return _order_columns(joined.with_columns(**extra), list(extra))
 
 
@@ -229,6 +239,7 @@ def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
     added = [*_RESOLUTION_COLUMNS, *extra]
     kept = [column for column in frame.columns if column not in added]
     cut = kept.index("answer") + 1
+
     return frame.select(kept[:cut] + added + kept[cut:])
 
 
@@ -236,17 +247,20 @@ def _load_mapping(spec: ExperimentSpec, schema: type[BaseModel]) -> Normalizatio
     """Preprocess the experiment's answer-to-category map, empty when it has none."""
     if spec.normalization_map is None:
         return {}
+
     mapping = {
         _preprocess(answer, spec): canonical
         for answer, canonical in spec.normalization_map().items()
     }
     named = {canonical for canonical in mapping.values() if canonical is not None}
     invalid = sorted(named - canonical_values(schema))
+
     if invalid:
         raise ValueError(
             f"{spec.folder} maps answers to values outside the canonical set: "
             f"{', '.join(invalid)}"
         )
+
     return mapping
 
 
@@ -255,4 +269,5 @@ def _load_prompt(folder: str) -> str:
     path = get_experiment_dir(folder) / _PROMPT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing normalization prompt: {path}")
+
     return path.read_text(encoding="utf-8")

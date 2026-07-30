@@ -31,6 +31,7 @@ def require_openai_key() -> str:
             "OPENAI_API_KEY is not set. Add it to the .env file at the repo root "
             "or export it in your environment."
         )
+
     return key
 
 
@@ -54,8 +55,10 @@ def _request_envelope(request: GenRequest) -> str:
         "messages": [{"role": "user", "content": request.prompt}],
         "temperature": request.temperature,
     }
+
     if request.response_schema is not None:
         body["response_format"] = _response_format(request.response_schema)
+
     return json.dumps(body, ensure_ascii=False)
 
 
@@ -63,8 +66,10 @@ def _usage_from_sdk(usage: CompletionUsage | None) -> Usage | None:
     """Map the SDK usage object onto our Usage, flattening the token details."""
     if usage is None:
         return None
+
     prompt_details = usage.prompt_tokens_details
     completion_details = usage.completion_tokens_details
+
     return Usage(
         prompt_tokens=usage.prompt_tokens or 0,
         completion_tokens=usage.completion_tokens or 0,

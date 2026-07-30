@@ -37,6 +37,7 @@ def collect_package_versions(
             versions[package] = metadata.version(package)
         except metadata.PackageNotFoundError:
             versions[package] = "unknown"
+
     return versions
 
 
@@ -110,4 +111,5 @@ def write_manifest(manifest: Manifest) -> Path:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     path = manifest_path(manifest.run_id)
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+
     return path

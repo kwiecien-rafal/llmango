@@ -1,8 +1,4 @@
-"""Experiment 001's charts: what each one compares, and which questions it reads.
-
-Each chart is named once here and referenced by that name from the site, so a
-page decides where a figure sits and never what it shows.
-"""
+"""Experiment 001's charts: what each one compares, and which questions it reads."""
 
 from llmango.aggregate import Aggregate, Distribution
 from llmango.plot import ChartDef, Drawn, distribution, question_distribution
@@ -17,11 +13,7 @@ def language_drift(aggregates: dict[str, Aggregate]) -> Drawn:
 
 
 def order_effect(aggregates: dict[str, Aggregate]) -> Drawn:
-    """001a against 001b: one English prompt over two fixed orders of one list.
-
-    The pair is the whole point of 001b, so option position is read here as the
-    only difference between two arms that are otherwise the same question.
-    """
+    """001a against 001b: one English prompt over two fixed orders of one list."""
     return distribution(
         cells={
             "001a order": _english(aggregates["001a"]),

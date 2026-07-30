@@ -30,4 +30,5 @@ def backend_for(provider: str) -> Backend:
         raise ValueError(
             f"Unknown provider '{provider}'. Known: {', '.join(sorted(_PROVIDERS))}."
         )
+
     return _PROVIDERS[provider]()

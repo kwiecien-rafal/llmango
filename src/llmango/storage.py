@@ -22,6 +22,7 @@ def write_results(
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     path = results_path(run_id)
     pl.DataFrame(raw_rows, schema_overrides=dtypes).write_parquet(path)
+
     return path
 
 
@@ -30,6 +31,7 @@ def read_results(pattern: str = "*.parquet") -> pl.DataFrame:
     paths = sorted(RAW_DIR.glob(pattern))
     if not paths:
         return pl.DataFrame()
+
     return pl.concat(pl.read_parquet(path) for path in paths)
 
 
@@ -43,4 +45,5 @@ def write_normalized(frame: pl.DataFrame, question_id: str) -> Path:
     NORMALIZED_DIR.mkdir(parents=True, exist_ok=True)
     path = normalized_path(question_id)
     frame.write_parquet(path)
+
     return path

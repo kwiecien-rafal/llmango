@@ -35,6 +35,7 @@ def aggregate_question(question_id: str) -> Path:
             f"No data for question {question_id} to aggregate. "
             f"Run 'llmango normalize {question_id}' first."
         )
+
     arms = (
         pl.read_parquet(path)
         .filter(pl.col("is_valid"))
@@ -47,6 +48,7 @@ def aggregate_question(question_id: str) -> Path:
     distributions: dict[str, dict[str, Distribution]] = {}
     for arm, lang, canonical in arms.iter_rows():
         distributions.setdefault(arm, {})[lang] = _distribution(canonical)
+
     return _write_aggregate(question_id, distributions)
 
 
@@ -64,6 +66,7 @@ def _distribution(canonical: list[str]) -> Distribution:
     """Count one arm's answers over the canonical categories they named."""
     counts = Counter(canonical)
     total = counts.total()
+
     return {
         "n": total,
         "counts": dict(counts),
@@ -83,6 +86,7 @@ def _write_aggregate(
     AGG_DIR.mkdir(parents=True, exist_ok=True)
     path = AGG_DIR / f"{question_id}.json"
     body: Aggregate = {"question_id": question_id, "distributions": distributions}
+
     path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

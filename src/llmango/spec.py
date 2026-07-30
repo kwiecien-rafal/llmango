@@ -32,6 +32,7 @@ def answer_field(schema: type[BaseModel]) -> str:
             f"({', '.join(fields) or 'none'}); it must declare exactly one, and "
             f"that field is the answer."
         )
+
     return fields[0]
 
 
@@ -39,11 +40,13 @@ def canonical_values(schema: type[BaseModel]) -> frozenset[str]:
     """Read the closed category set off a normalization schema's canonical field."""
     field = schema.model_fields.get("canonical")
     annotation = field.annotation if field is not None else None
+
     if not (isinstance(annotation, type) and issubclass(annotation, Enum)):
         raise ValueError(
             f"Normalization schema {schema.__name__} must declare a canonical field "
             f"typed as an Enum naming every category it may return."
         )
+
     return frozenset(str(member.value) for member in annotation)
 
 

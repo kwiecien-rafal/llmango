@@ -62,6 +62,7 @@ def render(template_text: str, resolved: Mapping[str, ResolvedInput]) -> str:
     text = template_text
     for name, value in resolved.items():
         text = text.replace(f"{{{name}}}", value.text)
+
     return text
 
 
@@ -88,6 +89,7 @@ def _load_source(directories: list[Path], name: str) -> InputSource:
     if path is None:
         return InputSource(data=None, sha256=sha256_text(""))
     text = path.read_text(encoding="utf-8")
+
     return InputSource(data=yaml.safe_load(text), sha256=sha256_text(text))
 
 

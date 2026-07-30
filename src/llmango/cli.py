@@ -53,8 +53,10 @@ def run(
 
     planned = runner.plan(question, samples_per_arm=samples)
     _report_plan(planned)
+
     if dry_run:
         return
+
     _report_outcome(runner.run(planned, force=force))
 
 

@@ -40,7 +40,9 @@ def _table(data: Any) -> dict[str, dict[str, str]]:
     """Read the fruit list file into canonical ids with their labels, in file order."""
     if not isinstance(data, list):
         raise ValueError(f"{FRUIT_LIST}.yaml must hold a list of fruits.")
+
     entries = cast(list[dict[str, Any]], data)
+
     return {
         str(entry["canonical"]): {
             str(lang): str(label) for lang, label in entry["labels"].items()
@@ -53,19 +55,24 @@ def build_input(request: InputRequest) -> ResolvedInput:
     """Render one sample's fruit list: localized labels shown, canonical ids kept."""
     if request.name != FRUIT_LIST:
         raise ValueError(f"{FOLDER} has no prompt input {request.name!r}.")
+
     table = _table(request.data)
     shown = _shown_order(table, request.declaration, request.sample_idx)
     labels = ", ".join(_label(table, canonical, request.lang) for canonical in shown)
+
     return ResolvedInput(text=labels, value=shown)
 
 
 def _label(table: dict[str, dict[str, str]], canonical: str, lang: str) -> str:
     """Return one fruit's label in the prompt's language, or raise if absent."""
     labels = table.get(canonical)
+
     if labels is None:
         raise ValueError(f"{FRUIT_LIST}.yaml has no fruit {canonical!r}")
+
     if lang not in labels:
         raise ValueError(f"{FRUIT_LIST}.yaml has no {lang} label for {canonical}")
+
     return labels[lang]
 
 
@@ -78,18 +85,22 @@ def _shown_order(
     order = declaration.get("order")
     if order == _ORDER_SHUFFLE:
         return _shuffled(list(table), sample_idx)
+
     if order != _ORDER_FIXED:
         raise ValueError(
             f"{FRUIT_LIST} order must be {_ORDER_FIXED!r} or {_ORDER_SHUFFLE!r}; "
             f"got {order!r}."
         )
+
     declared = cast(list[Any], declaration.get("order_ids") or [])
     order_ids = [str(canonical) for canonical in declared]
+
     if sorted(order_ids) != sorted(table):
         raise ValueError(
             f"{FRUIT_LIST} order_ids must be a permutation of the fruit list; "
             f"got {order_ids}."
         )
+
     return order_ids
 
 
@@ -99,6 +110,7 @@ def _shuffled(ids: list[str], sample_idx: int) -> list[str]:
     rng = random.Random(int.from_bytes(hashlib.sha256(key).digest()[:8], "big"))
     shuffled = list(ids)
     rng.shuffle(shuffled)
+
     return shuffled
 
 
@@ -158,6 +170,7 @@ def normalization_map() -> NormalizationMap:
         for canonical, labels in _table(source.data).items():
             for label in labels.values():
                 mapping[label] = canonical
+
     return mapping | _stored_map()
 
 
@@ -172,6 +185,7 @@ def _stored_map() -> NormalizationMap:
     """Read the committed map, where a null value means the answer named no fruit."""
     text = _NORMALIZATION_MAP.read_text(encoding="utf-8")
     entries = cast(dict[Any, Any], yaml.safe_load(text) or {})
+
     return {
         str(answer): None if canonical is None else str(canonical)
         for answer, canonical in entries.items()
@@ -191,6 +205,7 @@ def extra_normalized_columns(frame: pl.DataFrame) -> dict[str, pl.Series]:
         _position(order, canonical)
         for order, canonical in zip(shown, canonicals, strict=True)
     ]
+
     return {"chosen_position": pl.Series(positions, dtype=pl.Int64())}
 
 
@@ -198,6 +213,7 @@ def _position(order: list[str] | None, canonical: str | None) -> int | None:
     """Return the 1-based place of one canonical answer among the fruits shown."""
     if order is None or canonical is None or canonical not in order:
         return None
+
     return order.index(canonical) + 1
 
 
