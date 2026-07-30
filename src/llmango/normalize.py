@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
-from llmango.config import experiment_dir
+from llmango.config import get_experiment_dir
 from llmango.experiments import spec_for
 from llmango.pricing import guard_cost
 from llmango.questions import load_experiment_config
@@ -254,7 +254,7 @@ def _load_mapping(spec: ExperimentSpec, schema: type[BaseModel]) -> Normalizatio
 
 def _load_prompt(folder: str) -> str:
     """Load the experiment's normalization prompt template."""
-    path = experiment_dir(folder) / _PROMPT_FILE
+    path = get_experiment_dir(folder) / _PROMPT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing normalization prompt: {path}")
     return path.read_text(encoding="utf-8")

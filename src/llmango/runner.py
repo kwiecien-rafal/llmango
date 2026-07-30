@@ -131,7 +131,7 @@ def _manifest(
         samples_total=plan.samples_total,
         samples_per_arm=plan.samples_per_arm,
         arms=[
-            _arm_record(arm, question.templates[arm.lang], by_arm[arm.key])
+            _arm_record(arm, question.prompt_templates[arm.lang], by_arm[arm.key])
             for arm in question.arms
         ],
         inputs=question.inputs,
@@ -162,7 +162,7 @@ def _build_samples(question: Question, samples_per_arm: int) -> list[Sample]:
     """Render one sample per arm and index from the question's templates."""
     samples: list[Sample] = []
     for arm in question.arms:
-        template = question.templates[arm.lang]
+        template = question.prompt_templates[arm.lang]
         for sample_idx in range(samples_per_arm):
             resolved = question.resolve(arm.lang, sample_idx)
             recorded = {

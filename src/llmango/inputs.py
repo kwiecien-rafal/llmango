@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from llmango.config import experiment_dir, question_dir, sha256_text
+from llmango.config import sha256_text
 
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -51,10 +51,10 @@ def placeholders(text: str) -> set[str]:
 
 
 def load_input_sources(
-    folder: str, question_id: str | None, names: list[str]
+    directories: list[Path], names: list[str]
 ) -> dict[str, InputSource]:
-    """Load the data file behind each named input, question folder winning."""
-    return {name: _load_source(folder, question_id, name) for name in names}
+    """Load the data file behind each named input, the first directory winning."""
+    return {name: _load_source(directories, name) for name in names}
 
 
 def render(template_text: str, resolved: Mapping[str, ResolvedInput]) -> str:
@@ -82,19 +82,16 @@ def validate_placeholders(
         )
 
 
-def _load_source(folder: str, question_id: str | None, name: str) -> InputSource:
+def _load_source(directories: list[Path], name: str) -> InputSource:
     """Read one input's YAML file, or record its absence."""
-    path = _find_file(folder, question_id, name)
+    path = _find_file(directories, name)
     if path is None:
         return InputSource(data=None, sha256=sha256_text(""))
     text = path.read_text(encoding="utf-8")
     return InputSource(data=yaml.safe_load(text), sha256=sha256_text(text))
 
 
-def _find_file(folder: str, question_id: str | None, name: str) -> Path | None:
-    """Return the input's data file, preferring the question's own copy."""
-    candidates = (
-        [question_dir(folder, question_id) / f"{name}.yaml"] if question_id else []
-    )
-    candidates.append(experiment_dir(folder) / f"{name}.yaml")
+def _find_file(directories: list[Path], name: str) -> Path | None:
+    """Return the input's data file from the first directory that holds it."""
+    candidates = (directory / f"{name}.yaml" for directory in directories)
     return next((path for path in candidates if path.is_file()), None)

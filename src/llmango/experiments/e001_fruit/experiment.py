@@ -10,6 +10,7 @@ from typing import Any, cast
 import polars as pl
 import yaml
 
+from llmango.config import get_experiment_dir, get_question_dir
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
 from llmango.spec import OTHER_CATEGORY, ExperimentSpec, NormalizationMap
@@ -21,6 +22,11 @@ _ORDER_FIXED = "fixed"
 _ORDER_SHUFFLE = "shuffle"
 
 
+# ----------------------------------------
+# Main run path
+# ----------------------------------------
+
+
 class FruitChoice(LLMResponse):
     fruit: str
 
@@ -28,11 +34,6 @@ class FruitChoice(LLMResponse):
 # 001d's PL schema. No docstring because it's also passed to the LLM.
 class WyborOwocu(LLMResponse):
     owoc: str
-
-
-# ----------------------------------------
-# Main run path
-# ----------------------------------------
 
 
 def _table(data: Any) -> dict[str, dict[str, str]]:
@@ -145,10 +146,16 @@ def preprocess(text: str) -> str:
 
 def normalization_map() -> NormalizationMap:
     """Map the fruit labels of every question, plus the stored answers, onto ids."""
+    question_dirs = [
+        get_experiment_dir(FOLDER),
+        *(get_question_dir(FOLDER, question_id) for question_id in QUESTIONS),
+    ]
     mapping: NormalizationMap = {}
-    for question_id in [None, *QUESTIONS]:
-        sources = load_input_sources(FOLDER, question_id, [FRUIT_LIST])
-        for canonical, labels in _table(sources[FRUIT_LIST].data).items():
+    for question_dir in question_dirs:
+        source = load_input_sources([question_dir], [FRUIT_LIST])[FRUIT_LIST]
+        if source.data is None:
+            continue
+        for canonical, labels in _table(source.data).items():
             for label in labels.values():
                 mapping[label] = canonical
     return mapping | _stored_map()
