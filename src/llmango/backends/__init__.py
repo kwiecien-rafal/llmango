@@ -3,20 +3,22 @@
 from collections.abc import Callable
 from functools import cache
 
-from llmango.backends.base import (
-    Backend,
-    GenRequest,
-    GenResult,
-)
-from llmango.backends.openai import OpenAIBackend
+from llmango.backends.base import Backend, GenRequest, GenResult
 
-_PROVIDERS: dict[str, Callable[[], Backend]] = {"openai": OpenAIBackend}
+
+def _openai() -> Backend:
+    """Build the OpenAI backend, importing its SDK only when one is asked for."""
+    from llmango.backends.openai import OpenAIBackend
+
+    return OpenAIBackend()
+
+
+_PROVIDERS: dict[str, Callable[[], Backend]] = {"openai": _openai}
 
 __all__ = [
     "Backend",
     "GenRequest",
     "GenResult",
-    "OpenAIBackend",
     "backend_for",
 ]
 

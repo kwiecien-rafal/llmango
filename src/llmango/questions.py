@@ -9,8 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from llmango.config import experiment_dir, question_dir, sha256_text
 from llmango.experiments import spec_for
-from llmango.inputs import InputDeclarations, validate_placeholders
-from llmango.spec import ExperimentSpec
+from llmango.inputs import (
+    InputDeclarations,
+    InputRequest,
+    InputSource,
+    ResolvedInput,
+    load_input_sources,
+    validate_placeholders,
+)
+from llmango.spec import FREE_TEXT, ArmKey, ExperimentSpec, schema_name
 
 _EXPERIMENT_FILE = "experiment.yaml"
 _QUESTION_FILE = "question.yaml"
@@ -89,6 +96,16 @@ class Arm:
     schema: type[BaseModel] | None
     lang: str
 
+    @property
+    def key(self) -> ArmKey:
+        """What identifies this arm within its question, and in a manifest."""
+        return self.lang, schema_name(self.schema)
+
+    @property
+    def label(self) -> str:
+        """The name this arm is reported under, FREE_TEXT when it sends no schema."""
+        return schema_name(self.schema) or FREE_TEXT
+
 
 @dataclass(frozen=True)
 class Question:
@@ -101,12 +118,36 @@ class Question:
     temperature: float
     arms: list[Arm]
     inputs: InputDeclarations
+    sources: dict[str, InputSource]
     templates: dict[str, PromptTemplate]
 
     @property
     def languages(self) -> list[str]:
         """Every language the question is asked in, in the order it declares them."""
         return list(dict.fromkeys(arm.lang for arm in self.arms))
+
+    @property
+    def input_sha256(self) -> dict[str, str]:
+        """The content hash of every input's data file, as a manifest records it."""
+        return {name: source.sha256 for name, source in self.sources.items()}
+
+    def resolve(self, lang: str, sample_idx: int) -> dict[str, ResolvedInput]:
+        """Build every declared input for one sample through the experiment's hook."""
+        build_input = self.spec.build_input
+        if build_input is None:
+            return {}
+        return {
+            name: build_input(
+                InputRequest(
+                    name=name,
+                    data=self.sources[name].data,
+                    declaration=declaration,
+                    lang=lang,
+                    sample_idx=sample_idx,
+                )
+            )
+            for name, declaration in self.inputs.items()
+        }
 
 
 def load_experiment_config(folder: str) -> ExperimentConfig:
@@ -129,9 +170,16 @@ def load_question(question_id: str) -> Question:
     config = QuestionConfig.model_validate(yaml.safe_load(path.read_text("utf-8")))
     languages = [entry.language for entry in config.ask]
     templates = _load_templates(spec.folder, question_id, languages)
+    sources = load_input_sources(spec.folder, question_id, list(config.inputs))
 
     for lang, template in templates.items():
         validate_placeholders(template.text, config.inputs, f"{question_id}/{lang}.md")
+    if config.inputs and spec.build_input is None:
+        raise ValueError(
+            f"Question {question_id} declares prompt input(s) "
+            f"{', '.join(sorted(config.inputs))} but experiment {spec.folder} "
+            f"registers no build_input hook."
+        )
 
     return Question(
         question_id=question_id,
@@ -141,6 +189,7 @@ def load_question(question_id: str) -> Question:
         temperature=config.temperature,
         arms=_resolve_arms(config.ask, spec),
         inputs=config.inputs,
+        sources=sources,
         templates=templates,
     )
 

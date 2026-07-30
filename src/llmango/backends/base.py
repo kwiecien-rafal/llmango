@@ -71,19 +71,9 @@ class GenResult:
 
 
 class Backend(Protocol):
-    """One provider, reached either inline or through an asynchronous batch job."""
+    """One provider, turning a run's requests into results."""
 
     @abstractmethod
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         """Turn many requests into validated results, one per request in order."""
-        ...
-
-    @abstractmethod
-    def submit(self, requests: list[GenRequest]) -> str:
-        """Submit requests as one batch job and return its id."""
-        ...
-
-    @abstractmethod
-    def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
-        """Fetch the batch's results, parsed and matched back to the requests."""
         ...

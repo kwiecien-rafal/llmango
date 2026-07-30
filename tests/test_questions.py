@@ -1,8 +1,11 @@
 """Tests for experiment and question config loading."""
 
+from dataclasses import replace
+
 import pytest
 from pydantic import ValidationError
 
+from llmango import questions as questions_module
 from llmango.experiments.e001_fruit.experiment import FRUIT, FruitChoice, WyborOwocu
 from llmango.questions import (
     LanguageAsk,
@@ -60,6 +63,36 @@ def test_question_declares_its_prompt_inputs() -> None:
     assert shuffled.inputs["fruit_list"] == {"order": "shuffle"}
 
 
+def test_a_question_loads_its_inputs_and_hashes_them() -> None:
+    """The question owns the data behind its inputs, so it can hash and build them."""
+    question = load_question("001a")
+
+    source = question.sources["fruit_list"]
+    assert source.data is not None
+    assert question.input_sha256 == {"fruit_list": source.sha256}
+
+
+def test_resolve_builds_each_declared_input_for_one_sample() -> None:
+    question = load_question("001a")
+
+    resolved = question.resolve("pl", 3)
+
+    assert set(resolved) == {"fruit_list"}
+    assert resolved["fruit_list"].value == question.inputs["fruit_list"]["order_ids"]
+    assert "jabłko" in resolved["fruit_list"].text
+
+
+def test_resolve_asks_the_hook_for_the_sample_it_is_given() -> None:
+    """A shuffled question resolves per sample, so the index reaches the hook."""
+    question = load_question("001c")
+
+    first = question.resolve("en", 0)
+    second = question.resolve("en", 1)
+
+    assert first["fruit_list"].value != second["fruit_list"].value
+    assert sorted(first["fruit_list"].value) == sorted(second["fruit_list"].value)
+
+
 def test_one_language_asked_several_ways_is_several_arms() -> None:
     """001d asks Polish three ways, so it is three arms of one language."""
     question = load_question("001d")
@@ -109,6 +142,18 @@ def test_every_declared_language_has_a_template() -> None:
         template = load_template(FOLDER, "001a", lang)
         assert template.lang == lang
         assert "{fruit_list}" in template.text
+
+
+def test_a_question_declaring_inputs_needs_a_hook_to_build_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refused at load, not once per sample, since the pairing cannot change."""
+    monkeypatch.setattr(
+        questions_module, "spec_for", lambda _: replace(FRUIT, build_input=None)
+    )
+
+    with pytest.raises(ValueError, match="registers no build_input hook"):
+        load_question("001a")
 
 
 def test_load_question_unknown_raises() -> None:

@@ -7,13 +7,8 @@ default:
     @just --list
 
 # Generate raw responses for a question: `just run 001a -n 5`.
-# Submit through the OpenAI Batch API with `just run 001a --batch`.
 run question *args:
     uv run llmango run {{ question }} {{ args }}
-
-# Fetch a previously submitted batch by run id.
-batch-fetch run_id:
-    uv run llmango batch-fetch {{ run_id }}
 
 # Map raw answers to canonical categories.
 normalize question *args:

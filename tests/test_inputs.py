@@ -7,12 +7,10 @@ import pytest
 from llmango import config as config_module
 from llmango.config import sha256_text
 from llmango.inputs import (
-    InputRequest,
     ResolvedInput,
     load_input_sources,
     placeholders,
     render,
-    resolve,
     validate_placeholders,
 )
 
@@ -67,31 +65,6 @@ def test_source_hash_tracks_the_file_text(prompts_dir: Path) -> None:
     _write(path, "- apple\n- banana\n")
     second = load_input_sources("e001_fruit", None, ["fruit_list"])["fruit_list"].sha256
     assert second != first
-
-
-def test_resolve_passes_the_declaration_through_untouched(prompts_dir: Path) -> None:
-    seen: list[InputRequest] = []
-
-    def build(request: InputRequest) -> ResolvedInput:
-        seen.append(request)
-        return ResolvedInput(text="a, b", value=["a", "b"])
-
-    declarations = {"fruit_list": {"order": "swap", "pairs": [[1, 2]]}}
-    sources = load_input_sources("e001_fruit", "001a", ["fruit_list"])
-    resolved = resolve(build, sources, declarations, "pl", 3, "001a")
-
-    assert resolved["fruit_list"].value == ["a", "b"]
-    assert seen[0].declaration == {"order": "swap", "pairs": [[1, 2]]}
-    assert (seen[0].lang, seen[0].sample_idx) == ("pl", 3)
-
-
-def test_resolve_without_a_hook_names_the_question() -> None:
-    with pytest.raises(ValueError, match="Question 001a declares prompt input"):
-        resolve(None, {}, {"fruit_list": {}}, "en", 0, "001a")
-
-
-def test_resolve_with_no_declared_inputs_is_empty() -> None:
-    assert resolve(None, {}, {}, "en", 0, "001a") == {}
 
 
 def test_render_substitutes_every_input() -> None:

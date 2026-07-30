@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import cache
 
 import polars as pl
 from pydantic import BaseModel
@@ -12,11 +13,14 @@ from llmango.inputs import BuildInput
 FREE_TEXT = "none"
 OTHER_CATEGORY = "other"
 
+ArmKey = tuple[str, str | None]
+
 ExtraRawColumns = Callable[[BaseModel | None, str], dict[str, object]]
 ExtraRawDtypes = dict[str, pl.DataType]
 ExtraNormalizedColumns = Callable[[pl.DataFrame], dict[str, pl.Series]]
 
 
+@cache
 def answer_field(schema: type[BaseModel]) -> str:
     """Return the one field an answer schema declares, which holds the answer."""
     fields = list(schema.model_fields)

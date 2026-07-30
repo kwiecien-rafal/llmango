@@ -8,68 +8,53 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from llmango import rows
 from llmango.backends import backend_for
-from llmango.backends.base import Backend, GenRequest, GenResult, Usage
-from llmango.config import sha256_text
-from llmango.inputs import InputSource, load_input_sources, render, resolve
+from llmango.backends.base import Backend, GenRequest
+from llmango.inputs import render
 from llmango.manifest import (
     ArmRecord,
     Manifest,
     UsageTotals,
     build_run_id,
     manifest_path,
-    read_manifest,
     write_manifest,
 )
-from llmango.pricing import (
-    Cost,
-    PricingEntry,
-    PricingTable,
-    compute_cost,
-    load_pricing,
-    round_usd,
-)
+from llmango.pricing import PricingEntry, guard_run, load_pricing
 from llmango.questions import Arm, PromptTemplate, Question, load_question
-from llmango.spec import ExperimentSpec, answer_field, schema_name
-from llmango.storage import results_path, write_results
-
-
-@dataclass(frozen=True)
-class Sample:
-    """One arm's sample: the prompt it asks and the provenance its row records."""
-
-    arm: Arm
-    sample_idx: int
-    prompt_inputs: str
-    prompt: str
-
-
-@dataclass(frozen=True)
-class Generation:
-    """One sample, the result it came back as, and what that cost."""
-
-    sample: Sample
-    result: GenResult
-    cost: Cost | None
+from llmango.rows import Generation, Sample
+from llmango.spec import ExperimentSpec, schema_name
+from llmango.storage import write_results
 
 
 @dataclass(frozen=True)
 class RunPlan:
-    """One run, fully built and priced, with nothing sent yet."""
+    """One run, fully built and priced, with nothing sent and no id claimed yet."""
 
-    spec: ExperimentSpec
-    manifest: Manifest
+    question: Question
+    samples_per_arm: int
     samples: list[Sample]
+    price: PricingEntry | None
+
+    @property
+    def spec(self) -> ExperimentSpec:
+        """The experiment this run's question belongs to."""
+        return self.question.spec
+
+    @property
+    def samples_total(self) -> int:
+        """How many paid calls running this plan would make."""
+        return self.samples_per_arm * len(self.question.arms)
 
     @property
     def requests(self) -> list[GenRequest]:
         """Render each planned sample as the request this run sends for it."""
         return [
             GenRequest(
-                model=self.manifest.model,
+                model=self.question.model,
                 prompt=sample.prompt,
                 response_schema=sample.arm.schema,
-                temperature=self.manifest.temperature,
+                temperature=self.question.temperature,
             )
             for sample in self.samples
         ]
@@ -77,192 +62,100 @@ class RunPlan:
 
 @dataclass(frozen=True)
 class RunOutcome:
-    """What a run wrote, and where, read off the manifest it wrote it under."""
+    """What a run wrote, and where it wrote it."""
 
     manifest: Manifest
     rows_written: int
+    parquet_path: Path
+    manifest_path: Path
 
     @property
     def run_id(self) -> str:
         """The id naming this run's files."""
         return self.manifest.run_id
 
-    @property
-    def batch_id(self) -> str | None:
-        """The batch this run submitted, None when it generated inline."""
-        return self.manifest.batch_id
 
-    @property
-    def parquet_path(self) -> Path:
-        """Where this run's raw results landed."""
-        return results_path(self.manifest.run_id, self.manifest.model)
-
-    @property
-    def manifest_path(self) -> Path:
-        """Where this run's manifest landed."""
-        return manifest_path(self.manifest.run_id)
-
-
-def plan(
-    question_id: str,
-    *,
-    samples_per_arm: int = 1,
-    model: str | None = None,
-    languages: list[str] | None = None,
-    pricing_table: PricingTable | None = None,
-) -> RunPlan:
-    """Build one plan for running a question: its manifest, requests and price."""
+def plan(question_id: str, *, samples_per_arm: int = 1) -> RunPlan:
+    """Build one plan for running a question: samples, arms and price."""
     question = load_question(question_id)
-    spec = question.spec
-    model = model or question.model
-    arms = _arms_for_languages(question, languages)
-    sources = load_input_sources(spec.folder, question_id, list(question.inputs))
-
-    manifest = Manifest(
-        question_id=question_id,
-        provider=question.provider,
-        model=model,
-        temperature=question.temperature,
-        samples_per_arm=samples_per_arm,
-        arms=[_arm_record(arm, question.templates[arm.lang]) for arm in arms],
-        inputs=question.inputs,
-        input_sha256={name: source.sha256 for name, source in sources.items()},
-        pricing=_price(model, pricing_table),
-    )
     return RunPlan(
-        spec=spec,
-        manifest=manifest,
-        samples=_build_samples(manifest, spec, arms, question.templates, sources),
+        question=question,
+        samples_per_arm=samples_per_arm,
+        samples=_build_samples(question, samples_per_arm),
+        price=_price(question.model),
     )
 
 
 def run(
-    plan: RunPlan, backend: Backend | None = None, *, batch: bool = False
+    plan: RunPlan, backend: Backend | None = None, *, force: bool = False
 ) -> RunOutcome:
-    """Execute a planned run, inline or as a batch to fetch later."""
-    manifest = plan.manifest
-    if manifest.pricing is None:
-        raise ValueError(
-            f"No pricing for model '{manifest.model}' in the pricing file. Add it "
-            f"to data/pricing.json, prices per 1M tokens, before generating."
-        )
-    backend = backend or backend_for(manifest.provider)
+    """Execute a planned run and persist its results and manifest."""
+    question = plan.question
+    spec = plan.spec
+    price = guard_run(question.model, plan.price, plan.samples_total, force)
+    backend = backend or backend_for(question.provider)
 
-    manifest.created_at = datetime.now(UTC)
-    manifest.run_id = build_run_id(manifest)
-    if manifest_path(manifest.run_id).exists():
+    created_at = datetime.now(UTC)
+    run_id = build_run_id(question.question_id, created_at)
+    if manifest_path(run_id).exists():
         raise ValueError(
-            f"Run {manifest.run_id} already exists, and a run never overwrites "
-            f"another one's files."
+            f"Run {run_id} already exists, and a run never overwrites another "
+            f"one's files."
         )
 
-    if batch:
-        manifest.batch_id = backend.submit(plan.requests)
-        _write_submitted_manifest(manifest)
-        return RunOutcome(manifest=manifest, rows_written=0)
-
-    return _persist(plan, backend.generate_many(plan.requests), batched=False)
-
-
-def fetch_batch(run_id: str, backend: Backend | None = None) -> RunOutcome:
-    """Fetch a submitted batch's results and persist them to Parquet."""
-    manifest = read_manifest(run_id)
-    if manifest.batch_id is None:
-        raise ValueError(f"Run {run_id} has no batch to fetch.")
-    backend = backend or backend_for(manifest.provider)
-
-    submitted = _plan_from_manifest(manifest)
-    results = backend.fetch(manifest.batch_id, submitted.requests)
-    return _persist(submitted, results, batched=True)
-
-
-def _persist(plan: RunPlan, results: list[GenResult], batched: bool) -> RunOutcome:
-    """Write a run's rows and its manifest, costing each generation once."""
-    manifest = plan.manifest
-    generations = [
-        Generation(sample, result, _cost(result.usage, manifest.pricing, batched))
-        for sample, result in zip(plan.samples, results, strict=True)
-    ]
-    rows = _rows(generations, manifest, plan.spec)
-    for arm in manifest.arms:
-        arm.usage = _totals(_of_arm(generations, arm))
-    manifest.usage = _totals(generations)
-    write_results(rows, manifest.run_id, manifest.model, plan.spec.extra_raw_dtypes)
-    write_manifest(manifest)
-    return RunOutcome(manifest=manifest, rows_written=len(rows))
-
-
-def _plan_from_manifest(manifest: Manifest) -> RunPlan:
-    """Rebuild a submitted run's plan, refusing anything edited since submit."""
-    question = load_question(manifest.question_id)
-    spec = question.spec
-    sources = load_input_sources(
-        spec.folder, manifest.question_id, list(manifest.inputs)
-    )
-    for name, source in sources.items():
-        if source.sha256 != manifest.input_sha256.get(name):
-            raise ValueError(
-                f"Prompt input {name} for {manifest.question_id} changed since "
-                f"submit; its hash no longer matches the manifest."
-            )
-
-    arms = [_arm_for(record, question) for record in manifest.arms]
-    return RunPlan(
-        spec=spec,
+    results = backend.generate_many(plan.requests)
+    generations = rows.costed(plan.samples, results, price)
+    manifest = _manifest(plan, run_id, created_at, price, generations)
+    table = rows.build(generations, manifest, spec)
+    return RunOutcome(
         manifest=manifest,
-        samples=_build_samples(manifest, spec, arms, question.templates, sources),
+        rows_written=len(table),
+        parquet_path=write_results(
+            table, run_id, question.model, rows.dtypes(spec.extra_raw_dtypes)
+        ),
+        manifest_path=write_manifest(manifest),
     )
 
 
-def _arms_for_languages(question: Question, requested: list[str] | None) -> list[Arm]:
-    """Narrow a question to the requested languages, refusing one it is not asked in."""
-    if requested is None:
-        return question.arms
-    unknown = [lang for lang in requested if lang not in question.templates]
-    if unknown:
-        raise ValueError(
-            f"Question {question.question_id} has no prompt template for "
-            f"{', '.join(unknown)}. It declares {', '.join(question.languages)}."
-        )
-    return [arm for arm in question.arms if arm.lang in requested]
+def _manifest(
+    plan: RunPlan,
+    run_id: str,
+    created_at: datetime,
+    price: PricingEntry,
+    generations: list[Generation],
+) -> Manifest:
+    """Record what a run was, once it is known what every arm of it used."""
+    question = plan.question
+    by_arm = rows.usage_by_arm(generations)
+    return Manifest(
+        run_id=run_id,
+        question_id=question.question_id,
+        provider=question.provider,
+        model=question.model,
+        temperature=question.temperature,
+        samples_total=plan.samples_total,
+        samples_per_arm=plan.samples_per_arm,
+        arms=[
+            _arm_record(arm, question.templates[arm.lang], by_arm[arm.key])
+            for arm in question.arms
+        ],
+        inputs=question.inputs,
+        input_sha256=question.input_sha256,
+        pricing=price,
+        usage=rows.usage_totals(generations),
+        created_at=created_at,
+    )
 
 
-def _arm_record(arm: Arm, template: PromptTemplate) -> ArmRecord:
-    """Record one arm as the manifest pins it: its language, schema and prompt."""
+def _arm_record(arm: Arm, template: PromptTemplate, usage: UsageTotals) -> ArmRecord:
+    """Record one arm as the manifest pins it: what it asked, and what it used."""
     return ArmRecord(
         lang=arm.lang,
         schema_name=schema_name(arm.schema),
         response_schema=_schema_json(arm.schema),
         template_sha256=template.sha256,
+        usage=usage,
     )
-
-
-def _arm_for(record: ArmRecord, question: Question) -> Arm:
-    """Match one recorded arm back to the question, refusing anything edited."""
-    arm = next(
-        (
-            arm
-            for arm in question.arms
-            if (arm.lang, schema_name(arm.schema)) == (record.lang, record.schema_name)
-        ),
-        None,
-    )
-    if arm is None:
-        raise ValueError(
-            f"Question {question.question_id} no longer asks {record.lang} under "
-            f"{record.label}, so its submitted batch cannot be rebuilt."
-        )
-    if question.templates[arm.lang].sha256 != record.template_sha256:
-        raise ValueError(
-            f"Template {question.question_id}/{arm.lang}.md changed since submit; "
-            f"it was edited, so it no longer matches the manifest."
-        )
-    if _schema_json(arm.schema) != record.response_schema:
-        raise ValueError(
-            f"The response schema {record.schema_name} changed since submit; it "
-            f"no longer matches the one the manifest records."
-        )
-    return arm
 
 
 def _schema_json(schema: type[BaseModel] | None) -> dict[str, Any] | None:
@@ -270,33 +163,13 @@ def _schema_json(schema: type[BaseModel] | None) -> dict[str, Any] | None:
     return schema.model_json_schema() if schema is not None else None
 
 
-def _answer(parsed: BaseModel | None, raw_json: str | None) -> str:
-    """Read the answer off a parsed response, or off free text when there is none."""
-    if parsed is None:
-        return raw_json or ""
-    return str(getattr(parsed, answer_field(type(parsed))))
-
-
-def _build_samples(
-    manifest: Manifest,
-    spec: ExperimentSpec,
-    arms: list[Arm],
-    templates: dict[str, PromptTemplate],
-    sources: dict[str, InputSource],
-) -> list[Sample]:
-    """Render one sample per arm and index from the run's templates."""
+def _build_samples(question: Question, samples_per_arm: int) -> list[Sample]:
+    """Render one sample per arm and index from the question's templates."""
     samples: list[Sample] = []
-    for arm in arms:
-        template = templates[arm.lang]
-        for sample_idx in range(manifest.samples_per_arm):
-            resolved = resolve(
-                spec.build_input,
-                sources,
-                manifest.inputs,
-                arm.lang,
-                sample_idx,
-                manifest.question_id,
-            )
+    for arm in question.arms:
+        template = question.templates[arm.lang]
+        for sample_idx in range(samples_per_arm):
+            resolved = question.resolve(arm.lang, sample_idx)
             recorded = {
                 name: value.value
                 for name, value in resolved.items()
@@ -313,144 +186,10 @@ def _build_samples(
     return samples
 
 
-def _price(model: str, pricing_table: PricingTable | None) -> PricingEntry | None:
+def _price(model: str) -> PricingEntry | None:
     """Look up a model's price, tolerating an absent file so a plan can report it."""
     try:
-        table = pricing_table if pricing_table is not None else load_pricing()
+        table = load_pricing()
     except FileNotFoundError:
         return None
     return table.models.get(model)
-
-
-def _write_submitted_manifest(manifest: Manifest) -> None:
-    """Save a submitted batch's manifest, surfacing its id if the write fails."""
-    try:
-        write_manifest(manifest)
-    except OSError as error:
-        raise RuntimeError(
-            f"Batch {manifest.batch_id} was submitted but its manifest could not "
-            f"be saved ({error}). Record this batch id to fetch it later."
-        ) from error
-
-
-def _rows(
-    generations: list[Generation], manifest: Manifest, spec: ExperimentSpec
-) -> list[dict[str, object]]:
-    """Turn every generation into the row the raw parquet stores it as."""
-    response_schemas = {
-        record.schema_name: json.dumps(record.response_schema, ensure_ascii=False)
-        if record.response_schema is not None
-        else None
-        for record in manifest.arms
-    }
-    return [
-        _result_to_row(generation, manifest, spec, response_schemas)
-        for generation in generations
-    ]
-
-
-def _result_to_row(
-    generation: Generation,
-    manifest: Manifest,
-    spec: ExperimentSpec,
-    response_schemas: dict[str | None, str | None],
-) -> dict[str, object]:
-    """Combine the common columns, the experiment's extras, provenance and cost."""
-    sample, result = generation.sample, generation.result
-    answer = _answer(result.parsed, result.raw_json)
-    extra = (
-        spec.extra_raw_columns(result.parsed, answer) if spec.extra_raw_columns else {}
-    )
-    return {
-        "question_id": manifest.question_id,
-        "lang": sample.arm.lang,
-        "model": manifest.model,
-        "provider": manifest.provider,
-        "run_id": manifest.run_id,
-        "sample_idx": sample.sample_idx,
-        "temperature": manifest.temperature,
-        "prompt_sha256": sha256_text(sample.prompt),
-        "prompt": sample.prompt,
-        "prompt_inputs": sample.prompt_inputs,
-        "raw_json": result.raw_json,
-        "answer": answer,
-        **extra,
-        "model_snapshot": result.model_snapshot,
-        "finish_reason": result.finish_reason,
-        "refusal": result.refusal,
-        "error": result.error,
-        "response_id": result.response_id,
-        "service_tier": result.service_tier,
-        "provider_created_at": result.provider_created_at,
-        "response_schema": response_schemas[schema_name(sample.arm.schema)],
-        "request_envelope": result.request_envelope,
-        "response_envelope": result.response_envelope,
-        **_usage_columns(result.usage),
-        **_cost_columns(generation.cost, manifest.pricing),
-        "created_at": result.created_at,
-    }
-
-
-def _cost(
-    usage: Usage | None, pricing: PricingEntry | None, batched: bool
-) -> Cost | None:
-    """Cost one generation, None when its usage or its model's price is missing."""
-    if usage is None or pricing is None:
-        return None
-    return compute_cost(pricing, usage, batched=batched)
-
-
-def _usage_columns(usage: Usage | None) -> dict[str, object]:
-    """Map token usage to its columns, none of them when the provider reported none."""
-    if usage is None:
-        return {}
-    return {
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-        "cached_tokens": usage.cached_tokens,
-        "reasoning_tokens": usage.reasoning_tokens,
-    }
-
-
-def _cost_columns(cost: Cost | None, pricing: PricingEntry | None) -> dict[str, object]:
-    """Map one generation's cost to its columns, none of them when it has no cost."""
-    if cost is None or pricing is None:
-        return {}
-    return {
-        "input_cost_usd": cost.input_cost_usd,
-        "output_cost_usd": cost.output_cost_usd,
-        "total_cost_usd": cost.total_cost_usd,
-        "pricing_version": pricing.last_updated,
-    }
-
-
-def _of_arm(generations: list[Generation], arm: ArmRecord) -> list[Generation]:
-    """Select the generations one arm of a run produced."""
-    return [
-        generation
-        for generation in generations
-        if (generation.sample.arm.lang, schema_name(generation.sample.arm.schema))
-        == (arm.lang, arm.schema_name)
-    ]
-
-
-def _totals(generations: list[Generation]) -> UsageTotals:
-    """Sum generations and their costs into their token and cost totals."""
-    results = [generation.result for generation in generations]
-    usages = [result.usage for result in results if result.usage is not None]
-    priced = [
-        generation.cost for generation in generations if generation.cost is not None
-    ]
-    return UsageTotals(
-        errors=sum(result.error is not None for result in results),
-        provider_refusals=sum(result.refusal is not None for result in results),
-        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
-        completion_tokens=sum(usage.completion_tokens for usage in usages),
-        total_tokens=sum(usage.total_tokens for usage in usages),
-        cached_tokens=sum(usage.cached_tokens for usage in usages),
-        reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
-        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in priced)),
-        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in priced)),
-        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in priced)),
-    )

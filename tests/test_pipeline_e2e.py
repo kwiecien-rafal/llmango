@@ -18,6 +18,7 @@ _FOLDER = "e001_fruit"
 
 _EN_ANSWERS = ["apple", "banana", "banana", ""]
 _PL_ANSWERS = ["jabłko", "banan", "coś", ""]
+_JA_ANSWERS = ["りんご", "バナナ", "バナナ", ""]
 
 _CACHE = {"pl": {"coś": {"canonical": "other", "is_valid": True}}}
 
@@ -41,21 +42,21 @@ def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
 def test_pipeline_generates_normalizes_aggregates_and_charts(
     pipeline: Path, make_fake_backend: Callable[..., Backend]
 ) -> None:
-    backend: Backend = make_fake_backend(_EN_ANSWERS + _PL_ANSWERS)
-    planned = plan(_QUESTION, samples_per_arm=4, languages=["en", "pl"])
+    backend: Backend = make_fake_backend(_EN_ANSWERS + _PL_ANSWERS + _JA_ANSWERS)
+    planned = plan(_QUESTION, samples_per_arm=4)
     run_outcome = run(planned, backend)
-    assert run_outcome.rows_written == 8
+    assert run_outcome.rows_written == 12
 
     raw = read_results("*.parquet")
-    assert raw.height == 8
+    assert raw.height == 12
     assert all(rid == "chatcmpl-fake" for rid in raw["response_id"].to_list())
     assert all(
         cost is not None and cost > 0 for cost in raw["total_cost_usd"].to_list()
     )
 
     normalize_outcome = normalize_question(_QUESTION)
-    assert normalize_outcome.rows == 8
-    assert normalize_outcome.distinct == 7
+    assert normalize_outcome.rows == 12
+    assert normalize_outcome.distinct == 10
     assert normalize_outcome.llm_calls == 0
 
     aggregate_question(_QUESTION)
@@ -64,6 +65,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
 
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
+    assert distributions["ja"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["other_share"] == 0.3333
 
     for distribution in distributions.values():
@@ -80,6 +82,6 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
     drift = index["charts"][0]
     assert drift["questions"] == [_QUESTION]
-    assert drift["columns"] == ["en", "pl"]
+    assert drift["columns"] == ["en", "ja", "pl"]
     labels = [row["label"] for row in drift["rows"]]
     assert labels == ["banana", "apple", "other"]

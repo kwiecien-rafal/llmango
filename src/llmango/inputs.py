@@ -57,37 +57,6 @@ def load_input_sources(
     return {name: _load_source(folder, question_id, name) for name in names}
 
 
-def resolve(
-    build_input: BuildInput | None,
-    sources: Mapping[str, InputSource],
-    declarations: InputDeclarations,
-    lang: str,
-    sample_idx: int,
-    question_id: str,
-) -> dict[str, ResolvedInput]:
-    """Build every declared input for one sample through the experiment's hook."""
-    if not declarations:
-        return {}
-    if build_input is None:
-        raise ValueError(
-            f"Question {question_id} declares prompt input(s) "
-            f"{', '.join(sorted(declarations))} but its experiment registers no "
-            f"build_input hook."
-        )
-    return {
-        name: build_input(
-            InputRequest(
-                name=name,
-                data=sources[name].data,
-                declaration=declaration,
-                lang=lang,
-                sample_idx=sample_idx,
-            )
-        )
-        for name, declaration in declarations.items()
-    }
-
-
 def render(template_text: str, resolved: Mapping[str, ResolvedInput]) -> str:
     """Substitute every resolved input into a template's placeholders."""
     text = template_text

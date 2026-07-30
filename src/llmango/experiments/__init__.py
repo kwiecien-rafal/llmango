@@ -7,7 +7,11 @@ SPECS: dict[str, ExperimentSpec] = {question: FRUIT for question in FRUIT.questi
 
 
 def spec_for(question_id: str) -> ExperimentSpec:
-    """Return the spec owning a question id, or raise listing the ids that exist."""
+    """Return the question's spec.
+
+    Specs are defined per-experiment in
+    src\\llmango\\experiments\\<experiment_id>\\experiment.py"""
+
     try:
         return SPECS[question_id]
     except KeyError:

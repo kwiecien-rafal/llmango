@@ -13,6 +13,7 @@ from llmango import aggregate as aggregate_module
 from llmango import analyze as analyze_module
 from llmango import manifest as manifest_module
 from llmango import normalize as normalize_module
+from llmango import pricing as pricing_module
 from llmango import storage as storage_module
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.experiments.e001_fruit.experiment import FruitChoice
@@ -172,20 +173,12 @@ class FakeBackend(Backend):
 
     def __init__(self, answers: list[str] | None = None) -> None:
         self._answers = list(answers or [])
-        self.submitted: list[list[GenRequest]] = []
 
     def generate_many(self, requests: list[GenRequest]) -> list[GenResult]:
         return [
             self._generate(request, self._scripted(index))
             for index, request in enumerate(requests)
         ]
-
-    def submit(self, requests: list[GenRequest]) -> str:
-        self.submitted.append(requests)
-        return "batch-xyz"
-
-    def fetch(self, batch_id: str, requests: list[GenRequest]) -> list[GenResult]:
-        return self.generate_many(requests)
 
     def _scripted(self, index: int) -> str:
         return self._answers[index] if index < len(self._answers) else "apple"
@@ -231,26 +224,26 @@ def make_fake_backend() -> Callable[..., FakeBackend]:
     return FakeBackend
 
 
-@pytest.fixture
-def pricing_table() -> PricingTable:
-    """A small, self-contained pricing table for the tests' generation model."""
-    return PricingTable(
-        currency="USD",
-        unit="per_1m_tokens",
-        models={
-            "gpt-5.6-luna": PricingEntry(
-                input=0.05,
-                cached_input=0.005,
-                output=0.4,
-                last_updated="2026-07-24",
-            )
-        },
-    )
+PRICING_TABLE = PricingTable(
+    currency="USD",
+    unit="per_1m_tokens",
+    models={
+        "gpt-5.6-luna": PricingEntry(
+            input=0.05,
+            cached_input=0.005,
+            output=0.4,
+            last_updated="2026-07-24",
+        )
+    },
+)
 
 
 @pytest.fixture
 def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect every pipeline output directory into tmp_path."""
+    """Redirect every pipeline path into tmp_path, pricing reference included."""
+    pricing_file = tmp_path / "pricing.json"
+    pricing_file.write_text(PRICING_TABLE.model_dump_json(), encoding="utf-8")
+
     monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
     monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
     monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
@@ -258,4 +251,5 @@ def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(aggregate_module, "AGG_DIR", tmp_path / "aggregated")
     monkeypatch.setattr(analyze_module, "AGG_DIR", tmp_path / "aggregated")
     monkeypatch.setattr(analyze_module, "CHARTS_DIR", tmp_path / "charts")
+    monkeypatch.setattr(pricing_module, "PRICING_FILE", pricing_file)
     return tmp_path

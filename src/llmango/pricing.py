@@ -1,7 +1,6 @@
 """Pricing reference for costing one generation, and the guard on how many to make."""
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -19,7 +18,6 @@ class PricingEntry(BaseModel):
     input: float
     output: float
     cached_input: float | None = None
-    batch_discount: float = 0.5
     last_updated: str
 
 
@@ -49,14 +47,27 @@ def guard_cost(calls: int, force: bool) -> None:
         )
 
 
-def load_pricing(path: Path = PRICING_FILE) -> PricingTable:
-    """Load and validate the pricing reference from pricing.json."""
-    if not path.is_file():
-        raise FileNotFoundError(
-            f"No pricing file at {path}. Create data/pricing.json with the models "
-            f"you plan to run, prices per 1M tokens, before generating."
+def guard_run(
+    model: str, price: PricingEntry | None, calls: int, force: bool
+) -> PricingEntry:
+    """Refuse a run that is unpriced or too large, and return the price it will use."""
+    if price is None:
+        raise ValueError(
+            f"No price for model '{model}'. Add it to data/pricing.json, prices "
+            f"per 1M tokens, before generating."
         )
-    return PricingTable.model_validate_json(path.read_text(encoding="utf-8"))
+    guard_cost(calls, force)
+    return price
+
+
+def load_pricing() -> PricingTable:
+    """Load and validate the pricing reference from data/pricing.json."""
+    if not PRICING_FILE.is_file():
+        raise FileNotFoundError(
+            f"No pricing file at {PRICING_FILE}. Create data/pricing.json with the "
+            f"models you plan to run, prices per 1M tokens, before generating."
+        )
+    return PricingTable.model_validate_json(PRICING_FILE.read_text(encoding="utf-8"))
 
 
 def round_usd(value: float) -> float:
@@ -64,21 +75,15 @@ def round_usd(value: float) -> float:
     return float(f"{value:.{_SIGNIFICANT_DIGITS}g}")
 
 
-def compute_cost(entry: PricingEntry, usage: Usage, *, batched: bool = False) -> Cost:
+def compute_cost(entry: PricingEntry, usage: Usage) -> Cost:
     """Compute the cost of one generation from its token usage and a pricing entry."""
     cached_rate = entry.cached_input if entry.cached_input is not None else entry.input
     non_cached = usage.prompt_tokens - usage.cached_tokens
-    discount = entry.batch_discount if batched else 1.0
     input_cost = round_usd(
-        (
-            non_cached / 1_000_000 * entry.input
-            + usage.cached_tokens / 1_000_000 * cached_rate
-        )
-        * discount
+        non_cached / 1_000_000 * entry.input
+        + usage.cached_tokens / 1_000_000 * cached_rate
     )
-    output_cost = round_usd(
-        usage.completion_tokens / 1_000_000 * entry.output * discount
-    )
+    output_cost = round_usd(usage.completion_tokens / 1_000_000 * entry.output)
     return Cost(
         input_cost_usd=input_cost,
         output_cost_usd=output_cost,

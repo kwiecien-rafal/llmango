@@ -17,6 +17,7 @@ from llmango import normalize as normalize_module
 from llmango.backends.base import GenRequest, GenResult
 from llmango.experiments.e001_fruit.experiment import FruitNormalization
 from llmango.normalize import normalize_question
+from llmango.rows import dtypes
 from llmango.storage import normalized_path, write_results
 
 _QUESTION = "001a"
@@ -63,7 +64,7 @@ def _raw_row(
 
 
 def _write_raw(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
-    write_results(rows, run_id, "gpt-5.6-luna")
+    write_results(rows, run_id, "gpt-5.6-luna", dtypes({}))
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:

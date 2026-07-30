@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from llmango import pricing as pricing_module
 from llmango.backends.base import Usage
 from llmango.pricing import (
     COST_GUARD_CALLS,
     PricingEntry,
     compute_cost,
     guard_cost,
+    guard_run,
     load_pricing,
     round_usd,
 )
@@ -25,6 +27,19 @@ def test_the_guard_refuses_more_paid_calls_than_the_limit() -> None:
 
 def test_force_allows_any_number_of_paid_calls() -> None:
     guard_cost(COST_GUARD_CALLS * 10, force=True)
+
+
+def test_guard_run_refuses_a_model_with_no_price() -> None:
+    """An unpriced run would write rows whose cost could never be reconstructed."""
+    with pytest.raises(ValueError, match="No price for model 'gpt-5.6-luna'"):
+        guard_run("gpt-5.6-luna", None, 1, force=False)
+
+
+def test_guard_run_refuses_a_priced_run_over_the_limit() -> None:
+    with pytest.raises(ValueError, match="without --force"):
+        guard_run("gpt-5.6-luna", _entry(), COST_GUARD_CALLS + 1, force=False)
+
+    guard_run("gpt-5.6-luna", _entry(), COST_GUARD_CALLS + 1, force=True)
 
 
 def _entry() -> PricingEntry:
@@ -48,16 +63,6 @@ def test_compute_cost_applies_the_cached_discount() -> None:
     assert cost.input_cost_usd == pytest.approx(4.2e-7)
     assert cost.output_cost_usd == pytest.approx(1.2e-6)
     assert cost.total_cost_usd == pytest.approx(1.62e-6)
-
-
-def test_compute_cost_applies_the_batch_discount() -> None:
-    entry = _entry()
-
-    sync = compute_cost(entry, _usage())
-    batched = compute_cost(entry, _usage(), batched=True)
-
-    assert batched.total_cost_usd == pytest.approx(sync.total_cost_usd / 2)
-    assert batched.input_cost_usd == pytest.approx(2.1e-7)
 
 
 def test_costs_are_rounded_to_significant_digits() -> None:
@@ -94,7 +99,9 @@ def test_compute_cost_defaults_cached_rate_to_input() -> None:
     assert cost.input_cost_usd == pytest.approx(1.0)
 
 
-def test_load_pricing_reads_and_validates(tmp_path: Path) -> None:
+def test_load_pricing_reads_and_validates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = tmp_path / "pricing.json"
     path.write_text(
         json.dumps(
@@ -108,13 +115,17 @@ def test_load_pricing_reads_and_validates(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    table = load_pricing(path)
-    assert table.models["m"].input == 0.1
+    monkeypatch.setattr(pricing_module, "PRICING_FILE", path)
+
+    assert load_pricing().models["m"].input == 0.1
 
 
-def test_load_pricing_raises_when_missing(tmp_path: Path) -> None:
+def test_load_pricing_raises_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pricing_module, "PRICING_FILE", tmp_path / "nope.json")
     with pytest.raises(FileNotFoundError):
-        load_pricing(tmp_path / "nope.json")
+        load_pricing()
 
 
 def test_committed_pricing_file_includes_the_generation_model() -> None:
