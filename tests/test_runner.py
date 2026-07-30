@@ -184,6 +184,28 @@ def test_ctrl_c_reports_what_was_written_rather_than_a_traceback(
     assert _only_manifest(data_dirs).samples_written == 3
 
 
+def test_a_run_reports_progress_within_each_arm(fake_backend: FakeBackend) -> None:
+    """Arms run one after another, so each counts its own samples from one."""
+    reported: list[tuple[str, int, int]] = []
+
+    run(
+        _plan(samples_per_arm=2),
+        fake_backend,
+        report_progress=lambda arm, done, total: reported.append(
+            (arm.lang, done, total)
+        ),
+    )
+
+    assert reported == [
+        ("en", 1, 2),
+        ("en", 2, 2),
+        ("pl", 1, 2),
+        ("pl", 2, 2),
+        ("ja", 1, 2),
+        ("ja", 2, 2),
+    ]
+
+
 def test_a_run_is_recorded_before_its_first_call_is_paid_for(data_dirs: Path) -> None:
     """A run that dies on call one still left the record that money was going out."""
     with pytest.raises(RuntimeError, match="connection dropped"):

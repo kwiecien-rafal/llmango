@@ -9,6 +9,7 @@ import typer
 if TYPE_CHECKING:
     from llmango.analyze import AnalyzeOutcome
     from llmango.normalize import NormalizeOutcome
+    from llmango.questions import Arm
     from llmango.runner import RunOutcome, RunPlan
 
 app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
@@ -16,6 +17,7 @@ app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
 QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
 _PIPELINE_ERRORS = (OSError, RuntimeError, ValueError)
+_BAR_WIDTH = 24
 
 
 def _reports_pipeline_errors[**Params](
@@ -57,7 +59,7 @@ def run(
     if dry_run:
         return
 
-    _report_outcome(runner.run(planned, force=force))
+    _report_outcome(runner.run(planned, force=force, report_progress=_report_progress))
 
 
 @app.command()
@@ -121,6 +123,15 @@ def _report_plan(plan: "RunPlan") -> None:
         typer.echo(f"    {arm.label}  {arm.lang}")
 
 
+def _report_progress(arm: "Arm", done: int, total: int) -> None:
+    """Redraw one arm's progress bar in place."""
+    filled = round(_BAR_WIDTH * done / total)
+    bar = "#" * filled + "-" * (_BAR_WIDTH - filled)
+    typer.echo(
+        f"\r  {arm.label:<12} {arm.lang:<3} {bar} {done}/{total}", nl=done == total
+    )
+
+
 def _report_outcome(outcome: "RunOutcome") -> None:
     """Report what a run wrote, what it used and where both landed."""
     manifest = outcome.manifest
@@ -129,7 +140,7 @@ def _report_outcome(outcome: "RunOutcome") -> None:
         typer.echo(f"Run {outcome.run_id}: wrote {outcome.rows_written} rows.")
     else:
         typer.echo(
-            f"Run {outcome.run_id}: stopped after {manifest.samples_written} of "
+            f"\nRun {outcome.run_id}: stopped after {manifest.samples_written} of "
             f"{manifest.samples_total} rows. Rerun to add the rest."
         )
     typer.echo(f"Usage:    {usage.total_tokens} tokens, ${usage.total_cost_usd:.6f}")

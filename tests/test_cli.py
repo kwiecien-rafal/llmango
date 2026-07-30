@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from llmango.cli import _report_normalize, _report_outcome, app
+from llmango.cli import (
+    _BAR_WIDTH,
+    _report_normalize,
+    _report_outcome,
+    _report_progress,
+    app,
+)
 from llmango.manifest import Manifest, UsageTotals
 from llmango.normalize import NormalizeOutcome
 from llmango.pricing import PricingEntry
@@ -92,6 +98,22 @@ def test_normalize_names_the_questions_that_exist(data_dirs: Path) -> None:
 
     assert "Unknown question: '001'" in result.output
     assert "001a, 001b, 001c, 001d" in result.output
+
+
+def test_report_progress_draws_one_bar_per_arm(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bar redraws over itself until its arm is done, which ends its line."""
+    arm = load_question("001a").arms[0]
+
+    _report_progress(arm, 3, 5)
+    _report_progress(arm, 5, 5)
+
+    out = capsys.readouterr().out
+    assert out.startswith("\r  FruitChoice  en  ")
+    assert "3/5" in out
+    assert f"{'#' * _BAR_WIDTH} 5/5\n" in out
+    assert out.count("\n") == 1
 
 
 def test_report_outcome_reports_a_finished_run(

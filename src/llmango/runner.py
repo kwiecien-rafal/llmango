@@ -1,6 +1,7 @@
 """Run orchestration: plan a run from disk, then execute it through a backend."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,8 @@ from llmango.questions import Arm, PromptTemplate, Question, load_question
 from llmango.rows import CostedSample, Sample
 from llmango.spec import schema_name
 from llmango.storage import append_result, results_path
+
+ReportProgress = Callable[[Arm, int, int], None]
 
 
 @dataclass(frozen=True)
@@ -91,7 +94,11 @@ def plan(question_id: str, *, samples_per_arm: int = 1) -> RunPlan:
 
 
 def run(
-    plan: RunPlan, backend: Backend | None = None, *, force: bool = False
+    plan: RunPlan,
+    backend: Backend | None = None,
+    *,
+    force: bool = False,
+    report_progress: ReportProgress | None = None,
 ) -> RunOutcome:
     """Execute a planned run, persisting each result before the next call goes out."""
     question = plan.question
@@ -116,6 +123,8 @@ def run(
             )
             manifest = _with_usage(manifest, costed_samples)
             write_manifest(manifest)
+            if report_progress is not None:
+                report_progress(sample.arm, sample.sample_idx + 1, plan.samples_per_arm)
     except KeyboardInterrupt:
         pass
 
