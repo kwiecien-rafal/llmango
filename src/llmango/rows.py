@@ -70,7 +70,7 @@ class Sample:
 
 
 @dataclass(frozen=True)
-class Generation:
+class CostedSample:
     """One sample, the result it came back as, and what that cost."""
 
     sample: Sample
@@ -78,74 +78,83 @@ class Generation:
     cost: Cost | None
 
 
-def dtypes(extra: ExtraRawDtypes) -> dict[str, pl.DataType]:
+def column_dtypes(extra: ExtraRawDtypes) -> dict[str, pl.DataType]:
     """The dtype of every column a row carries, the experiment's extras included."""
     return {**LEADING_COLUMNS, **TRAILING_COLUMNS, **extra}
 
 
-def costed(
-    samples: list[Sample], results: list[GenResult], pricing: PricingEntry | None
-) -> list[Generation]:
+def cost_samples(
+    samples: list[Sample], gen_results: list[GenResult], pricing: PricingEntry | None
+) -> list[CostedSample]:
     """Pair each sample with the result it came back as, costing every one once."""
     return [
-        Generation(sample, result, _cost(result.usage, pricing))
-        for sample, result in zip(samples, results, strict=True)
+        CostedSample(sample, gen_result, _cost(gen_result.usage, pricing))
+        for sample, gen_result in zip(samples, gen_results, strict=True)
     ]
 
 
-def build(
-    generations: list[Generation], manifest: Manifest, spec: ExperimentSpec
+def build_rows(
+    costed_samples: list[CostedSample], manifest: Manifest, spec: ExperimentSpec
 ) -> list[dict[str, object]]:
-    """Turn every generation into the row the raw parquet stores it as."""
+    """Turn every costed sample into the row the raw parquet stores it as."""
     response_schemas = {
         record.schema_name: _schema_column(record.response_schema)
         for record in manifest.arms
     }
     return [
-        _row(generation, manifest, spec, response_schemas) for generation in generations
+        _row(costed_sample, manifest, spec, response_schemas)
+        for costed_sample in costed_samples
     ]
 
 
-def usage_totals(generations: list[Generation]) -> UsageTotals:
-    """Sum generations and their costs into their token and cost totals."""
-    results = [generation.result for generation in generations]
-    usages = [result.usage for result in results if result.usage is not None]
-    priced = [
-        generation.cost for generation in generations if generation.cost is not None
+def usage_totals(costed_samples: list[CostedSample]) -> UsageTotals:
+    """Sum a run's costed samples into their token and cost totals."""
+    gen_results = [costed_sample.result for costed_sample in costed_samples]
+    usages = [
+        gen_result.usage for gen_result in gen_results if gen_result.usage is not None
+    ]
+    costs = [
+        costed_sample.cost
+        for costed_sample in costed_samples
+        if costed_sample.cost is not None
     ]
     return UsageTotals(
-        errors=sum(result.error is not None for result in results),
-        provider_refusals=sum(result.refusal is not None for result in results),
+        errors=sum(gen_result.error is not None for gen_result in gen_results),
+        provider_refusals=sum(
+            gen_result.refusal is not None for gen_result in gen_results
+        ),
         prompt_tokens=sum(usage.prompt_tokens for usage in usages),
         completion_tokens=sum(usage.completion_tokens for usage in usages),
         total_tokens=sum(usage.total_tokens for usage in usages),
         cached_tokens=sum(usage.cached_tokens for usage in usages),
         reasoning_tokens=sum(usage.reasoning_tokens for usage in usages),
-        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in priced)),
-        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in priced)),
-        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in priced)),
+        input_cost_usd=round_usd(sum(cost.input_cost_usd for cost in costs)),
+        output_cost_usd=round_usd(sum(cost.output_cost_usd for cost in costs)),
+        total_cost_usd=round_usd(sum(cost.total_cost_usd for cost in costs)),
     )
 
 
-def usage_by_arm(generations: list[Generation]) -> dict[ArmKey, UsageTotals]:
-    """Total what each arm of a run used, in one pass over its generations."""
-    grouped: dict[ArmKey, list[Generation]] = defaultdict(list)
-    for generation in generations:
-        grouped[generation.sample.arm.key].append(generation)
+def usage_by_arm(costed_samples: list[CostedSample]) -> dict[ArmKey, UsageTotals]:
+    """Total what each arm of a run used, in one pass over its costed samples."""
+    grouped: dict[ArmKey, list[CostedSample]] = defaultdict(list)
+    for costed_sample in costed_samples:
+        grouped[costed_sample.sample.arm.key].append(costed_sample)
     return {key: usage_totals(group) for key, group in grouped.items()}
 
 
 def _row(
-    generation: Generation,
+    costed_sample: CostedSample,
     manifest: Manifest,
     spec: ExperimentSpec,
     response_schemas: dict[str | None, str | None],
 ) -> dict[str, object]:
     """Combine the common columns, the experiment's extras, provenance and cost."""
-    sample, result = generation.sample, generation.result
-    answer = _answer(result.parsed, result.raw_json)
+    sample, gen_result = costed_sample.sample, costed_sample.result
+    answer = _answer(gen_result.parsed, gen_result.raw_json)
     extra = (
-        spec.extra_raw_columns(result.parsed, answer) if spec.extra_raw_columns else {}
+        spec.extra_raw_columns(gen_result.parsed, answer)
+        if spec.extra_raw_columns
+        else {}
     )
     return {
         "question_id": manifest.question_id,
@@ -158,22 +167,22 @@ def _row(
         "prompt_sha256": sha256_text(sample.prompt),
         "prompt": sample.prompt,
         "prompt_inputs": sample.prompt_inputs,
-        "raw_json": result.raw_json,
+        "raw_json": gen_result.raw_json,
         "answer": answer,
         **extra,
-        "model_snapshot": result.model_snapshot,
-        "finish_reason": result.finish_reason,
-        "refusal": result.refusal,
-        "error": result.error,
-        "response_id": result.response_id,
-        "service_tier": result.service_tier,
-        "provider_created_at": result.provider_created_at,
+        "model_snapshot": gen_result.model_snapshot,
+        "finish_reason": gen_result.finish_reason,
+        "refusal": gen_result.refusal,
+        "error": gen_result.error,
+        "response_id": gen_result.response_id,
+        "service_tier": gen_result.service_tier,
+        "provider_created_at": gen_result.provider_created_at,
         "response_schema": response_schemas[schema_name(sample.arm.schema)],
-        "request_envelope": result.request_envelope,
-        "response_envelope": result.response_envelope,
-        **_usage_columns(result.usage),
-        **_cost_columns(generation.cost, manifest.pricing),
-        "created_at": result.created_at,
+        "request_envelope": gen_result.request_envelope,
+        "response_envelope": gen_result.response_envelope,
+        **_usage_columns(gen_result.usage),
+        **_cost_columns(costed_sample.cost, manifest.pricing),
+        "created_at": gen_result.created_at,
     }
 
 
@@ -192,7 +201,7 @@ def _schema_column(response_schema: dict[str, object] | None) -> str | None:
 
 
 def _cost(usage: Usage | None, pricing: PricingEntry | None) -> Cost | None:
-    """Cost one generation, None when its usage or its model's price is missing."""
+    """Cost one sample, None when its usage or its model's price is missing."""
     if usage is None or pricing is None:
         return None
     return compute_cost(pricing, usage)
@@ -210,7 +219,7 @@ def _usage_columns(usage: Usage | None) -> dict[str, object]:
 
 
 def _cost_columns(cost: Cost | None, pricing: PricingEntry | None) -> dict[str, object]:
-    """Map one generation's cost to its columns, null in each when it has no cost."""
+    """Map one sample's cost to its columns, null in each when it has no cost."""
     return {
         "input_cost_usd": cost.input_cost_usd if cost else None,
         "output_cost_usd": cost.output_cost_usd if cost else None,

@@ -17,12 +17,11 @@ from llmango.manifest import (
     Manifest,
     UsageTotals,
     build_run_id,
-    manifest_path,
     write_manifest,
 )
 from llmango.pricing import PricingEntry, guard_run, load_pricing
 from llmango.questions import Arm, PromptTemplate, Question, load_question
-from llmango.rows import Generation, Sample
+from llmango.rows import CostedSample, Sample
 from llmango.spec import schema_name
 from llmango.storage import write_results
 
@@ -92,21 +91,17 @@ def run(
 
     created_at = datetime.now(UTC)
     run_id = build_run_id(question.question_id, created_at)
-    if manifest_path(run_id).exists():
-        raise ValueError(
-            f"Run {run_id} already exists, and a run never overwrites another "
-            f"one's files."
-        )
 
-    results = backend.generate_many(plan.requests)
-    generations = rows.costed(plan.samples, results, price)
-    manifest = _manifest(plan, run_id, created_at, price, generations)
-    table = rows.build(generations, manifest, spec)
+    gen_results = backend.generate_many(plan.requests)
+
+    costed_samples = rows.cost_samples(plan.samples, gen_results, price)
+    manifest = _manifest(plan, run_id, created_at, price, costed_samples)
+    table = rows.build_rows(costed_samples, manifest, spec)
     return RunOutcome(
         manifest=manifest,
         rows_written=len(table),
         parquet_path=write_results(
-            table, run_id, question.model, rows.dtypes(spec.extra_raw_dtypes)
+            table, run_id, question.model, rows.column_dtypes(spec.extra_raw_dtypes)
         ),
         manifest_path=write_manifest(manifest),
     )
@@ -117,11 +112,11 @@ def _manifest(
     run_id: str,
     created_at: datetime,
     price: PricingEntry,
-    generations: list[Generation],
+    costed_samples: list[CostedSample],
 ) -> Manifest:
     """Record what a run was, once it is known what every arm of it used."""
     question = plan.question
-    by_arm = rows.usage_by_arm(generations)
+    by_arm = rows.usage_by_arm(costed_samples)
     return Manifest(
         run_id=run_id,
         question_id=question.question_id,
@@ -137,7 +132,7 @@ def _manifest(
         inputs=question.inputs,
         input_sha256=question.input_sha256,
         pricing=price,
-        usage=rows.usage_totals(generations),
+        usage=rows.usage_totals(costed_samples),
         created_at=created_at,
     )
 

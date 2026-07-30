@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from llmango import storage as storage_module
-from llmango.rows import dtypes
+from llmango.rows import column_dtypes
 from llmango.storage import read_results, results_path, write_results
 
 _RUN_ID = "001a__en__20260720T101500Z"
@@ -60,7 +60,7 @@ def _raw_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_write_then_read_round_trips() -> None:
     rows = [_row(0, "apple"), _row(1, "mango")]
 
-    path = write_results(rows, _RUN_ID, "gpt-5.6-luna", dtypes({}))
+    path = write_results(rows, _RUN_ID, "gpt-5.6-luna", column_dtypes({}))
 
     assert path == results_path(_RUN_ID, "gpt-5.6-luna")
     frame = read_results("*.parquet")
@@ -69,7 +69,7 @@ def test_write_then_read_round_trips() -> None:
 
 
 def test_column_dtypes_are_pinned() -> None:
-    write_results([_row(0, "apple")], _RUN_ID, "gpt-5.6-luna", dtypes({}))
+    write_results([_row(0, "apple")], _RUN_ID, "gpt-5.6-luna", column_dtypes({}))
 
     frame = read_results("*.parquet")
     assert frame.schema["sample_idx"] == pl.Int64
@@ -89,7 +89,9 @@ def test_declared_dtypes_pin_a_column_that_is_null_in_every_row() -> None:
     """Declared dtypes keep a parquet schema from varying with one run's data."""
     row = {**_row(0, "apple"), "ripeness": None}
 
-    write_results([row], _RUN_ID, "gpt-5.6-luna", dtypes({"ripeness": pl.String()}))
+    write_results(
+        [row], _RUN_ID, "gpt-5.6-luna", column_dtypes({"ripeness": pl.String()})
+    )
 
     assert read_results("*.parquet").schema["ripeness"] == pl.String
 
@@ -110,9 +112,9 @@ def test_read_results_pools_every_run_of_one_question() -> None:
     later = "001a__en__20260721T101500Z"
 
     write_results(
-        [_row(0, "apple"), _row(1, "mango")], _RUN_ID, "gpt-5.6-luna", dtypes({})
+        [_row(0, "apple"), _row(1, "mango")], _RUN_ID, "gpt-5.6-luna", column_dtypes({})
     )
-    write_results([_row(0, "pear")], later, "gpt-5.6-luna", dtypes({}))
+    write_results([_row(0, "pear")], later, "gpt-5.6-luna", column_dtypes({}))
 
     frame = read_results("001a__*.parquet")
     assert frame.height == 3

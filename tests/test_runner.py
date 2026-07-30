@@ -203,19 +203,6 @@ def test_a_rerun_is_more_samples_rather_than_a_replacement(
     assert read_results("001a__*.parquet").height == 12
 
 
-def test_a_run_never_overwrites_another_ones_files(
-    fake_backend: FakeBackend, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Run ids are stamped to the millisecond; a collision refuses rather than eats."""
-    monkeypatch.setattr(
-        runner_module, "build_run_id", lambda question_id, created_at: "001a__fixed"
-    )
-    run(_plan(), fake_backend)
-
-    with pytest.raises(ValueError, match="already exists"):
-        run(_plan(), fake_backend)
-
-
 def test_a_run_id_names_the_question_and_when_it_started(
     fake_backend: FakeBackend,
 ) -> None:

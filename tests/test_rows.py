@@ -15,9 +15,9 @@ from llmango.rows import (
     LEADING_COLUMNS,
     TRAILING_COLUMNS,
     Sample,
-    build,
-    costed,
-    dtypes,
+    build_rows,
+    column_dtypes,
+    cost_samples,
     usage_by_arm,
     usage_totals,
 )
@@ -94,9 +94,9 @@ def _usage(prompt_tokens: int = 12) -> Usage:
 def test_a_row_carries_every_declared_column_in_order() -> None:
     """Column order is the table's contract, so a row emits it rather than storage."""
     sample = _sample("en")
-    generations = costed([sample], [_result(sample, usage=_usage())], _PRICING)
+    costed_samples = cost_samples([sample], [_result(sample, usage=_usage())], _PRICING)
 
-    row = build(generations, _manifest(_arm_record("en")), FRUIT)[0]
+    row = build_rows(costed_samples, _manifest(_arm_record("en")), FRUIT)[0]
 
     assert list(row) == [*LEADING_COLUMNS, *TRAILING_COLUMNS]
     assert row["question_id"] == "001a"
@@ -109,9 +109,9 @@ def test_a_row_carries_every_declared_column_in_order() -> None:
 def test_a_row_without_usage_carries_null_tokens_and_costs() -> None:
     """Every column is present in every row, so the parquet schema cannot vary."""
     sample = _sample("en")
-    generations = costed([sample], [_result(sample, usage=None)], _PRICING)
+    costed_samples = cost_samples([sample], [_result(sample, usage=None)], _PRICING)
 
-    row = build(generations, _manifest(_arm_record("en")), FRUIT)[0]
+    row = build_rows(costed_samples, _manifest(_arm_record("en")), FRUIT)[0]
 
     assert list(row) == [*LEADING_COLUMNS, *TRAILING_COLUMNS]
     assert row["prompt_tokens"] is None
@@ -121,9 +121,9 @@ def test_a_row_without_usage_carries_null_tokens_and_costs() -> None:
 
 def test_a_priced_row_carries_its_cost_and_the_price_it_used() -> None:
     sample = _sample("en")
-    generations = costed([sample], [_result(sample, usage=_usage())], _PRICING)
+    costed_samples = cost_samples([sample], [_result(sample, usage=_usage())], _PRICING)
 
-    row = build(generations, _manifest(_arm_record("en")), FRUIT)[0]
+    row = build_rows(costed_samples, _manifest(_arm_record("en")), FRUIT)[0]
 
     assert isinstance(row["total_cost_usd"], float)
     assert row["total_cost_usd"] > 0
@@ -134,9 +134,9 @@ def test_an_experiment_column_sits_between_the_answer_and_the_provenance() -> No
     """An experiment appends columns in one slot, right after the shared answer."""
     spec = replace(FRUIT, extra_raw_columns=lambda parsed, answer: {"ripeness": "ripe"})
     sample = _sample("en")
-    generations = costed([sample], [_result(sample, usage=_usage())], _PRICING)
+    costed_samples = cost_samples([sample], [_result(sample, usage=_usage())], _PRICING)
 
-    columns = list(build(generations, _manifest(_arm_record("en")), spec)[0])
+    columns = list(build_rows(costed_samples, _manifest(_arm_record("en")), spec)[0])
 
     start = columns.index("answer")
     assert columns[start : start + 3] == ["answer", "ripeness", "model_snapshot"]
@@ -144,24 +144,24 @@ def test_an_experiment_column_sits_between_the_answer_and_the_provenance() -> No
 
 def test_the_free_text_arm_stores_no_response_schema() -> None:
     sample = replace(_sample("pl"), arm=Arm(schema=None, lang="pl"))
-    generations = costed([sample], [_result(sample, usage=_usage())], _PRICING)
+    costed_samples = cost_samples([sample], [_result(sample, usage=_usage())], _PRICING)
 
-    row = build(generations, _manifest(_arm_record("pl", None)), FRUIT)[0]
+    row = build_rows(costed_samples, _manifest(_arm_record("pl", None)), FRUIT)[0]
 
     assert row["response_schema"] is None
 
 
 def test_usage_is_totalled_per_arm_as_well_as_for_the_run() -> None:
     samples = [_sample("en"), _sample("en", 1), _sample("pl")]
-    results = [_result(sample, usage=_usage()) for sample in samples]
-    generations = costed(samples, results, _PRICING)
+    gen_results = [_result(sample, usage=_usage()) for sample in samples]
+    costed_samples = cost_samples(samples, gen_results, _PRICING)
 
-    by_arm = usage_by_arm(generations)
+    by_arm = usage_by_arm(costed_samples)
 
     assert set(by_arm) == {("en", "FruitChoice"), ("pl", "FruitChoice")}
     assert by_arm[("en", "FruitChoice")].prompt_tokens == 24
     assert by_arm[("pl", "FruitChoice")].prompt_tokens == 12
-    assert usage_totals(generations).prompt_tokens == 36
+    assert usage_totals(costed_samples).prompt_tokens == 36
 
 
 def test_usage_totals_count_outcomes_that_carried_no_tokens() -> None:
@@ -171,7 +171,7 @@ def test_usage_totals_count_outcomes_that_carried_no_tokens() -> None:
     )
     errored = replace(_result(sample), parsed=None, raw_json=None, error="timeout")
 
-    totals = usage_totals(costed([sample, sample], [refused, errored], _PRICING))
+    totals = usage_totals(cost_samples([sample, sample], [refused, errored], _PRICING))
 
     assert totals.provider_refusals == 1
     assert totals.errors == 1
@@ -179,8 +179,8 @@ def test_usage_totals_count_outcomes_that_carried_no_tokens() -> None:
     assert totals.total_cost_usd == 0.0
 
 
-def test_dtypes_cover_every_column_and_the_experiments_extras() -> None:
-    declared = dtypes({"ripeness": pl.String()})
+def test_column_dtypes_cover_every_column_and_the_experiments_extras() -> None:
+    declared = column_dtypes({"ripeness": pl.String()})
 
     assert set(declared) == {*LEADING_COLUMNS, *TRAILING_COLUMNS, "ripeness"}
     assert declared["sample_idx"] == pl.Int64()
