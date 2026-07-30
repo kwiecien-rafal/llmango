@@ -36,8 +36,8 @@ def _stored() -> dict[str, str | None]:
     return yaml.safe_load(_map_path().read_text(encoding="utf-8")) or {}
 
 
-_RUN_ID = "001a__en__20260720T101500Z"
-_SIBLING_RUN_ID = "001b__en__20260720T101500Z"
+_RUN_ID = "001a__20260720T101500000Z"
+_SIBLING_RUN_ID = "001b__20260720T101500000Z"
 
 _SHOWN = '{"fruit_list": ["mango", "apple", "banana"]}'
 
@@ -69,7 +69,7 @@ def _raw_row(
 
 
 def _write_raw(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
-    write_results(rows, run_id, "gpt-5.6-luna", column_dtypes({}))
+    write_results(rows, run_id, column_dtypes({}))
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:

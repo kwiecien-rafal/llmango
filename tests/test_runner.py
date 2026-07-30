@@ -124,7 +124,7 @@ def test_run_writes_rows_and_manifest(fake_backend: FakeBackend) -> None:
     assert outcome.rows_written == 6
     assert outcome.parquet_path.exists()
     assert outcome.manifest_path.exists()
-    assert outcome.parquet_path.stem.startswith(outcome.run_id)
+    assert outcome.parquet_path.stem == outcome.run_id
     assert outcome.manifest_path.stem == outcome.run_id
 
     frame = read_results("*.parquet")

@@ -10,7 +10,7 @@ from llmango import storage as storage_module
 from llmango.rows import column_dtypes
 from llmango.storage import read_results, results_path, write_results
 
-_RUN_ID = "001a__en__20260720T101500Z"
+_RUN_ID = "001a__20260720T101500000Z"
 
 
 def _row(sample_idx: int, fruit: str) -> dict[str, object]:
@@ -60,16 +60,16 @@ def _raw_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_write_then_read_round_trips() -> None:
     rows = [_row(0, "apple"), _row(1, "mango")]
 
-    path = write_results(rows, _RUN_ID, "gpt-5.6-luna", column_dtypes({}))
+    path = write_results(rows, _RUN_ID, column_dtypes({}))
 
-    assert path == results_path(_RUN_ID, "gpt-5.6-luna")
+    assert path == results_path(_RUN_ID)
     frame = read_results("*.parquet")
     assert frame.height == 2
     assert frame["answer"].to_list() == ["apple", "mango"]
 
 
 def test_column_dtypes_are_pinned() -> None:
-    write_results([_row(0, "apple")], _RUN_ID, "gpt-5.6-luna", column_dtypes({}))
+    write_results([_row(0, "apple")], _RUN_ID, column_dtypes({}))
 
     frame = read_results("*.parquet")
     assert frame.schema["sample_idx"] == pl.Int64
@@ -89,18 +89,13 @@ def test_declared_dtypes_pin_a_column_that_is_null_in_every_row() -> None:
     """Declared dtypes keep a parquet schema from varying with one run's data."""
     row = {**_row(0, "apple"), "ripeness": None}
 
-    write_results(
-        [row], _RUN_ID, "gpt-5.6-luna", column_dtypes({"ripeness": pl.String()})
-    )
+    write_results([row], _RUN_ID, column_dtypes({"ripeness": pl.String()}))
 
     assert read_results("*.parquet").schema["ripeness"] == pl.String
 
 
-def test_result_file_is_named_after_its_run_and_model() -> None:
-    path = results_path(_RUN_ID, "vendor/model-1")
-
-    assert path.name == f"{_RUN_ID}__vendor-model-1.parquet"
-    assert path.name.startswith("001a__")
+def test_result_file_is_named_after_its_run() -> None:
+    assert results_path(_RUN_ID).name == f"{_RUN_ID}.parquet"
 
 
 def test_read_results_pools_every_run_of_one_question() -> None:
@@ -109,12 +104,10 @@ def test_read_results_pools_every_run_of_one_question() -> None:
     Each run writes its own file and a question's glob reads them all, so a
     second run of the same arm is more samples of it rather than a replacement.
     """
-    later = "001a__en__20260721T101500Z"
+    later = "001a__20260721T101500000Z"
 
-    write_results(
-        [_row(0, "apple"), _row(1, "mango")], _RUN_ID, "gpt-5.6-luna", column_dtypes({})
-    )
-    write_results([_row(0, "pear")], later, "gpt-5.6-luna", column_dtypes({}))
+    write_results([_row(0, "apple"), _row(1, "mango")], _RUN_ID, column_dtypes({}))
+    write_results([_row(0, "pear")], later, column_dtypes({}))
 
     frame = read_results("001a__*.parquet")
     assert frame.height == 3

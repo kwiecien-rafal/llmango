@@ -8,25 +8,19 @@ import polars as pl
 from llmango.config import NORMALIZED_DIR, RAW_DIR
 
 
-def _slugify(value: str) -> str:
-    """Make a model id safe to use inside a file name."""
-    return value.replace("/", "-").replace("\\", "-")
-
-
-def results_path(run_id: str, model: str) -> Path:
+def results_path(run_id: str) -> Path:
     """Return the Parquet path for one run."""
-    return RAW_DIR / f"{run_id}__{_slugify(model)}.parquet"
+    return RAW_DIR / f"{run_id}.parquet"
 
 
 def write_results(
     raw_rows: list[dict[str, object]],
     run_id: str,
-    model: str,
     dtypes: Mapping[str, pl.DataType],
 ) -> Path:
     """Write one run's rows to a single Parquet file under the declared dtypes."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    path = results_path(run_id, model)
+    path = results_path(run_id)
     pl.DataFrame(raw_rows, schema_overrides=dtypes).write_parquet(path)
     return path
 

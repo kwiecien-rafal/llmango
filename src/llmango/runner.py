@@ -101,7 +101,7 @@ def run(
         manifest=manifest,
         rows_written=len(raw_rows),
         parquet_path=write_results(
-            raw_rows, run_id, question.model, rows.column_dtypes(spec.extra_raw_dtypes)
+            raw_rows, run_id, rows.column_dtypes(spec.extra_raw_dtypes)
         ),
         manifest_path=write_manifest(manifest),
     )
