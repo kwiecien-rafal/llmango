@@ -23,7 +23,7 @@ from llmango.manifest import (
 from llmango.pricing import PricingEntry, guard_run, load_pricing
 from llmango.questions import Arm, PromptTemplate, Question, load_question
 from llmango.rows import Generation, Sample
-from llmango.spec import ExperimentSpec, schema_name
+from llmango.spec import schema_name
 from llmango.storage import write_results
 
 
@@ -35,11 +35,6 @@ class RunPlan:
     samples_per_arm: int
     samples: list[Sample]
     price: PricingEntry | None
-
-    @property
-    def spec(self) -> ExperimentSpec:
-        """The experiment this run's question belongs to."""
-        return self.question.spec
 
     @property
     def samples_total(self) -> int:
@@ -91,7 +86,7 @@ def run(
 ) -> RunOutcome:
     """Execute a planned run and persist its results and manifest."""
     question = plan.question
-    spec = plan.spec
+    spec = question.spec
     price = guard_run(question.model, plan.price, plan.samples_total, force)
     backend = backend or backend_for(question.provider)
 
