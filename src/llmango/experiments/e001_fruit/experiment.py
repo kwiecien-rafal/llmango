@@ -12,7 +12,7 @@ import yaml
 from llmango.config import get_experiment_dir, get_question_dir
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
-from llmango.spec import OTHER_CATEGORY, ExperimentSpec, NormalizationMap
+from llmango.spec import OTHER_CATEGORY, AnswerMap, ExperimentSpec, NormalizationMap
 
 FOLDER = "e001_fruit"
 QUESTIONS = ("001a", "001b", "001c", "001d")
@@ -118,8 +118,8 @@ def _shuffled(ids: list[str], sample_seed: int) -> list[str]:
 
 _NORMALIZATION_MAP = Path(__file__).parent / "normalization_map.yaml"
 _MAP_HEADER = (
-    "# Answer -> canonical fruit. Initially hand-written, entries\n"
-    "# added with successfull LLM normalization.\n"
+    "# Prompt language -> answer -> canonical fruit. Initially hand-written,\n"
+    "# entries added with successful LLM normalization.\n"
 )
 _QUALIFIERS = {"a", "an", "the", "fresh", "ripe"}
 
@@ -165,15 +165,19 @@ def normalization_map() -> NormalizationMap:
         if source.data is None:
             continue
         for canonical, labels in _table(source.data).items():
-            for label in labels.values():
-                mapping[label] = canonical
+            for lang, label in labels.items():
+                mapping.setdefault(lang, {})[label] = canonical
 
-    return mapping | _stored_map()
+    for lang, answers in _stored_map().items():
+        mapping.setdefault(lang, {}).update(answers)
+
+    return mapping
 
 
-def promote_normalizations(entries: NormalizationMap) -> None:
+def promote_normalizations(lang: str, entries: AnswerMap) -> None:
     """Add what the LLM decided to the committed map, so it is never paid for twice."""
-    stored = _stored_map() | entries
+    stored = _stored_map()
+    stored.setdefault(lang, {}).update(entries)
     body = yaml.safe_dump(stored, allow_unicode=True, sort_keys=True)
     _NORMALIZATION_MAP.write_text(_MAP_HEADER + body, encoding="utf-8")
 
@@ -181,11 +185,14 @@ def promote_normalizations(entries: NormalizationMap) -> None:
 def _stored_map() -> NormalizationMap:
     """Read the committed map, where a null value means the answer named no fruit."""
     text = _NORMALIZATION_MAP.read_text(encoding="utf-8")
-    entries = cast(dict[Any, Any], yaml.safe_load(text) or {})
+    entries = cast(dict[Any, dict[Any, Any]], yaml.safe_load(text) or {})
 
     return {
-        str(answer): None if canonical is None else str(canonical)
-        for answer, canonical in entries.items()
+        str(lang): {
+            str(answer): None if canonical is None else str(canonical)
+            for answer, canonical in answers.items()
+        }
+        for lang, answers in entries.items()
     }
 
 

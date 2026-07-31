@@ -71,7 +71,7 @@ def normalize_question(
     resolutions: dict[tuple[str, str], Resolution] = {}
     unresolved: list[tuple[str, str]] = []
     for lang, answer in pairs:
-        offline = _resolve_offline(answer, spec, mapping)
+        offline = _resolve_offline(lang, answer, spec, mapping)
         if offline is not None:
             resolutions[(lang, answer)] = offline
         else:
@@ -116,16 +116,17 @@ def _distinct_pairs(frame: pl.DataFrame) -> list[tuple[str, str]]:
 
 
 def _resolve_offline(
-    answer: str, spec: ExperimentSpec, mapping: NormalizationMap
+    lang: str, answer: str, spec: ExperimentSpec, mapping: NormalizationMap
 ) -> Resolution | None:
-    """Resolve one answer without an LLM: an empty answer, then the mapping table."""
+    """Resolve one answer without an LLM: an empty answer, then its language's map."""
     if not answer.strip():
         return Resolution(canonical=None, is_valid=False)
 
+    answers = mapping.get(lang, {})
     key = _preprocess(answer, spec)
-    if key not in mapping:
+    if key not in answers:
         return None
-    canonical = mapping[key]
+    canonical = answers[key]
 
     return Resolution(canonical=canonical, is_valid=canonical is not None)
 
@@ -154,7 +155,7 @@ def _resolve_online(
             continue
 
         resolution = _verdict(result.parsed)
-        _promote(answer, resolution, spec)
+        _promote(lang, answer, resolution, spec)
         resolved[(lang, answer)] = resolution
 
     return resolved
@@ -170,14 +171,16 @@ def _verdict(parsed: BaseModel) -> Resolution:
     return Resolution(canonical=None, is_valid=False)
 
 
-def _promote(answer: str, resolution: Resolution, spec: ExperimentSpec) -> None:
+def _promote(
+    lang: str, answer: str, resolution: Resolution, spec: ExperimentSpec
+) -> None:
     """Store what was just paid for, keyed as the next run will look it up."""
     promote = spec.promote_normalizations
 
     if promote is None:
         return
 
-    promote({_preprocess(answer, spec): resolution.canonical})
+    promote(lang, {_preprocess(answer, spec): resolution.canonical})
 
 
 def _require_all_resolved(
@@ -243,15 +246,23 @@ def _order_columns(frame: pl.DataFrame, extra: list[str]) -> pl.DataFrame:
 
 
 def _load_mapping(spec: ExperimentSpec, schema: type[BaseModel]) -> NormalizationMap:
-    """Preprocess the experiment's answer-to-category map, empty when it has none."""
+    """Preprocess the experiment's per-language map, empty when it has none."""
     if spec.normalization_map is None:
         return {}
 
     mapping = {
-        _preprocess(answer, spec): canonical
-        for answer, canonical in spec.normalization_map().items()
+        lang: {
+            _preprocess(answer, spec): canonical
+            for answer, canonical in answers.items()
+        }
+        for lang, answers in spec.normalization_map().items()
     }
-    named = {canonical for canonical in mapping.values() if canonical is not None}
+    named = {
+        canonical
+        for answers in mapping.values()
+        for canonical in answers.values()
+        if canonical is not None
+    }
     invalid = sorted(named - canonical_values(schema))
 
     if invalid:

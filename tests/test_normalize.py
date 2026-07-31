@@ -30,8 +30,8 @@ def _map_path() -> Path:
     return fruit_module._NORMALIZATION_MAP
 
 
-def _stored() -> dict[str, str | None]:
-    """Read back what normalize promoted into the map."""
+def _stored() -> dict[str, dict[str, str | None]]:
+    """Read back what normalize promoted into the map, by prompt language."""
     return yaml.safe_load(_map_path().read_text(encoding="utf-8")) or {}
 
 
@@ -229,7 +229,7 @@ def test_added_columns_sit_next_to_the_answer(data_dirs: Path) -> None:
 
 
 def test_a_stored_answer_skips_the_llm(data_dirs: Path) -> None:
-    _map_path().write_text("kiwi: other\n", encoding="utf-8")
+    _map_path().write_text("en:\n  kiwi: other\n", encoding="utf-8")
     _write_raw([_raw_row("en", "kiwi")])
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
@@ -239,9 +239,39 @@ def test_a_stored_answer_skips_the_llm(data_dirs: Path) -> None:
     assert frame["canonical"].to_list() == ["other"]
 
 
+def test_a_stored_answer_resolves_only_the_language_it_was_stored_under(
+    data_dirs: Path,
+) -> None:
+    """The same spelling means different things per language, so lookup is bound."""
+    _map_path().write_text("pl:\n  kiwi: other\n", encoding="utf-8")
+    backend = StubBackend(FruitNormalization(canonical="banana", is_valid=True))
+    _write_raw([_raw_row("en", "kiwi")])
+
+    outcome = normalize_question(_QUESTION, backend=backend)
+
+    assert outcome.llm_calls == 1
+    assert _stored()["en"]["kiwi"] == "banana"
+    assert _stored()["pl"]["kiwi"] == "other"
+
+
+def test_each_language_keeps_its_own_verdict_for_one_spelling(data_dirs: Path) -> None:
+    """A spelling two languages share resolves to each one's own category."""
+    _map_path().write_text(
+        "en:\n  granat: other\npl:\n  granat: pomegranate\n", encoding="utf-8"
+    )
+    _write_raw([_raw_row("en", "granat"), _raw_row("pl", "granat")])
+
+    outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
+
+    assert outcome.llm_calls == 0
+    resolved = _resolved(pl.read_parquet(normalized_path(_QUESTION)))
+    assert resolved[("en", "granat")] == "other"
+    assert resolved[("pl", "granat")] == "pomegranate"
+
+
 def test_a_stored_null_means_the_answer_named_no_fruit(data_dirs: Path) -> None:
     """A null value is how the map records an answer that named nothing countable."""
-    _map_path().write_text("nie wiem:\n", encoding="utf-8")
+    _map_path().write_text("pl:\n  nie wiem:\n", encoding="utf-8")
     _write_raw([_raw_row("pl", "nie wiem")])
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
@@ -268,7 +298,7 @@ def test_multiple_fruits_take_the_first_and_promote_to_the_map(
     assert frame["canonical"].to_list() == ["banana"]
     assert frame["answer"].to_list() == ["banana and apple"]
 
-    assert _stored()["banana and apple"] == "banana"
+    assert _stored()["en"]["banana and apple"] == "banana"
 
 
 def test_an_answer_naming_no_fruit_is_promoted_as_null(data_dirs: Path) -> None:
@@ -278,7 +308,7 @@ def test_an_answer_naming_no_fruit_is_promoted_as_null(data_dirs: Path) -> None:
 
     normalize_question(_QUESTION, backend=backend)
 
-    assert _stored()["nie mam zdania"] is None
+    assert _stored()["pl"]["nie mam zdania"] is None
     frame = pl.read_parquet(normalized_path(_QUESTION))
     assert frame["canonical"].to_list() == [None]
     assert frame["is_valid"].to_list() == [False]
@@ -295,7 +325,7 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(
         normalize_question(_QUESTION, backend=backend)
 
     assert not normalized_path(_QUESTION).is_file()
-    stored = _stored()
+    stored = _stored()["en"]
     assert "starfruit" in stored
     assert "durian" not in stored
 
@@ -309,7 +339,7 @@ def test_a_crash_mid_batch_keeps_what_was_already_paid_for(data_dirs: Path) -> N
     with pytest.raises(RuntimeError, match="connection dropped"):
         normalize_question(_QUESTION, backend=backend)
 
-    stored = _stored()
+    stored = _stored()["en"]
     assert stored["apricot"] == "other"
     assert "durian" not in stored
     assert not normalized_path(_QUESTION).is_file()
@@ -339,7 +369,8 @@ def test_normalization_map_values_must_be_canonical(
 ) -> None:
     """An experiment mapping an answer onto a category its schema omits is an error."""
     spec = replace(
-        spec_for(_QUESTION), normalization_map=lambda: {"starfruit": "notafruit"}
+        spec_for(_QUESTION),
+        normalization_map=lambda: {"en": {"starfruit": "notafruit"}},
     )
     monkeypatch.setattr(normalize_module, "spec_for", lambda _: spec)
     _write_raw([_raw_row("en", "apple")])

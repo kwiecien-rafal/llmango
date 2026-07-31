@@ -126,20 +126,32 @@ def test_unknown_input_name_raises() -> None:
 
 def test_normalization_map_covers_every_label_in_every_language() -> None:
     mapping = normalization_map()
-    assert mapping["apple"] == "apple"
-    assert mapping["jabłko"] == "apple"
-    assert mapping["りんご"] == "apple"
+    assert mapping["en"]["apple"] == "apple"
+    assert mapping["pl"]["jabłko"] == "apple"
+    assert mapping["ja"]["りんご"] == "apple"
+
+
+def test_a_label_is_bound_to_the_language_it_labels() -> None:
+    """An English arm answering in Japanese is the LLM's call, not the map's."""
+    mapping = normalization_map()
+    assert "りんご" not in mapping["en"]
+    assert "jabłko" not in mapping["en"]
 
 
 def test_normalization_map_adds_the_spellings_the_labels_miss() -> None:
     """normalization_map.yaml carries the plurals and inflections, nothing else."""
     mapping = normalization_map()
-    assert mapping["apples"] == "apple"
-    assert mapping["truskawki"] == "strawberry"
+    assert mapping["en"]["apples"] == "apple"
+    assert mapping["pl"]["truskawki"] == "strawberry"
 
 
 def test_normalization_map_names_only_canonical_categories() -> None:
-    assert set(normalization_map().values()) <= {member.value for member in FruitEnum}
+    named = {
+        canonical
+        for answers in normalization_map().values()
+        for canonical in answers.values()
+    }
+    assert named <= {member.value for member in FruitEnum}
 
 
 def test_normalization_map_covers_a_questions_own_fruit_list(prompts_dir: Path) -> None:
@@ -150,8 +162,8 @@ def test_normalization_map_covers_a_questions_own_fruit_list(prompts_dir: Path) 
 
     mapping = normalization_map()
 
-    assert mapping["jabłko"] == "apple"
-    assert mapping["wiśnia"] == "cherry"
+    assert mapping["pl"]["jabłko"] == "apple"
+    assert mapping["pl"]["wiśnia"] == "cherry"
 
 
 def test_promoted_answers_come_back_out_of_the_map(
@@ -159,17 +171,17 @@ def test_promoted_answers_come_back_out_of_the_map(
 ) -> None:
     """What normalize promotes is readable again, header kept, keys sorted."""
     stored = tmp_path / "normalization_map.yaml"
-    stored.write_text("kiwi: other\n", encoding="utf-8")
+    stored.write_text("en:\n  kiwi: other\n", encoding="utf-8")
     monkeypatch.setattr(experiment_module, "_NORMALIZATION_MAP", stored)
 
-    promote_normalizations({"banana and apple": "banana", "nie wiem": None})
+    promote_normalizations("pl", {"banan i jabłko": "banana", "nie wiem": None})
 
     text = stored.read_text(encoding="utf-8")
-    assert text.startswith("# Answer -> canonical fruit")
+    assert text.startswith("# Prompt language -> answer -> canonical fruit")
     mapping = normalization_map()
-    assert mapping["kiwi"] == "other"
-    assert mapping["banana and apple"] == "banana"
-    assert mapping["nie wiem"] is None
+    assert mapping["en"]["kiwi"] == "other"
+    assert mapping["pl"]["banan i jabłko"] == "banana"
+    assert mapping["pl"]["nie wiem"] is None
 
 
 def test_preprocess_drops_articles_and_qualifiers() -> None:

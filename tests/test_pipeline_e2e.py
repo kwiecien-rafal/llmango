@@ -23,7 +23,7 @@ _EN_ANSWERS = ["apple", "banana", "banana", ""]
 _PL_ANSWERS = ["jabłko", "banan", "coś", ""]
 _JA_ANSWERS = ["りんご", "バナナ", "バナナ", ""]
 
-_STORED_MAP = "coś: other\n"
+_STORED_MAP = "pl:\n  coś: other\n"
 
 
 @pytest.fixture
