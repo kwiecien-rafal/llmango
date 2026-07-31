@@ -11,9 +11,11 @@
 
 export type Cell = {
   value: number;
-  count: number;
   n: number;
-  [aside: string]: number;
+  count?: number;
+  lo?: number;
+  hi?: number;
+  [aside: string]: number | undefined;
 };
 
 export type Row = {
@@ -62,8 +64,19 @@ export function chartSrc(experiment: string, file: string): string {
   return `/charts/${experiment}/${file}`;
 }
 
-/** Everything in a cell beyond the plotted share, such as the error count. */
+/** Everything in a cell beyond the plotted share and the interval drawn on it. */
 export function asides(cell: Cell): [string, number][] {
-  const plotted = ["value", "count", "n"];
-  return Object.entries(cell).filter(([key]) => !plotted.includes(key));
+  const plotted = ["value", "count", "n", "lo", "hi"];
+  return Object.entries(cell).filter(
+    (entry): entry is [string, number] =>
+      !plotted.includes(entry[0]) && entry[1] !== undefined,
+  );
+}
+
+/** The Wilson bounds a cell was drawn with, when the chart plotted a share. */
+export function interval(cell: Cell): string | null {
+  if (cell.lo === undefined || cell.hi === undefined) {
+    return null;
+  }
+  return `${(cell.lo * 100).toFixed(1)}–${(cell.hi * 100).toFixed(1)}%`;
 }

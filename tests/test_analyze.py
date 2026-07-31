@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from conftest import SUPPORT, build_distribution
 from llmango.aggregate import Distribution, _write_aggregate
 from llmango.analyze import analyze_question
 
@@ -15,8 +16,7 @@ _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
 
 
 def _cell(counts: dict[str, int]) -> Distribution:
-    total = sum(counts.values())
-    return {"n": total, "counts": counts, "other_share": 0.0}
+    return build_distribution(counts)
 
 
 def _aggregate(question_id: str, langs: dict[str, Distribution]) -> None:
@@ -26,7 +26,7 @@ def _aggregate(question_id: str, langs: dict[str, Distribution]) -> None:
     layout nothing produces, so the real writer builds it. It resolves AGG_DIR
     through the aggregate module, which data_dirs redirects into tmp_path.
     """
-    _write_aggregate(question_id, {"FruitChoice": langs})
+    _write_aggregate(question_id, SUPPORT, {"FruitChoice": langs}, {})
 
 
 def _charts(root: Path) -> Path:
@@ -79,7 +79,13 @@ def test_a_chart_whose_questions_lack_aggregates_is_skipped(baseline: Path) -> N
     outcome = analyze_question("001a")
 
     assert [chart.name for chart in outcome.charts] == ["language_drift"]
-    assert outcome.skipped == ["order_effect", "schema_effect"]
+    assert outcome.skipped == [
+        "randomness",
+        "order_effect",
+        "position_bias",
+        "schema_effect",
+        "shuffle_effect",
+    ]
     assert not (_charts(baseline) / "order_effect.svg").exists()
 
 
@@ -93,7 +99,12 @@ def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
         "language_drift",
         "order_effect",
     ]
-    assert outcome.skipped == ["schema_effect"]
+    assert outcome.skipped == [
+        "randomness",
+        "position_bias",
+        "schema_effect",
+        "shuffle_effect",
+    ]
     assert (_charts(both_orders) / "order_effect.svg").is_file()
 
     order = next(chart for chart in outcome.charts if chart.name == "order_effect")

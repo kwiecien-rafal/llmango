@@ -478,6 +478,8 @@ source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "matplotlib" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "openai" },
     { name = "polars" },
     { name = "pyarrow" },
@@ -499,6 +501,7 @@ dev = [
 requires-dist = [
     { name = "huggingface-hub" },
     { name = "matplotlib" },
+    { name = "numpy" },
     { name = "openai" },
     { name = "polars" },
     { name = "pyarrow" },

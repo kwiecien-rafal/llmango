@@ -14,10 +14,27 @@ from llmango import analyze as analyze_module
 from llmango import manifest as manifest_module
 from llmango import pricing as pricing_module
 from llmango import storage as storage_module
+from llmango.aggregate import Distribution, _distribution
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.experiments.e001_fruit.experiment import FruitChoice
 from llmango.pricing import PricingEntry, PricingTable
+
+SUPPORT = 10
+
+
+def build_distribution(
+    counts: dict[str, int], n_invalid: int = 0, support: int = SUPPORT
+) -> Distribution:
+    """Build one arm's numbers the way aggregate builds them, from plain counts.
+
+    Hand-rolling the dict here would let every chart test keep passing against a
+    shape nothing produces, so the real builder makes it and the tests inherit
+    every statistic and interval aggregate stores.
+    """
+    answers = [name for name, count in counts.items() for _ in range(count)]
+
+    return _distribution(answers, support, n_invalid)
 
 
 @dataclass

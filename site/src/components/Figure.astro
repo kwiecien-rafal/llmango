@@ -12,7 +12,7 @@
  * table passes alt="", which says the image adds nothing, instead of announcing
  * something uninformative that cannot be skipped.
  */
-import { asides, chart as findChart, chartSrc } from "../data/charts";
+import { asides, chart as findChart, chartSrc, interval } from "../data/charts";
 
 interface Props {
   experiment: string;
@@ -49,7 +49,10 @@ const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
                   <td>
                     {percent(cell.value)}
                     <span class="count">
-                      {cell.count} of {cell.n}
+                      {cell.count === undefined
+                        ? `n = ${cell.n}`
+                        : `${cell.count} of ${cell.n}`}
+                      {interval(cell) && `, 95% CI ${interval(cell)}`}
                       {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
                     </span>
                   </td>

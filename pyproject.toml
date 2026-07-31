@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.7",
     "polars",
     "pyarrow",
+    "numpy",
     "pyyaml",
     "typer",
     "python-dotenv",

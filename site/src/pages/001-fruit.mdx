@@ -22,20 +22,68 @@ and one response schema. Each varies exactly one thing:
 - **001d**: a Polish prompt with three schema arms (English, Polish, and free text
   response with no schema at all). The response schema is the only variable.
 
-## 001a
+## How much randomness is actually in there?
+
+-reading here-
+
+<Figure
+  experiment="e001_fruit"
+  chart="randomness"
+  alt="One column per arm: the share of a fair ten-sided die's entropy that arm reached, against a dashed reference at 1.0."
+  caption="every arm of 001a–001d"
+/>
+
+## Does the language change the answer?
+
+-reading here-
 
 <Figure
   experiment="e001_fruit"
   chart="language_drift"
-  alt="lorem_ipsum-alt"
+  alt="Grouped columns over the ten fruits, one series per language, each share with its 95% Wilson interval."
   caption="001a"
 />
 
-## Fixed order comparison
+## The same list, in a different order
+
+-reading here-
 
 <Figure
   experiment="e001_fruit"
-  chart="language_drift"
-  alt="lorem_ipsum-alt"
-  caption="001a vs 001b"
+  chart="order_effect"
+  alt="Grouped columns over the ten fruits comparing the two fixed option orders, English only."
+  caption="001a against 001b"
+/>
+
+## The fruit, or the slot it sat in?
+
+-reading here-
+
+<Figure
+  experiment="e001_fruit"
+  chart="position_bias"
+  alt="Columns over the ten positions in the shown list, one series per language, against a uniform reference."
+  caption="001c"
+/>
+
+## How much of a preference was position?
+
+-reading here-
+
+<Figure
+  experiment="e001_fruit"
+  chart="shuffle_effect"
+  alt="One column per language: the total variation between the fixed-order distribution and the shuffled one."
+  caption="001a against 001c"
+/>
+
+## Does the schema change the answer?
+
+-reading here-
+
+<Figure
+  experiment="e001_fruit"
+  chart="schema_effect"
+  alt="Grouped columns over the ten fruits, one series per schema arm, all asked by the same Polish prompt."
+  caption="001d"
 />
