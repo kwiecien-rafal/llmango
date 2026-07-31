@@ -118,8 +118,8 @@ def _shuffled(ids: list[str], sample_seed: int) -> list[str]:
 
 _NORMALIZATION_MAP = Path(__file__).parent / "normalization_map.yaml"
 _MAP_HEADER = (
-    "# Answer -> canonical fruit, null when the answer named none. Hand-written\n"
-    "# spellings the fruit labels miss, plus every answer normalize has paid for.\n"
+    "# Answer -> canonical fruit. Initially hand-written, entries\n"
+    "# added with successfull LLM normalization.\n"
 )
 _QUALIFIERS = {"a", "an", "the", "fresh", "ripe"}
 
