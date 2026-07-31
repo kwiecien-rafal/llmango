@@ -31,7 +31,7 @@ class InputRequest:
     data: Any
     declaration: Mapping[str, Any]
     lang: str
-    sample_idx: int
+    sample_seed: int
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 """Run orchestration: plan a run from disk, then execute it through a backend."""
 
 import json
+import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -194,11 +195,12 @@ def _schema_json(schema: type[BaseModel] | None) -> dict[str, Any] | None:
 
 def _build_samples(question: Question, samples_per_arm: int) -> list[Sample]:
     """Render one sample per arm and index from the question's templates."""
+    sample_seeds = [random.getrandbits(64) for _ in range(samples_per_arm)]
     samples: list[Sample] = []
     for arm in question.arms:
         template = question.prompt_templates[arm.lang]
         for sample_idx in range(samples_per_arm):
-            resolved = question.resolve(arm.lang, sample_idx)
+            resolved = question.resolve(arm.lang, sample_seeds[sample_idx])
             recorded = {
                 name: value.value
                 for name, value in resolved.items()

@@ -51,7 +51,7 @@ def _question_data(question_id: str) -> Any:
 def _request(
     declaration: dict[str, Any],
     lang: str = "en",
-    sample_idx: int = 0,
+    sample_seed: int = 0,
     data: Any = None,
 ) -> InputRequest:
     return InputRequest(
@@ -59,7 +59,7 @@ def _request(
         data=_DATA if data is None else data,
         declaration=declaration,
         lang=lang,
-        sample_idx=sample_idx,
+        sample_seed=sample_seed,
     )
 
 
@@ -69,17 +69,17 @@ def test_fixed_order_is_the_declared_permutation() -> None:
     assert resolved.text == "mango, apple, pear"
 
 
-def test_fixed_order_is_stable_across_samples() -> None:
-    first = build_input(_request(_FIXED, sample_idx=0)).value
-    ninth = build_input(_request(_FIXED, sample_idx=9)).value
+def test_fixed_order_ignores_the_sample_seed() -> None:
+    first = build_input(_request(_FIXED, sample_seed=0)).value
+    ninth = build_input(_request(_FIXED, sample_seed=9)).value
     assert first == ninth == _FIXED["order_ids"]
 
 
-def test_shuffle_is_a_permutation_that_varies_per_sample() -> None:
+def test_shuffle_is_a_permutation_that_varies_per_seed() -> None:
     data = _question_data("001c")
     shown = [
-        build_input(_request(_SHUFFLE, sample_idx=idx, data=data)).value
-        for idx in range(5)
+        build_input(_request(_SHUFFLE, sample_seed=seed, data=data)).value
+        for seed in range(5)
     ]
     assert all(sorted(order) == sorted(shown[0]) for order in shown)
     assert len({tuple(order) for order in shown}) == 5
@@ -90,7 +90,7 @@ def test_shuffle_is_identical_across_a_questions_languages() -> None:
     declaration = question.inputs[FRUIT_LIST]
     data = _question_data("001c")
     shown = [
-        build_input(_request(declaration, lang=lang, sample_idx=7, data=data)).value
+        build_input(_request(declaration, lang=lang, sample_seed=7, data=data)).value
         for lang in question.languages
     ]
     assert len(question.languages) == 3
@@ -118,7 +118,7 @@ def test_unknown_input_name_raises() -> None:
         data=_DATA,
         declaration=_FIXED,
         lang="en",
-        sample_idx=0,
+        sample_seed=0,
     )
     with pytest.raises(ValueError, match="no prompt input 'vegetable_list'"):
         build_input(request)

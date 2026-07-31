@@ -121,7 +121,7 @@ class Question:
         """The content hash of every input's data file, as a manifest records it."""
         return {name: source.sha256 for name, source in self.input_sources.items()}
 
-    def resolve(self, lang: str, sample_idx: int) -> dict[str, ResolvedInput]:
+    def resolve(self, lang: str, sample_seed: int) -> dict[str, ResolvedInput]:
         """Build every declared input for one sample through the experiment's hook."""
         build_input = self.spec.build_input
         if build_input is None:
@@ -133,7 +133,7 @@ class Question:
                     data=self.input_sources[name].data,
                     declaration=declaration,
                     lang=lang,
-                    sample_idx=sample_idx,
+                    sample_seed=sample_seed,
                 )
             )
             for name, declaration in self.inputs.items()

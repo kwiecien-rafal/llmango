@@ -1,6 +1,5 @@
 """Experiment 001: how a model picks one fruit, and how language shifts the pick."""
 
-import hashlib
 import random
 from collections.abc import Mapping
 from enum import StrEnum
@@ -57,7 +56,7 @@ def build_input(request: InputRequest) -> ResolvedInput:
         raise ValueError(f"{FOLDER} has no prompt input {request.name!r}.")
 
     table = _table(request.data)
-    shown = _shown_order(table, request.declaration, request.sample_idx)
+    shown = _shown_order(table, request.declaration, request.sample_seed)
     labels = ", ".join(_label(table, canonical, request.lang) for canonical in shown)
 
     return ResolvedInput(text=labels, value=shown)
@@ -79,12 +78,12 @@ def _label(table: dict[str, dict[str, str]], canonical: str, lang: str) -> str:
 def _shown_order(
     table: dict[str, dict[str, str]],
     declaration: Mapping[str, Any],
-    sample_idx: int,
+    sample_seed: int,
 ) -> list[str]:
     """Return the canonical ids in the order one sample shows them."""
     order = declaration.get("order")
     if order == _ORDER_SHUFFLE:
-        return _shuffled(list(table), sample_idx)
+        return _shuffled(list(table), sample_seed)
 
     if order != _ORDER_FIXED:
         raise ValueError(
@@ -104,12 +103,10 @@ def _shown_order(
     return order_ids
 
 
-def _shuffled(ids: list[str], sample_idx: int) -> list[str]:
-    """Deterministically shuffle ids from the sample index alone."""
-    key = str(sample_idx).encode()
-    rng = random.Random(int.from_bytes(hashlib.sha256(key).digest()[:8], "big"))
+def _shuffled(ids: list[str], sample_seed: int) -> list[str]:
+    """Shuffle ids from one sample's seed, which every arm of that sample shares."""
     shuffled = list(ids)
-    rng.shuffle(shuffled)
+    random.Random(sample_seed).shuffle(shuffled)
 
     return shuffled
 

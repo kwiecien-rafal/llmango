@@ -87,6 +87,13 @@ def _plan(question: str = "001a", samples_per_arm: int = 1) -> RunPlan:
     return plan(question, samples_per_arm=samples_per_arm)
 
 
+def _fruit_orders(planned: RunPlan) -> list[list[str]]:
+    """The fruit order every planned sample shows, in the order the plan sends them."""
+    return [
+        json.loads(sample.prompt_inputs)["fruit_list"] for sample in planned.samples
+    ]
+
+
 def _raw(pattern: str = "*.jsonl") -> pl.DataFrame:
     """Read back what the runner appended, under the dtypes it declares."""
     return read_results(pattern, column_dtypes({}))
@@ -130,6 +137,25 @@ def test_plan_builds_every_request_and_writes_nothing(data_dirs: Path) -> None:
     assert planned.price is not None
     assert not (data_dirs / "runs").exists()
     assert not (data_dirs / "raw").exists()
+
+
+def test_a_shuffled_sample_shows_every_arm_the_same_order() -> None:
+    """Position stays a controlled variable, so only the arm varies within a sample."""
+    orders = _fruit_orders(_plan(question="001c", samples_per_arm=2))
+
+    assert len(orders) == 6
+    assert orders[0::2] == [orders[0]] * 3
+    assert orders[1::2] == [orders[1]] * 3
+    assert orders[0] != orders[1]
+
+
+def test_two_plans_of_a_shuffled_question_shuffle_it_afresh() -> None:
+    """A shuffle is drawn per run, so a rerun is new orders rather than the last."""
+    first = _fruit_orders(_plan(question="001c", samples_per_arm=3))
+    second = _fruit_orders(_plan(question="001c", samples_per_arm=3))
+
+    assert sorted(first[0]) == sorted(second[0])
+    assert first != second
 
 
 def test_a_plan_reads_its_provider_model_and_temperature_from_the_question() -> None:

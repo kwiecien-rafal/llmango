@@ -77,7 +77,7 @@ def test_resolve_builds_each_declared_input_for_one_sample() -> None:
 
 
 def test_resolve_asks_the_hook_for_the_sample_it_is_given() -> None:
-    """A shuffled question resolves per sample, so the index reaches the hook."""
+    """A shuffled question resolves per sample, so the seed reaches the hook."""
     question = load_question("001c")
 
     first = question.resolve("en", 0)
