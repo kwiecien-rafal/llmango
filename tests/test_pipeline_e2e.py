@@ -63,6 +63,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     timestamp = pl.Datetime(time_unit="us", time_zone="UTC")
     assert normalized.schema["created_at"] == timestamp
     assert normalized.schema["provider_created_at"] == timestamp
+    assert normalized["generation_seconds"].to_list() == [0.5] * 12
 
     aggregate_question(_QUESTION)
 

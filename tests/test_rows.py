@@ -79,6 +79,7 @@ def _result(sample: Sample, *, usage: Usage | None = None, fruit: str = "apple")
         refusal=None,
         error=None,
         created_at=datetime(2026, 7, 20, tzinfo=UTC),
+        generation_seconds=0.5,
         usage=usage,
     )
 
@@ -114,6 +115,7 @@ def test_a_row_carries_every_declared_column_in_order() -> None:
     assert row["question_id"] == "001a"
     assert row["lang"] == "en"
     assert row["answer"] == "apple"
+    assert row["generation_seconds"] == 0.5
     assert row["prompt_sha256"] != row["prompt"]
     assert json.loads(str(row["response_schema"])) == {"title": "FruitChoice"}
 

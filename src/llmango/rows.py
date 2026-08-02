@@ -55,6 +55,7 @@ TRAILING_COLUMNS: dict[str, pl.DataType] = {
     "output_cost_usd": pl.Float64(),
     "total_cost_usd": pl.Float64(),
     "pricing_version": pl.String(),
+    "generation_seconds": pl.Float64(),
     "created_at": pl.Datetime(time_unit="us", time_zone="UTC"),
 }
 
@@ -139,6 +140,7 @@ def build_row(
         "response_envelope": gen_result.response_envelope,
         **_usage_columns(gen_result.usage),
         **_cost_columns(costed_sample.cost, manifest.pricing),
+        "generation_seconds": gen_result.generation_seconds,
         "created_at": gen_result.created_at,
     }
 

@@ -213,6 +213,7 @@ class FakeBackend(Backend):
             refusal=None,
             error=None,
             created_at=now,
+            generation_seconds=0.5,
             response_id="chatcmpl-fake",
             service_tier="default",
             provider_created_at=now,

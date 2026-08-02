@@ -41,6 +41,7 @@ class GenResult:
     refusal: str | None
     error: str | None
     created_at: datetime
+    generation_seconds: float | None = None
     response_id: str | None = None
     service_tier: str | None = None
     provider_created_at: datetime | None = None
@@ -54,6 +55,7 @@ class GenResult:
         request: GenRequest,
         error: str,
         created_at: datetime,
+        generation_seconds: float,
         request_envelope: str | None = None,
     ) -> Self:
         """Build a result carrying an error, and what was sent, and no response."""
@@ -66,6 +68,7 @@ class GenResult:
             refusal=None,
             error=error,
             created_at=created_at,
+            generation_seconds=generation_seconds,
             request_envelope=request_envelope,
         )
 

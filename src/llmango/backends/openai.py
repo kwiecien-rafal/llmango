@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 from functools import cache
+from time import perf_counter
 from typing import Any
 
 from dotenv import load_dotenv
@@ -62,6 +63,11 @@ def _request_envelope(request: GenRequest) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def _elapsed(start: float) -> float:
+    """How long a call took, to the millisecond, off a clock nothing can adjust."""
+    return round(perf_counter() - start, 3)
+
+
 def _usage_from_sdk(usage: CompletionUsage | None) -> Usage | None:
     """Map the SDK usage object onto our Usage, flattening the token details."""
     if usage is None:
@@ -94,6 +100,7 @@ class OpenAIBackend(Backend):
         messages: list[ChatCompletionMessageParam] = [
             {"role": "user", "content": request.prompt},
         ]
+        start = perf_counter()
         try:
             if request.response_schema is not None:
                 raw = self._client.chat.completions.with_raw_response.parse(
@@ -114,8 +121,11 @@ class OpenAIBackend(Backend):
                 parsed = None
             response_envelope = raw.text
         except Exception as error:
-            return GenResult.failed(request, str(error), created_at, envelope)
+            return GenResult.failed(
+                request, str(error), created_at, _elapsed(start), envelope
+            )
 
+        generation_seconds = _elapsed(start)
         choice = completion.choices[0]
         message = choice.message
         return GenResult(
@@ -127,6 +137,7 @@ class OpenAIBackend(Backend):
             refusal=message.refusal,
             error=None,
             created_at=created_at,
+            generation_seconds=generation_seconds,
             response_id=completion.id,
             service_tier=completion.service_tier,
             provider_created_at=datetime.fromtimestamp(completion.created, UTC),

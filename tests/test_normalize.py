@@ -119,7 +119,7 @@ class FlakyBackend(StubBackend):
 
     def generate(self, request: GenRequest) -> GenResult:
         if self._failing in request.prompt:
-            return GenResult.failed(request, "rate limited", datetime.now(UTC))
+            return GenResult.failed(request, "rate limited", datetime.now(UTC), 0.1)
         return super().generate(request)
 
 

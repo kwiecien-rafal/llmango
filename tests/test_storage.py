@@ -47,6 +47,7 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
         "output_cost_usd": 0.0002,
         "total_cost_usd": 0.0003,
         "pricing_version": "2026-07-24",
+        "generation_seconds": 0.812,
         "created_at": datetime(2026, 7, 20, tzinfo=UTC),
     }
 
@@ -93,6 +94,7 @@ def test_column_dtypes_are_pinned() -> None:
     assert frame.schema["raw_json"] == pl.String
     assert frame.schema["prompt_tokens"] == pl.Int64
     assert frame.schema["total_cost_usd"] == pl.Float64
+    assert frame.schema["generation_seconds"] == pl.Float64
     assert frame.schema["request_envelope"] == pl.String
     assert frame.schema["response_envelope"] == pl.String
     assert frame.schema["provider_created_at"] == pl.Datetime(
