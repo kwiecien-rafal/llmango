@@ -3,6 +3,8 @@
 import hashlib
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 PROMPTS_DIR = REPO_ROOT / "prompts"
@@ -13,9 +15,17 @@ AGG_DIR = DATA_DIR / "aggregated"
 RUNS_DIR = REPO_ROOT / "runs"
 SITE_DIR = REPO_ROOT / "site"
 CHARTS_DIR = SITE_DIR / "public" / "charts"
+DATASET_CARD_FILE = REPO_ROOT / "DATASET_CARD.md"
 
 NORMALIZE_PROVIDER = "openai"
 NORMALIZE_MODEL = "gpt-5.6-luna"
+
+HF_DATASET_REPO = "rafalkwiecien/llmango"
+
+
+def load_env() -> None:
+    """Load environment variables from the repo-root .env file."""
+    load_dotenv(REPO_ROOT / ".env")
 
 
 def sha256_text(text: str) -> str:

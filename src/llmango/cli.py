@@ -9,6 +9,7 @@ import typer
 if TYPE_CHECKING:
     from llmango.analyze import AnalyzeOutcome
     from llmango.normalize import NormalizeOutcome
+    from llmango.publish import PublishOutcome
     from llmango.questions import Arm
     from llmango.runner import RunOutcome, RunPlan
 
@@ -98,6 +99,19 @@ def analyze() -> None:
         _report_analyze(outcome)
 
 
+@app.command()
+@_reports_pipeline_errors
+def publish(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would be uploaded.")
+    ] = False,
+) -> None:
+    """Upload every normalized question to the HuggingFace dataset in one commit."""
+    from llmango.publish import publish_all
+
+    _report_publish(publish_all(dry_run=dry_run))
+
+
 def _report_plan(plan: "RunPlan") -> None:
     """Report what a run would send, what it would cost and which arms it covers."""
     question = plan.question
@@ -176,6 +190,23 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
         )
     if outcome.index_path is not None:
         typer.echo(f"Index: {outcome.index_path}")
+
+
+def _report_publish(outcome: "PublishOutcome") -> None:
+    """Report every question the publish carried, those it skipped, and the commit."""
+    verb = "Would upload" if outcome.commit_url is None else "Uploaded"
+    typer.echo(
+        f"{verb} {len(outcome.uploads)} questions and the card to {outcome.repo_id}:"
+    )
+    for upload in outcome.uploads:
+        typer.echo(f"  {upload.path_in_repo}")
+    if outcome.skipped:
+        typer.echo(
+            f"Skipped for want of normalized data: {', '.join(outcome.skipped)}. "
+            f"Normalize them first."
+        )
+    if outcome.commit_url is not None:
+        typer.echo(f"Commit: {outcome.commit_url}")
 
 
 if __name__ == "__main__":

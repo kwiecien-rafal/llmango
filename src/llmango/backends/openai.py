@@ -7,7 +7,6 @@ from functools import cache
 from time import perf_counter
 from typing import Any
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from openai.lib._pydantic import to_strict_json_schema
 from openai.types.chat import ChatCompletionMessageParam
@@ -15,12 +14,7 @@ from openai.types.completion_usage import CompletionUsage
 from pydantic import BaseModel
 
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
-from llmango.config import REPO_ROOT
-
-
-def load_env() -> None:
-    """Load environment variables from the repo-root .env file."""
-    load_dotenv(REPO_ROOT / ".env")
+from llmango.config import load_env
 
 
 def require_openai_key() -> str:

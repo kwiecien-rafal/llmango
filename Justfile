@@ -23,6 +23,11 @@ aggregate question:
 analyze:
     uv run llmango analyze
 
+# Upload every normalized question to HuggingFace; the card is DATASET_CARD.md
+# under generated frontmatter. `just publish --dry-run` needs no token.
+publish *args:
+    uv run llmango publish {{ args }}
+
 # Run a question, then normalize, aggregate and chart it: `just all 001a -n 5`.
 all question *args:
     just run {{ question }} {{ args }}
