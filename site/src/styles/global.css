@@ -66,6 +66,18 @@ h1 {
   margin-top: 0;
 }
 
+h1.hero {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+h1.hero img {
+  width: 5rem;
+  max-width: 100%;
+  height: auto;
+}
+
 h2 {
   font-size: 1.35rem;
 }
