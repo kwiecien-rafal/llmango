@@ -9,10 +9,18 @@ import pytest
 
 from conftest import SUPPORT, build_distribution
 from llmango.aggregate import Distribution, _write_aggregate
-from llmango.analyze import analyze_question
+from llmango.analyze import AnalyzeOutcome, analyze_all
+from llmango.experiments import EXPERIMENTS
 
 _EXPERIMENT = "e001_fruit"
 _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
+
+
+def _analyze() -> AnalyzeOutcome:
+    """Analyze everything and return the one experiment these tests are about."""
+    return next(
+        outcome for outcome in analyze_all() if outcome.experiment == _EXPERIMENT
+    )
 
 
 def _cell(counts: dict[str, int]) -> Distribution:
@@ -53,7 +61,7 @@ def both_orders(data_dirs: Path) -> Path:
 
 
 def test_the_index_is_keyed_by_experiment_and_chart_name(baseline: Path) -> None:
-    outcome = analyze_question("001a")
+    outcome = _analyze()
 
     index = _index(baseline)
     assert index["experiment"] == _EXPERIMENT
@@ -63,9 +71,21 @@ def test_the_index_is_keyed_by_experiment_and_chart_name(baseline: Path) -> None
     assert outcome.index_path == _charts(baseline) / "index.json"
 
 
+def test_a_chart_carries_the_number_it_is_cited_by_into_its_title(
+    baseline: Path,
+) -> None:
+    """The number is the article's citation, so it reaches both the drawing and
+    the table beside it rather than being written on the page by hand."""
+    _analyze()
+
+    chart = _index(baseline)["charts"][0]
+    assert chart["number"] == "1.1"
+    assert chart["title"] == "Chart 1.1: Answer distribution by language in 001a"
+
+
 def test_a_chart_cites_the_questions_it_was_drawn_from(both_orders: Path) -> None:
     """Provenance a page can quote, now that a chart is not keyed by one question."""
-    analyze_question("001a")
+    _analyze()
 
     charts = _index(both_orders)["charts"]
     assert {chart["name"]: chart["questions"] for chart in charts} == {
@@ -76,15 +96,16 @@ def test_a_chart_cites_the_questions_it_was_drawn_from(both_orders: Path) -> Non
 
 def test_a_chart_whose_questions_lack_aggregates_is_skipped(baseline: Path) -> None:
     """001b and 001d have not been run, so two of the three charts cannot be drawn."""
-    outcome = analyze_question("001a")
+    outcome = _analyze()
 
     assert [chart.name for chart in outcome.charts] == ["language_drift"]
     assert outcome.skipped == [
-        "randomness",
         "order_effect",
+        "shuffled_choice",
         "position_bias",
-        "schema_effect",
         "shuffle_effect",
+        "schema_effect",
+        "randomness",
     ]
     assert not (_charts(baseline) / "order_effect.svg").exists()
 
@@ -92,18 +113,19 @@ def test_a_chart_whose_questions_lack_aggregates_is_skipped(baseline: Path) -> N
 def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
     both_orders: Path,
 ) -> None:
-    """The comparison per-question keying could not express, reached by either id."""
-    outcome = analyze_question("001a")
+    """The comparison per-question keying could not express, drawn in one pass."""
+    outcome = _analyze()
 
     assert [chart.name for chart in outcome.charts] == [
         "language_drift",
         "order_effect",
     ]
     assert outcome.skipped == [
-        "randomness",
+        "shuffled_choice",
         "position_bias",
-        "schema_effect",
         "shuffle_effect",
+        "schema_effect",
+        "randomness",
     ]
     assert (_charts(both_orders) / "order_effect.svg").is_file()
 
@@ -112,15 +134,17 @@ def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
     assert order.columns == ["001a order", "001b order"]
 
 
-def test_any_question_of_an_experiment_draws_all_of_its_charts(
-    both_orders: Path,
-) -> None:
-    """analyze still takes a question id; the experiment is what it resolves to."""
-    assert analyze_question("001b").charts == analyze_question("001a").charts
+def test_every_experiment_is_analyzed_in_one_pass(both_orders: Path) -> None:
+    """analyze takes no id: what it draws is every experiment there is."""
+    outcomes = analyze_all()
+
+    assert [outcome.experiment for outcome in outcomes] == [
+        experiment.folder for experiment in EXPERIMENTS
+    ]
 
 
 def test_every_chart_is_written_as_a_transparent_svg(baseline: Path) -> None:
-    analyze_question("001a")
+    _analyze()
 
     path = _charts(baseline) / "language_drift.svg"
     assert ElementTree.parse(path).getroot().tag == _SVG_ROOT
@@ -131,14 +155,28 @@ def test_redrawing_unchanged_aggregates_rewrites_an_identical_file(
     baseline: Path,
 ) -> None:
     """A rerun that churned bytes would put a meaningless diff in every commit."""
-    analyze_question("001a")
+    _analyze()
     first = (_charts(baseline) / "language_drift.svg").read_bytes()
 
-    analyze_question("001a")
+    _analyze()
 
     assert (_charts(baseline) / "language_drift.svg").read_bytes() == first
 
 
 def test_missing_aggregates_point_at_the_aggregate_command(data_dirs: Path) -> None:
     with pytest.raises(FileNotFoundError, match="llmango aggregate"):
-        analyze_question("001a")
+        analyze_all()
+
+
+def test_an_experiment_with_no_aggregates_leaves_its_committed_index_alone(
+    data_dirs: Path,
+) -> None:
+    """Writing an empty index would clobber the committed file the site reads."""
+    index = _charts(data_dirs) / "index.json"
+    index.parent.mkdir(parents=True)
+    index.write_text("committed", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        analyze_all()
+
+    assert index.read_text(encoding="utf-8") == "committed"

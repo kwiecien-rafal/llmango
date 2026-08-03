@@ -3,7 +3,13 @@
 from llmango.experiments.e001_fruit import FRUIT
 from llmango.spec import ExperimentSpec
 
-SPECS: dict[str, ExperimentSpec] = {question: FRUIT for question in FRUIT.questions}
+EXPERIMENTS: tuple[ExperimentSpec, ...] = (FRUIT,)
+
+SPECS: dict[str, ExperimentSpec] = {
+    question: experiment
+    for experiment in EXPERIMENTS
+    for question in experiment.questions
+}
 
 
 def spec_for(question_id: str) -> ExperimentSpec:

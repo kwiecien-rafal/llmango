@@ -1,0 +1,92 @@
+{
+  "run_id": "001b__20260802T191517697Z",
+  "question_id": "001b",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "temperature": 1.0,
+  "samples_total": 300,
+  "samples_per_arm": 300,
+  "samples_written": 300,
+  "arms": [
+    {
+      "lang": "en",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "38a7af40ab5e00eb90ee68f23c1a2b75561f5fcbc6ead829906bd52fc8615236",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 22500,
+        "completion_tokens": 3956,
+        "total_tokens": 26456,
+        "cached_tokens": 0,
+        "reasoning_tokens": 38,
+        "input_cost_usd": 0.0045,
+        "output_cost_usd": 0.0047472,
+        "total_cost_usd": 0.0092472
+      }
+    }
+  ],
+  "inputs": {
+    "fruit_list": {
+      "order": "fixed",
+      "order_ids": [
+        "pineapple",
+        "grape",
+        "watermelon",
+        "orange",
+        "strawberry",
+        "pomegranate",
+        "banana",
+        "lychee",
+        "apple",
+        "mango"
+      ]
+    }
+  },
+  "input_sha256": {
+    "fruit_list": "ea4fb6c1c34d18310e1231e20cf7f343f67b8c79dc01a8e1d3f79c67337e6f1b"
+  },
+  "pricing": {
+    "input": 0.2,
+    "output": 1.2,
+    "cached_input": 0.02,
+    "last_updated": "2026-07-31"
+  },
+  "usage": {
+    "errors": 0,
+    "provider_refusals": 0,
+    "prompt_tokens": 22500,
+    "completion_tokens": 3956,
+    "total_tokens": 26456,
+    "cached_tokens": 0,
+    "reasoning_tokens": 38,
+    "input_cost_usd": 0.0045,
+    "output_cost_usd": 0.0047472,
+    "total_cost_usd": 0.0092472
+  },
+  "package_versions": {
+    "openai": "2.46.0",
+    "pydantic": "2.13.4",
+    "polars": "1.42.1",
+    "pyarrow": "25.0.0",
+    "pyyaml": "6.0.3",
+    "typer": "0.27.0",
+    "python-dotenv": "1.2.2",
+    "huggingface-hub": "1.24.0"
+  },
+  "created_at": "2026-08-02T19:15:17.697970Z"
+}

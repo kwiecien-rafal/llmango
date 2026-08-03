@@ -1,5 +1,6 @@
 # Task shortcuts over the llmango CLI.
-# Every recipe takes a question id (001a, 001b, ...)
+# Every pipeline recipe takes a question id (001a, 001b, ...); analyze takes none,
+# because a chart is an experiment-level artifact and may read several questions.
 set shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 # List available recipes.
@@ -18,16 +19,16 @@ normalize question *args:
 aggregate question:
     uv run llmango aggregate {{ question }}
 
-# Draw the charts the site embeds, under site/public/charts/.
-analyze question:
-    uv run llmango analyze {{ question }}
+# Redraw every experiment's charts the site embeds, under site/public/charts/.
+analyze:
+    uv run llmango analyze
 
 # Run a question, then normalize, aggregate and chart it: `just all 001a -n 5`.
 all question *args:
     just run {{ question }} {{ args }}
     just normalize {{ question }}
     just aggregate {{ question }}
-    just analyze {{ question }}
+    just analyze
 
 # Serve the site with hot reload; charts refresh as `just analyze` rewrites them.
 site:

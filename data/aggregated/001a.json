@@ -1,0 +1,98 @@
+{
+  "question_id": "001a",
+  "support": 10,
+  "distributions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "grape": 1,
+          "lychee": 1968,
+          "pineapple": 3,
+          "pomegranate": 28
+        },
+        "other_share": 0.0,
+        "entropy": 0.0391,
+        "effective_choices": 1.0941,
+        "tvd_from_uniform": 0.884,
+        "coverage": 4
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "grape": 1,
+          "lychee": 31,
+          "pomegranate": 1968
+        },
+        "other_share": 0.0,
+        "entropy": 0.0368,
+        "effective_choices": 1.0885,
+        "tvd_from_uniform": 0.884,
+        "coverage": 3
+      },
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 651,
+          "pineapple": 112,
+          "pomegranate": 1237
+        },
+        "other_share": 0.0,
+        "entropy": 0.358,
+        "effective_choices": 2.2806,
+        "tvd_from_uniform": 0.744,
+        "coverage": 3
+      }
+    }
+  },
+  "positions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 1968,
+          "4": 28,
+          "8": 1,
+          "9": 3
+        },
+        "other_share": 0.0,
+        "entropy": 0.0391,
+        "effective_choices": 1.0941,
+        "tvd_from_uniform": 0.884,
+        "coverage": 4
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 31,
+          "4": 1968,
+          "8": 1
+        },
+        "other_share": 0.0,
+        "entropy": 0.0368,
+        "effective_choices": 1.0885,
+        "tvd_from_uniform": 0.884,
+        "coverage": 3
+      },
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 651,
+          "4": 1237,
+          "9": 112
+        },
+        "other_share": 0.0,
+        "entropy": 0.358,
+        "effective_choices": 2.2806,
+        "tvd_from_uniform": 0.744,
+        "coverage": 3
+      }
+    }
+  }
+}

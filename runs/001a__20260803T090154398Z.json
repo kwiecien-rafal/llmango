@@ -1,0 +1,154 @@
+{
+  "run_id": "001a__20260803T090154398Z",
+  "question_id": "001a",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "temperature": 1.0,
+  "samples_total": 5100,
+  "samples_per_arm": 1700,
+  "samples_written": 5100,
+  "arms": [
+    {
+      "lang": "en",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "38a7af40ab5e00eb90ee68f23c1a2b75561f5fcbc6ead829906bd52fc8615236",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 127500,
+        "completion_tokens": 25315,
+        "total_tokens": 152815,
+        "cached_tokens": 0,
+        "reasoning_tokens": 2147,
+        "input_cost_usd": 0.0255,
+        "output_cost_usd": 0.030378,
+        "total_cost_usd": 0.055878
+      }
+    },
+    {
+      "lang": "pl",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "b06ee8a12a9a2c6acf69e8823a295aa95f24f944bed996f9859105ecd994ae9d",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 156400,
+        "completion_tokens": 29037,
+        "total_tokens": 185437,
+        "cached_tokens": 0,
+        "reasoning_tokens": 4885,
+        "input_cost_usd": 0.03128,
+        "output_cost_usd": 0.0348444,
+        "total_cost_usd": 0.0661244
+      }
+    },
+    {
+      "lang": "ja",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "50806a58e3ca58fcba152f3a57dbd74c3a363e55270228deb0b9206b0ebc6663",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 181900,
+        "completion_tokens": 31500,
+        "total_tokens": 213400,
+        "cached_tokens": 0,
+        "reasoning_tokens": 6442,
+        "input_cost_usd": 0.03638,
+        "output_cost_usd": 0.0378,
+        "total_cost_usd": 0.07418
+      }
+    }
+  ],
+  "inputs": {
+    "fruit_list": {
+      "order": "fixed",
+      "order_ids": [
+        "mango",
+        "apple",
+        "banana",
+        "pomegranate",
+        "strawberry",
+        "orange",
+        "watermelon",
+        "grape",
+        "pineapple",
+        "lychee"
+      ]
+    }
+  },
+  "input_sha256": {
+    "fruit_list": "ea4fb6c1c34d18310e1231e20cf7f343f67b8c79dc01a8e1d3f79c67337e6f1b"
+  },
+  "pricing": {
+    "input": 0.2,
+    "output": 1.2,
+    "cached_input": 0.02,
+    "last_updated": "2026-07-31"
+  },
+  "usage": {
+    "errors": 0,
+    "provider_refusals": 0,
+    "prompt_tokens": 465800,
+    "completion_tokens": 85852,
+    "total_tokens": 551652,
+    "cached_tokens": 0,
+    "reasoning_tokens": 13474,
+    "input_cost_usd": 0.09316,
+    "output_cost_usd": 0.1030224,
+    "total_cost_usd": 0.1961824
+  },
+  "package_versions": {
+    "openai": "2.46.0",
+    "pydantic": "2.13.4",
+    "polars": "1.42.1",
+    "pyarrow": "25.0.0",
+    "pyyaml": "6.0.3",
+    "typer": "0.27.0",
+    "python-dotenv": "1.2.2",
+    "huggingface-hub": "1.24.0"
+  },
+  "created_at": "2026-08-03T09:01:54.398285Z"
+}

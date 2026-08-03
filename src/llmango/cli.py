@@ -90,11 +90,12 @@ def aggregate(question: QuestionArgument) -> None:
 
 @app.command()
 @_reports_pipeline_errors
-def analyze(question: QuestionArgument) -> None:
-    """Draw the charts the site embeds from a question's experiment's aggregates."""
-    from llmango.analyze import analyze_question
+def analyze() -> None:
+    """Draw the charts the site embeds from every experiment's committed aggregates."""
+    from llmango.analyze import analyze_all
 
-    _report_analyze(analyze_question(question))
+    for outcome in analyze_all():
+        _report_analyze(outcome)
 
 
 def _report_plan(plan: "RunPlan") -> None:
@@ -165,14 +166,16 @@ def _report_analyze(outcome: "AnalyzeOutcome") -> None:
     typer.echo(f"Drew {len(outcome.charts)} charts for {outcome.experiment}:")
     for chart in outcome.charts:
         typer.echo(
-            f"  {chart.file}  {', '.join(chart.questions)}, {len(chart.columns)} arms"
+            f"  {chart.number}  {chart.file}  "
+            f"{', '.join(chart.questions)}, {len(chart.columns)} arms"
         )
     if outcome.skipped:
         typer.echo(
             f"Skipped for want of aggregates: {', '.join(outcome.skipped)}. "
             f"Aggregate the questions they read first."
         )
-    typer.echo(f"Index: {outcome.index_path}")
+    if outcome.index_path is not None:
+        typer.echo(f"Index: {outcome.index_path}")
 
 
 if __name__ == "__main__":

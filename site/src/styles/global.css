@@ -10,6 +10,8 @@
   --ink-secondary: #5a5346;
   --ink-muted: #8a8271;
   --rule: #cdc2ac;
+  --frame: #8b6f4e;
+  --frame-soft: color-mix(in srgb, var(--frame) 45%, transparent);
   --accent: #1b5fb0;
   color-scheme: light;
 }
@@ -90,37 +92,54 @@ code {
 
 figure.chart {
   margin: 2rem 0;
+  border: 1px solid var(--frame);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 figure.chart img {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   height: auto;
+  padding: 1rem 1rem 0;
 }
 
 figure.chart figcaption {
   color: var(--ink-secondary);
   font-size: 0.92rem;
-  margin-top: 0.5rem;
+  padding: 0.5rem 1rem 0.9rem;
 }
 
 figure.chart details {
-  margin-top: 0.6rem;
   font-size: 0.92rem;
+  border-top: 1px solid var(--frame-soft);
 }
 
 figure.chart summary {
-  color: var(--ink-muted);
+  color: var(--ink-secondary);
   cursor: pointer;
+  padding: 0.55rem 1rem;
+  user-select: none;
 }
 
 figure.chart summary:hover {
-  color: var(--accent);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--frame) 10%, transparent);
+}
+
+figure.chart summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+figure.chart details[open] summary {
+  border-bottom: 1px solid var(--frame-soft);
 }
 
 .scroll {
   overflow-x: auto;
-  margin-top: 0.6rem;
+  padding: 0.75rem 1rem 1rem;
 }
 
 table {

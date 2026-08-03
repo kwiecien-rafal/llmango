@@ -1,0 +1,127 @@
+{
+  "question_id": "001d",
+  "support": 10,
+  "distributions": {
+    "FruitChoice": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 396,
+          "mango": 1534,
+          "pineapple": 24,
+          "pomegranate": 45,
+          "watermelon": 1
+        },
+        "other_share": 0.0,
+        "entropy": 0.2898,
+        "effective_choices": 1.9491,
+        "tvd_from_uniform": 0.765,
+        "coverage": 5
+      }
+    },
+    "WyborOwocu": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 352,
+          "mango": 1576,
+          "pineapple": 19,
+          "pomegranate": 53
+        },
+        "other_share": 0.0,
+        "entropy": 0.2756,
+        "effective_choices": 1.8865,
+        "tvd_from_uniform": 0.764,
+        "coverage": 4
+      }
+    },
+    "none": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 957,
+          "mango": 840,
+          "pineapple": 12,
+          "pomegranate": 191
+        },
+        "other_share": 0.0,
+        "entropy": 0.4225,
+        "effective_choices": 2.6453,
+        "tvd_from_uniform": 0.6985,
+        "coverage": 4
+      }
+    }
+  },
+  "positions": {
+    "FruitChoice": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "1": 2,
+          "10": 224,
+          "2": 72,
+          "3": 235,
+          "4": 266,
+          "5": 242,
+          "6": 236,
+          "7": 248,
+          "8": 244,
+          "9": 231
+        },
+        "other_share": 0.0,
+        "entropy": 0.9409,
+        "effective_choices": 8.7275,
+        "tvd_from_uniform": 0.163,
+        "coverage": 10
+      }
+    },
+    "WyborOwocu": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 217,
+          "2": 83,
+          "3": 226,
+          "4": 270,
+          "5": 249,
+          "6": 238,
+          "7": 229,
+          "8": 252,
+          "9": 236
+        },
+        "other_share": 0.0,
+        "entropy": 0.9406,
+        "effective_choices": 8.7213,
+        "tvd_from_uniform": 0.1585,
+        "coverage": 9
+      }
+    },
+    "none": {
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 209,
+          "2": 47,
+          "3": 189,
+          "4": 247,
+          "5": 254,
+          "6": 246,
+          "7": 277,
+          "8": 284,
+          "9": 247
+        },
+        "other_share": 0.0,
+        "entropy": 0.9279,
+        "effective_choices": 8.4698,
+        "tvd_from_uniform": 0.182,
+        "coverage": 9
+      }
+    }
+  }
+}

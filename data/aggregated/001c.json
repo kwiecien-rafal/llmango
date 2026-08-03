@@ -1,0 +1,118 @@
+{
+  "question_id": "001c",
+  "support": 10,
+  "distributions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1553,
+          "mango": 185,
+          "pineapple": 9,
+          "pomegranate": 253
+        },
+        "other_share": 0.0,
+        "entropy": 0.3054,
+        "effective_choices": 2.0203,
+        "tvd_from_uniform": 0.703,
+        "coverage": 4
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1249,
+          "mango": 223,
+          "pineapple": 1,
+          "pomegranate": 527
+        },
+        "other_share": 0.0,
+        "entropy": 0.3885,
+        "effective_choices": 2.4464,
+        "tvd_from_uniform": 0.6995,
+        "coverage": 4
+      },
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 392,
+          "mango": 1482,
+          "pineapple": 22,
+          "pomegranate": 104
+        },
+        "other_share": 0.0,
+        "entropy": 0.3238,
+        "effective_choices": 2.1078,
+        "tvd_from_uniform": 0.737,
+        "coverage": 4
+      }
+    }
+  },
+  "positions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 174,
+          "2": 125,
+          "3": 270,
+          "4": 244,
+          "5": 208,
+          "6": 264,
+          "7": 224,
+          "8": 265,
+          "9": 226
+        },
+        "other_share": 0.0,
+        "entropy": 0.9454,
+        "effective_choices": 8.8179,
+        "tvd_from_uniform": 0.1505,
+        "coverage": 9
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 93,
+          "2": 105,
+          "3": 321,
+          "4": 296,
+          "5": 220,
+          "6": 288,
+          "7": 230,
+          "8": 244,
+          "9": 203
+        },
+        "other_share": 0.0,
+        "entropy": 0.9273,
+        "effective_choices": 8.4589,
+        "tvd_from_uniform": 0.201,
+        "coverage": 9
+      },
+      "pl": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "1": 4,
+          "10": 223,
+          "2": 63,
+          "3": 234,
+          "4": 258,
+          "5": 248,
+          "6": 284,
+          "7": 249,
+          "8": 226,
+          "9": 211
+        },
+        "other_share": 0.0,
+        "entropy": 0.9392,
+        "effective_choices": 8.6927,
+        "tvd_from_uniform": 0.1665,
+        "coverage": 10
+      }
+    }
+  }
+}

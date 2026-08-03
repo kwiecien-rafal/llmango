@@ -81,7 +81,7 @@ def test_dry_run_reports_every_arm_of_one_plan(data_dirs: Path) -> None:
     assert f"{FREE_TEXT}  pl" in result.output
 
 
-@pytest.mark.parametrize("command", ["normalize", "aggregate", "analyze"])
+@pytest.mark.parametrize("command", ["normalize", "aggregate"])
 def test_an_experiment_reference_is_not_a_question(
     data_dirs: Path, command: str
 ) -> None:
@@ -90,6 +90,14 @@ def test_an_experiment_reference_is_not_a_question(
 
     assert result.exit_code == 1
     assert "001" in result.output
+
+
+@pytest.mark.parametrize("reference", ["001a", "001", "e001_fruit"])
+def test_analyze_takes_no_reference_at_all(data_dirs: Path, reference: str) -> None:
+    """A chart spans questions, so no id could name what one analyze draws."""
+    result = runner.invoke(app, ["analyze", reference])
+
+    assert result.exit_code == 2
 
 
 def test_normalize_names_the_questions_that_exist(data_dirs: Path) -> None:

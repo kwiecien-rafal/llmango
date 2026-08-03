@@ -1,0 +1,129 @@
+{
+  "run_id": "001d__20260803T090242052Z",
+  "question_id": "001d",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "temperature": 1.0,
+  "samples_total": 5100,
+  "samples_per_arm": 1700,
+  "samples_written": 5100,
+  "arms": [
+    {
+      "lang": "pl",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "906a4b023b7d11c065d63b18c7efec7923aa291cab5ca00c6c53686cd9420241",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 197361,
+        "completion_tokens": 72310,
+        "total_tokens": 269671,
+        "cached_tokens": 0,
+        "reasoning_tokens": 40910,
+        "input_cost_usd": 0.0394722,
+        "output_cost_usd": 0.086772,
+        "total_cost_usd": 0.1262442
+      }
+    },
+    {
+      "lang": "pl",
+      "schema_name": "WyborOwocu",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "owoc": {
+            "title": "Owoc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owoc"
+        ],
+        "title": "WyborOwocu",
+        "type": "object"
+      },
+      "template_sha256": "906a4b023b7d11c065d63b18c7efec7923aa291cab5ca00c6c53686cd9420241",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 207561,
+        "completion_tokens": 62273,
+        "total_tokens": 269834,
+        "cached_tokens": 0,
+        "reasoning_tokens": 27933,
+        "input_cost_usd": 0.0415122,
+        "output_cost_usd": 0.0747276,
+        "total_cost_usd": 0.1162398
+      }
+    },
+    {
+      "lang": "pl",
+      "schema_name": null,
+      "response_schema": null,
+      "template_sha256": "906a4b023b7d11c065d63b18c7efec7923aa291cab5ca00c6c53686cd9420241",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 137861,
+        "completion_tokens": 8500,
+        "total_tokens": 146361,
+        "cached_tokens": 0,
+        "reasoning_tokens": 0,
+        "input_cost_usd": 0.0275722,
+        "output_cost_usd": 0.0102,
+        "total_cost_usd": 0.0377722
+      }
+    }
+  ],
+  "inputs": {
+    "fruit_list": {
+      "order": "shuffle"
+    }
+  },
+  "input_sha256": {
+    "fruit_list": "ea4fb6c1c34d18310e1231e20cf7f343f67b8c79dc01a8e1d3f79c67337e6f1b"
+  },
+  "pricing": {
+    "input": 0.2,
+    "output": 1.2,
+    "cached_input": 0.02,
+    "last_updated": "2026-07-31"
+  },
+  "usage": {
+    "errors": 0,
+    "provider_refusals": 0,
+    "prompt_tokens": 542783,
+    "completion_tokens": 143083,
+    "total_tokens": 685866,
+    "cached_tokens": 0,
+    "reasoning_tokens": 68843,
+    "input_cost_usd": 0.1085566,
+    "output_cost_usd": 0.1716996,
+    "total_cost_usd": 0.2802562
+  },
+  "package_versions": {
+    "openai": "2.46.0",
+    "pydantic": "2.13.4",
+    "polars": "1.42.1",
+    "pyarrow": "25.0.0",
+    "pyyaml": "6.0.3",
+    "typer": "0.27.0",
+    "python-dotenv": "1.2.2",
+    "huggingface-hub": "1.24.0"
+  },
+  "created_at": "2026-08-03T09:02:42.052253Z"
+}

@@ -1,0 +1,40 @@
+{
+  "question_id": "001b",
+  "support": 10,
+  "distributions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1832,
+          "mango": 167,
+          "pomegranate": 1
+        },
+        "other_share": 0.0,
+        "entropy": 0.1268,
+        "effective_choices": 1.3391,
+        "tvd_from_uniform": 0.816,
+        "coverage": 3
+      }
+    }
+  },
+  "positions": {
+    "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 167,
+          "6": 1,
+          "8": 1832
+        },
+        "other_share": 0.0,
+        "entropy": 0.1268,
+        "effective_choices": 1.3391,
+        "tvd_from_uniform": 0.816,
+        "coverage": 3
+      }
+    }
+  }
+}

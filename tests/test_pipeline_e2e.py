@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 
 from llmango.aggregate import aggregate_question
-from llmango.analyze import analyze_question
+from llmango.analyze import analyze_all
 from llmango.backends.base import Backend
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.normalize import normalize_question
@@ -79,15 +79,16 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         assert sum(counts.values()) == distribution["n"]
         assert distribution["n"] == 3
 
-    analyze_outcome = analyze_question(_QUESTION)
+    (analyze_outcome,) = analyze_all()
 
     assert [chart.file for chart in analyze_outcome.charts] == ["language_drift.svg"]
     assert analyze_outcome.skipped == [
-        "randomness",
         "order_effect",
+        "shuffled_choice",
         "position_bias",
-        "schema_effect",
         "shuffle_effect",
+        "schema_effect",
+        "randomness",
     ]
     charts = pipeline / "charts" / _FOLDER
     assert (charts / "language_drift.svg").read_text(encoding="utf-8").count("<svg")
@@ -96,7 +97,10 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     assert drift["questions"] == [_QUESTION]
     assert drift["columns"] == ["en", "ja", "pl"]
     labels = [row["label"] for row in drift["rows"]]
-    assert labels == ["banana", "apple", "other"]
+    assert labels == ["apple", "banana", "other"]
+    assert drift["unit"] == "share"
     assert all(
-        "lo" in cell and "hi" in cell for row in drift["rows"] for cell in row["cells"]
+        {"lo", "hi", "written", "written_interval"} <= set(cell)
+        for row in drift["rows"]
+        for cell in row["cells"]
     )

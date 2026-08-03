@@ -12,24 +12,21 @@
  * table passes alt="", which says the image adds nothing, instead of announcing
  * something uninformative that cannot be skipped.
  */
-import { asides, chart as findChart, chartSrc, interval } from "../data/charts";
+import { asides, chart as findChart, chartSrc } from "../data/charts";
 
 interface Props {
   experiment: string;
   chart: string;
   alt: string;
-  caption?: string;
 }
 
-const { experiment, chart, alt, caption } = Astro.props;
+const { experiment, chart, alt } = Astro.props;
 const entry = findChart(experiment, chart);
-
-const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 ---
 
 <figure class="chart">
   <img src={chartSrc(experiment, entry.file)} alt={alt} loading="lazy" />
-  {caption && <figcaption>{caption}</figcaption>}
+  <figcaption>Datasets: {entry.questions.join(", ")}</figcaption>
   <details>
     <summary>Numbers behind this chart</summary>
     <div class="scroll">
@@ -47,12 +44,12 @@ const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
                 <th scope="row">{row.label}</th>
                 {row.cells.map((cell) => (
                   <td>
-                    {percent(cell.value)}
+                    {cell.written}
                     <span class="count">
                       {cell.count === undefined
                         ? `n = ${cell.n}`
                         : `${cell.count} of ${cell.n}`}
-                      {interval(cell) && `, 95% CI ${interval(cell)}`}
+                      {cell.written_interval && `, 95% CI ${cell.written_interval}`}
                       {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
                     </span>
                   </td>

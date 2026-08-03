@@ -8,10 +8,13 @@ from llmango.stats import (
     _entropy_bits,
     distance_from_uniform,
     effective_choices,
+    effective_choices_interval,
+    entropy_interval,
     homogeneity_pvalue,
     jensen_shannon,
     normalized_entropy,
     total_variation,
+    total_variation_interval,
     wilson_interval,
 )
 
@@ -134,3 +137,66 @@ def test_the_shift_test_never_returns_an_impossible_certainty() -> None:
 
 def test_a_single_arm_has_nothing_to_be_homogeneous_with() -> None:
     assert homogeneity_pvalue([[3, 1, 0]], seed=1) == 1.0
+
+
+def test_an_entropy_interval_brackets_the_entropy_it_is_drawn_over() -> None:
+    counts = [120, 90, 60, 30]
+    low, high = entropy_interval(counts, _SUPPORT)
+
+    assert low < normalized_entropy(counts, _SUPPORT) < high
+
+
+def test_an_entropy_interval_narrows_as_a_run_grows() -> None:
+    """Entropy is not a share, so nothing but a re-run reaches its uncertainty,
+    and a bootstrap has to behave like the re-run it stands in for."""
+    small = entropy_interval([9, 6, 3, 2], _SUPPORT)
+    large = entropy_interval([900, 600, 300, 200], _SUPPORT)
+
+    assert (large[1] - large[0]) < (small[1] - small[0])
+
+
+def test_an_arm_that_answered_nothing_has_no_entropy_interval() -> None:
+    assert entropy_interval([], _SUPPORT) == (0.0, 0.0)
+    assert entropy_interval([0, 0], _SUPPORT) == (0.0, 0.0)
+
+
+def test_an_effective_choices_interval_brackets_the_count_it_is_tabled_beside() -> None:
+    counts = [120, 90, 60, 30]
+    low, high = effective_choices_interval(counts, _SUPPORT)
+
+    assert low < effective_choices(counts, _SUPPORT) < high
+
+
+def test_an_effective_choices_interval_never_offers_more_than_the_options() -> None:
+    """The count is capped at the options offered, so its bounds are capped too."""
+    assert effective_choices_interval([100] * _SUPPORT, _SUPPORT)[1] == _SUPPORT
+    assert effective_choices_interval([], _SUPPORT) == (0.0, 0.0)
+
+
+def test_two_samples_of_one_distribution_keep_a_distance_above_zero() -> None:
+    """Total variation is built from absolute differences, so noise can only push
+    it up: identical arms still measure apart, and the floor is what a reader has
+    to clear before a bar on that chart means anything at all."""
+    counts = [150, 90, 45, 15]
+    low, high = total_variation_interval(counts, counts)
+
+    assert total_variation(counts, counts) == 0.0
+    assert 0.0 < low < high
+
+
+def test_a_distance_interval_brackets_the_distance_it_is_drawn_over() -> None:
+    left, right = [200, 60, 40], [60, 200, 40]
+    low, high = total_variation_interval(left, right)
+
+    assert low < total_variation(left, right) < high
+
+
+def test_a_bootstrap_interval_is_the_same_on_every_redraw() -> None:
+    """Redrawing an unchanged aggregate has to rewrite a byte-identical SVG, so a
+    resampled cap cannot move between two runs over the same counts."""
+    assert entropy_interval([40, 30, 20], _SUPPORT) == entropy_interval(
+        [40, 30, 20], _SUPPORT
+    )
+    assert total_variation_interval([9, 1], [1, 9]) == total_variation_interval(
+        [9, 1], [1, 9]
+    )

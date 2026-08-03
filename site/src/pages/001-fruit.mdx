@@ -8,82 +8,144 @@ import Figure from "../components/Figure.astro";
 
 # 001: fruit
 
--experiment description here, with motivation -
+By now, everybody knows that LLMs are not quite random, even when you ask them to be. Even with high temperature settings, large language models will be inclined to choose the most probable answer, as that's how they are *essentially* programmed to be.
 
-## questions
+But can the answer meaningfully shift when you prompt in a different language, or when you present information to them in a different manner? This experiment aims to answer this question.
 
-Every question in experiment 001 shares one fruit list, one canonical category set
-and one response schema. Each varies exactly one thing:
+\<table of contents?\>
 
-- **001a**: fixed option order, asked in English, Polish and Japanese.
-- **001b**: English only, a second fixed order over the same list.
-- **001c**: a per-sample shuffle across the same three languages, which kills
-  position as a confound within a language.
-- **001d**: a Polish prompt with three schema arms (English, Polish, and free text
-  response with no schema at all). The response schema is the only variable.
+## scope and setup
 
-## How much randomness is actually in there?
+something general about the setup, that the scope is three languages: english, polish, japanese. for this experiment, the way of choosing the language was one requirement: i have to speak it. also mention that each question will present a set of choices, 10 fruits, and the llm is prompted to "randomly" choose one fruit. write what the possible fruits are. write that the I used only one model, in order not to add additional variance, and the chosen model was gpt-5.6-luna. mention that each question 'arm' (arm defined as combination of X) was invoked 2000 times, which in total gives us 20000 responses.
 
--reading here-
+### questions
 
-<Figure
-  experiment="e001_fruit"
-  chart="randomness"
-  alt="One column per arm: the share of a fair ten-sided die's entropy that arm reached, against a dashed reference at 1.0."
-  caption="every arm of 001a–001d"
-/>
+- **001a**: When presented with the same set of choices, will an LLM shift its answer, if prompted in a different language?
+  - languages: en, pl, ja
+  - order: fixed - [mango, apple, banana, pomegranate, strawberry, orange, watermelon, grape, pineapple, lychee]
+- **001b**: When presented with a different order of the same set of choices, will an LLM shift its answer?
+  - languages: en
+  - order: fixed - [pineapple, grape, watermelon, orange, strawberry, pomegranate, banana, lychee, apple, mango]
+- **001c**: If, across a large sample size, every order of choices presented to the LLM is shuffled, does the answer get "more random"?
+  - languages: en, pl, ja
+  - order: shuffled
+- **001d**: Does invoking the structured response in LLMs affect their answer?
+  - languages: pl
+  - order: shuffled
+  - additional settings: one prompt asked N times with three different settings:
+    1. Invoking a structured response with an English schema, the same schema that was used in all previous questions.
+    2. Invoking a structured response with a Polish schema.
+    3. Invoking a free-test, unstructured response.
 
-## Does the language change the answer?
+## 001a: Does the prompt language change the answer?
 
--reading here-
+**TL;DR:** yes.
 
 <Figure
   experiment="e001_fruit"
   chart="language_drift"
-  alt="Grouped columns over the ten fruits, one series per language, each share with its 95% Wilson interval."
-  caption="001a"
+  alt="Grouped columns over the fruits some language picked, one series per language. Six of the ten fruits on offer were never picked and are not drawn."
 />
 
-## The same list, in a different order
+The first thing you see straight away is that 6/10 fruits were not chosen even once, and 2 out of 4 chosen fruits are still marginal choices.
 
--reading here-
+Data suggests that this model loves lychee when asked in English, loves pomegranate when asked in Japanese, and is more picky in Polish.
+
+## 001b: But what if the model was not choosing the fruit, but the position the fruit was presented in?
+
+**TL;DR:** the model was in fact choosing the fruit.
 
 <Figure
   experiment="e001_fruit"
   chart="order_effect"
-  alt="Grouped columns over the ten fruits comparing the two fixed option orders, English only."
-  caption="001a against 001b"
+  alt="Grouped columns comparing the two fixed option orders, English only, over the fruits either order picked."
 />
 
-## The fruit, or the slot it sat in?
+I swapped the order of the fruits, so lychee was now in a different place in the presented list of fruits, but the model chose it most of the time anyways.
 
--reading here-
+Altough the model chose *fewer* fruits this time, the fruit that was the second-most picked option its rate much higher than in 001a's case; mango sitting at 8.3%, compared to pomegranate sitting at 1.4%.
+
+## 001c: Can we guide the LLM to actually pick randomly, by shuffling the order of the fruits?
+
+**TL;DR:** yes, but only a little bit.
+
+For this question, every LLM request had the order of fruits in the prompt randomly shuffled. In the chart directly below, you can immediately observe the drastic change in answers for the Polish language. Nothing besides the order of the fruits had not changed, yet an overwhelming majority of requests resulted in the model choosing mango! Lychee, pomegranate and pineapple were still picked, but the overall dynamic changed entirely.
+
+<Figure
+  experiment="e001_fruit"
+  chart="shuffled_choice"
+  alt="Grouped columns under a per-sample shuffle, one series per language, over the fruits some language picked."
+/>
+
+What's most intriguing here, is that mango had also started being picked by the model when prompted in English, which is also new.
+
+But apart position 1 and 2, gpt-5.6-luna was actually decent at picking the "random fruit" when you look only by the chosen position. LLMs not picking the first possible answer is very human-like, but I would have expected a similar treatment to the last position, which while the pick rate slightly dropped for English and Japanese, for Polish it was not the case at all:
 
 <Figure
   experiment="e001_fruit"
   chart="position_bias"
-  alt="Columns over the ten positions in the shown list, one series per language, against a uniform reference."
-  caption="001c"
+  alt="Horizontal bars over the ten positions in the shown list, running down from first to last, one series per language, against a uniform reference."
 />
 
-## How much of a preference was position?
+If all you had was this above chart to judge the randomness of an LLM, you could give it a pass! But we know the truth: the model was actually mostly picking the fruit, not the position.
 
--reading here-
+Take a look here to judge it yourself:
 
 <Figure
   experiment="e001_fruit"
   chart="shuffle_effect"
-  alt="One column per language: the total variation between the fixed-order distribution and the shuffled one."
-  caption="001a against 001c"
+  alt="One column per language: the share of answers that moved between the fixed-order distribution and the shuffled one."
 />
 
-## Does the schema change the answer?
+English was mostly telling the truth in 001a, while Japanese and Polish were mostly reporting the shape of the list.
 
--reading here-
+The change is mostly noticable in English vs Japanese; you can outline a real "preference" for lychee when asked in English, but it seems like Japanese was "pressured" into choosing pomegranate. When asked from different angles, it budges and starts picking the fruit, not the position.
+
+A single fixed prompt acts as a winner-take-all amplifier: it takes a small difference in underlying preference and resolves it into a near-deterministic, apparently qualitative difference.
+
+## 001d: Does the schema change the answer?
+
+**TL;DR:** yes.
+
+Additional measurable variable which affects how LLMs respond is the structured response approach. Alongside the prompt, you can pass a desired structure of the answer, which may contain field with enums or descriptions. When mass generating it is, most of the time, the desired way of prompting an LLM.
+
+However! When passing a schema, you always have to at least pass one field name, or the name of the schema itself. Even though small, it's a variable possibly written in a different language than you prompted your model with.
+
+There is of course always the option of not passing any response structure, and receiving a "free-text" response. In this question I tested three approaches alongside a fixed prompt in Polish: passing it with an English schema, a Polish schema, and no schema at all. The order of the fruits was shuffled each time, to keep maximizing possible "randomness". These are the results:
 
 <Figure
   experiment="e001_fruit"
   chart="schema_effect"
-  alt="Grouped columns over the ten fruits, one series per schema arm, all asked by the same Polish prompt."
-  caption="001d"
+  alt="Grouped columns over the fruits some arm picked, one series per schema arm, all asked by the same Polish prompt."
 />
+
+Passing no schema proved to be the least constraining option for the model - for the first time in this experiment, the top two answers for any configuration were within \<10% of each other.
+
+Another conclusion to take from this data is that writing your schema in the target language has no major effect on the LLMs "preference" for randomly choosing from a set of choices, so you can rest assured and keep writing your Pydantic classes in English.
+
+## Conclusion: How much randomness is actually in there?
+
+**TL;DR:**: not much, but you can do some things to make it better.
+
+Now, to quantify all of previous "randomness" takes, let's see whether there was ever a choice to be made.
+
+This chart converts each questions' arm entropy into a count: how many equally likely options would produce this much spread. 10 points would mean a fair ten-sided die, while 2 points essentially mean a coin flip between two fruits. If the points are close to one, it means the answer is basically a constant.
+
+<Figure
+  experiment="e001_fruit"
+  chart="randomness"
+  alt="One row per arm: a dot at how many of the ten fruits that arm behaved as though it was choosing between, sitting on the 95% interval around it. The axis starts at one, the score of an arm that always answers the same fruit."
+/>
+
+As we can see, not one arm clears 2.65. The most varied thing this model did, across 20,000 explicit instructions to be random, was behave like a slightly biased coin.
+
+The shuffled arms score higher than the fixed ones: 2.02 against 1.09 for English. It is tempting to read that as the shuffle "freeing up" the model, but it isn't. Under a prompt with a fixed order, every call sees an identical string, so the spread we measure is the model's spread. Under a shuffled order, every call sees a different string, and we are measuring a mixture of many peaked distributions, each locked onto whatever fruit that particular arrangement favoured. The shuffled numbers include randomness I injected. The fixed-prompt numbers, 1.09 to 2.28, are the honest estimate of what the model brings on its own.
+
+Three short bullet points to take away from all of this:
+- A large language model is not a random source, and no amount of asking makes it one.
+- Prompt language does change the answer.
+- Schema names are safe, but schema presence is not.
+
+## If you wish to dive deeper:
+
+The code and data behind this experiment is open-sourced. You can find the code and aggregated data on GitHub here: github.com/kwiecien-rafal/llmango and the raw data on HuggingFace here: \<HuggingFace link\>

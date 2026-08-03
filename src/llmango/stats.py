@@ -1,11 +1,13 @@
 """The statistics every stage derives from, computed over category counts alone."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
 CONFIDENCE_Z = 1.959963984540054
 PERMUTATIONS = 20_000
+BOOTSTRAP_DRAWS = 2_000
+BOOTSTRAP_SEED = 1
 
 _LN2 = float(np.log(2.0))
 
@@ -77,6 +79,31 @@ def wilson_interval(count: int, total: int) -> tuple[float, float]:
     )
 
 
+def entropy_interval(
+    counts: Sequence[int], support: int, draws: int = BOOTSTRAP_DRAWS
+) -> tuple[float, float]:
+    """The 95% bootstrap interval around one arm's share of uniform entropy."""
+    return _bootstrap(
+        [counts], lambda arms: normalized_entropy(arms[0], support), draws
+    )
+
+
+def effective_choices_interval(
+    counts: Sequence[int], support: int, draws: int = BOOTSTRAP_DRAWS
+) -> tuple[float, float]:
+    """The 95% bootstrap interval around how many options an arm chose among."""
+    return _bootstrap([counts], lambda arms: effective_choices(arms[0], support), draws)
+
+
+def total_variation_interval(
+    left: Sequence[int], right: Sequence[int], draws: int = BOOTSTRAP_DRAWS
+) -> tuple[float, float]:
+    """The 95% bootstrap interval around the distance between two arms."""
+    return _bootstrap(
+        [left, right], lambda arms: total_variation(arms[0], arms[1]), draws
+    )
+
+
 def homogeneity_pvalue(
     arms: Sequence[Sequence[int]], seed: int, permutations: int = PERMUTATIONS
 ) -> float:
@@ -95,6 +122,27 @@ def homogeneity_pvalue(
     extreme = int((_chi_square(resampled) >= _chi_square(observed[None, :, :])).sum())
 
     return round((1 + extreme) / (1 + permutations), 4)
+
+
+def _bootstrap(
+    arms: Sequence[Sequence[int]],
+    statistic: Callable[[list[list[int]]], float],
+    draws: int,
+) -> tuple[float, float]:
+    """Re-run every arm from its own counts and spread the statistic over the draws."""
+    if any(sum(arm) <= 0 for arm in arms):
+        return (0.0, 0.0)
+
+    generator = np.random.default_rng(BOOTSTRAP_SEED)
+    resampled = [
+        generator.multinomial(sum(arm), _shares(arm), size=draws) for arm in arms
+    ]
+    values = [
+        statistic([arm[draw].tolist() for arm in resampled]) for draw in range(draws)
+    ]
+    low, high = np.percentile(values, [2.5, 97.5])
+
+    return (round(float(low), 4), round(float(high), 4))
 
 
 def _entropy_bits(counts: Sequence[int]) -> float:
