@@ -6,6 +6,7 @@
 :root {
   --page: #e3dac9;
   --card: #efe8dc;
+  --chart-surface: #f3f0e9;
   --ink: #14120e;
   --ink-secondary: #5a5346;
   --ink-muted: #8a8271;
@@ -130,6 +131,7 @@ nav.toc a:hover {
 
 figure.chart {
   margin: 2rem 0;
+  background: var(--chart-surface);
   border: 1px solid var(--frame);
   border-radius: 12px;
   overflow: hidden;

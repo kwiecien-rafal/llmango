@@ -1,12 +1,19 @@
 ---
 import "../styles/global.css";
 
-interface Props {
+interface PageMeta {
   title: string;
   description?: string;
+  type?: "website" | "article";
 }
 
-const { title, description } = Astro.props;
+/** An .astro page passes these directly; an .mdx page passes them as frontmatter. */
+type Props = PageMeta & { frontmatter?: PageMeta };
+
+const meta: PageMeta = Astro.props.frontmatter ?? Astro.props;
+const { title, description, type = "website" } = meta;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const preview = new URL("/og.png", Astro.site);
 ---
 
 <html lang="en">
@@ -15,6 +22,23 @@ const { title, description } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     {description && <meta name="description" content={description} />}
+    <link rel="canonical" href={canonical.href} />
+
+    <meta property="og:site_name" content="LLMango" />
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:url" content={canonical.href} />
+    <meta property="og:image" content={preview.href} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="LLMango: visualizing AI behaviour" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    {description && <meta name="twitter:description" content={description} />}
+    <meta name="twitter:image" content={preview.href} />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
@@ -26,7 +50,7 @@ const { title, description } = Astro.props;
       <header class="site">
         <a class="brand" href="/">llmango</a>
         <a class="brand" href="https://github.com/kwiecien-rafal/llmango">github</a>
-        <a class="brand" href="/">huggingface</a>
+        <a class="brand" href="https://huggingface.co/datasets/rafalkwiecien/llmango">huggingface</a>
       </header>
       <main>
         <slot />
