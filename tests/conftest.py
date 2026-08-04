@@ -9,11 +9,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from llmango import aggregate as aggregate_module
-from llmango import analyze as analyze_module
-from llmango import manifest as manifest_module
+from llmango import config as config_module
 from llmango import pricing as pricing_module
-from llmango import storage as storage_module
 from llmango.aggregate import Distribution, _distribution
 from llmango.backends.base import Backend, GenRequest, GenResult, Usage
 from llmango.experiments.e001_fruit import experiment as fruit_module
@@ -259,18 +256,18 @@ PRICING_TABLE = PricingTable(
 
 @pytest.fixture
 def data_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect every pipeline path into tmp_path, the map normalize writes included."""
+    """Redirect every pipeline path into tmp_path, the map normalize writes included.
+
+    Every path is derived from a root at call time, so moving the two roots moves
+    every stage's output with them.
+    """
     pricing_file = tmp_path / "pricing.json"
     pricing_file.write_text(PRICING_TABLE.model_dump_json(), encoding="utf-8")
     normalization_map = tmp_path / "normalization_map.yaml"
     normalization_map.write_text("", encoding="utf-8")
 
-    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(storage_module, "NORMALIZED_DIR", tmp_path / "normalized")
-    monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config_module, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(config_module, "CHARTS_DIR", tmp_path / "charts")
     monkeypatch.setattr(fruit_module, "_NORMALIZATION_MAP", normalization_map)
-    monkeypatch.setattr(aggregate_module, "AGG_DIR", tmp_path / "aggregated")
-    monkeypatch.setattr(analyze_module, "AGG_DIR", tmp_path / "aggregated")
-    monkeypatch.setattr(analyze_module, "CHARTS_DIR", tmp_path / "charts")
     monkeypatch.setattr(pricing_module, "PRICING_FILE", pricing_file)
     return tmp_path

@@ -8,11 +8,10 @@ from typing import TypedDict
 
 import polars as pl
 
-from llmango.config import AGG_DIR
+from llmango.config import get_aggregate_path, get_normalized_path
 from llmango.experiments import spec_for
-from llmango.spec import FREE_TEXT, OTHER_CATEGORY, canonical_values
+from llmango.spec import FREE_TEXT, OTHER_CATEGORY, ExperimentSpec, canonical_values
 from llmango.stats import distance_from_uniform, effective_choices, normalized_entropy
-from llmango.storage import normalized_path
 
 POSITION_COLUMN = "chosen_position"
 
@@ -40,8 +39,9 @@ class Aggregate(TypedDict):
 
 
 def aggregate_question(question_id: str) -> Path:
-    """Count each arm's canonical answers into data/aggregated/<question_id>.json."""
-    normalized_file = normalized_path(question_id)
+    """Count each arm's canonical answers into its experiment's aggregated folder."""
+    spec = spec_for(question_id)
+    normalized_file = get_normalized_path(spec.folder, question_id)
     if not normalized_file.is_file():
         raise FileNotFoundError(
             f"No data for question {question_id} to aggregate. "
@@ -49,19 +49,19 @@ def aggregate_question(question_id: str) -> Path:
         )
 
     frame = pl.read_parquet(normalized_file)
-    support = _support(question_id, frame)
+    support = _support(spec, frame)
     distributions = _by_arm(frame, support)
     if not distributions:
         raise ValueError(f"No valid answers to aggregate for {question_id}.")
 
     return _write_aggregate(
-        question_id, support, distributions, _by_position(frame, support)
+        spec.folder, question_id, support, distributions, _by_position(frame, support)
     )
 
 
-def _support(question_id: str, frame: pl.DataFrame) -> int:
+def _support(spec: ExperimentSpec, frame: pl.DataFrame) -> int:
     """How many categories an answer could have named, 'other' not among them."""
-    schema = spec_for(question_id).normalization_schema
+    schema = spec.normalization_schema
     if schema is None:
         return frame.get_column("canonical").drop_nulls().n_unique()
 
@@ -152,14 +152,15 @@ def _rate(part: int, whole: int) -> float:
 
 
 def _write_aggregate(
+    folder: str,
     question_id: str,
     support: int,
     distributions: dict[str, dict[str, Distribution]],
     positions: dict[str, dict[str, Distribution]],
 ) -> Path:
-    """Write one question's numbers to data/aggregated/<question_id>.json."""
-    AGG_DIR.mkdir(parents=True, exist_ok=True)
-    aggregate_file = AGG_DIR / f"{question_id}.json"
+    """Write one question's numbers to its experiment's aggregated folder."""
+    aggregate_file = get_aggregate_path(folder, question_id)
+    aggregate_file.parent.mkdir(parents=True, exist_ok=True)
     body: Aggregate = {
         "question_id": question_id,
         "support": support,

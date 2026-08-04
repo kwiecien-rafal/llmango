@@ -16,11 +16,13 @@ import yaml
 
 from llmango import normalize as normalize_module
 from llmango.backends.base import GenRequest, GenResult
+from llmango.config import get_normalized_path
 from llmango.experiments import spec_for
+from llmango.experiments.e001_fruit import FRUIT
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.experiments.e001_fruit.experiment import FruitNormalization
 from llmango.normalize import normalize_question
-from llmango.storage import append_result, normalized_path
+from llmango.storage import append_result
 
 _QUESTION = "001a"
 
@@ -67,9 +69,14 @@ def _raw_row(
     }
 
 
+def _normalized(question_id: str = _QUESTION) -> Path:
+    """The Parquet path normalizing this question writes."""
+    return get_normalized_path(FRUIT.folder, question_id)
+
+
 def _write_raw(raw_rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
     for raw_row in raw_rows:
-        append_result(raw_row, run_id)
+        append_result(raw_row, FRUIT.folder, run_id)
 
 
 def _resolved(frame: pl.DataFrame) -> dict[tuple[str, str], str]:
@@ -153,7 +160,7 @@ def test_fruit_labels_resolve_offline_and_dedupe(data_dirs: Path) -> None:
     assert outcome.distinct == 4
     assert outcome.llm_calls == 0
 
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     resolved = _resolved(frame)
     assert resolved[("en", "apple")] == "apple"
     assert resolved[("en", "Apple")] == "apple"
@@ -173,8 +180,8 @@ def test_only_the_question_asked_for_is_read(data_dirs: Path) -> None:
     outcome = normalize_question(_QUESTION)
 
     assert outcome.rows == 1
-    assert pl.read_parquet(normalized_path(_QUESTION))["answer"].to_list() == ["apple"]
-    assert not normalized_path("001b").is_file()
+    assert pl.read_parquet(_normalized(_QUESTION))["answer"].to_list() == ["apple"]
+    assert not _normalized("001b").is_file()
 
 
 def test_a_question_with_no_raw_results_says_so(data_dirs: Path) -> None:
@@ -187,7 +194,7 @@ def test_a_refusal_names_no_category(data_dirs: Path) -> None:
 
     outcome = normalize_question(_QUESTION)
 
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert outcome.llm_calls == 0
     assert frame["is_valid"].to_list() == [False]
     assert frame["canonical"].to_list() == [None]
@@ -205,7 +212,7 @@ def test_an_errored_call_is_never_adjudicated(data_dirs: Path) -> None:
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
-    frame = pl.read_parquet(normalized_path(_QUESTION)).sort("sample_idx")
+    frame = pl.read_parquet(_normalized(_QUESTION)).sort("sample_idx")
     assert outcome.rows == 3
     assert outcome.distinct == 2
     assert frame["is_valid"].to_list() == [None, False, True]
@@ -218,7 +225,7 @@ def test_added_columns_sit_next_to_the_answer(data_dirs: Path) -> None:
 
     normalize_question(_QUESTION)
 
-    columns = pl.read_parquet(normalized_path(_QUESTION)).columns
+    columns = pl.read_parquet(_normalized(_QUESTION)).columns
     start = columns.index("answer")
     assert columns[start : start + 4] == [
         "answer",
@@ -234,7 +241,7 @@ def test_a_stored_answer_skips_the_llm(data_dirs: Path) -> None:
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert outcome.llm_calls == 0
     assert frame["canonical"].to_list() == ["other"]
 
@@ -264,7 +271,7 @@ def test_each_language_keeps_its_own_verdict_for_one_spelling(data_dirs: Path) -
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
     assert outcome.llm_calls == 0
-    resolved = _resolved(pl.read_parquet(normalized_path(_QUESTION)))
+    resolved = _resolved(pl.read_parquet(_normalized(_QUESTION)))
     assert resolved[("en", "granat")] == "other"
     assert resolved[("pl", "granat")] == "pomegranate"
 
@@ -276,7 +283,7 @@ def test_a_stored_null_means_the_answer_named_no_fruit(data_dirs: Path) -> None:
 
     outcome = normalize_question(_QUESTION, backend=ExplodingBackend())
 
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert outcome.llm_calls == 0
     assert frame["canonical"].to_list() == [None]
     assert frame["is_valid"].to_list() == [False]
@@ -294,7 +301,7 @@ def test_multiple_fruits_take_the_first_and_promote_to_the_map(
     assert outcome.llm_calls == 1
     assert backend.calls == 1
 
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert frame["canonical"].to_list() == ["banana"]
     assert frame["answer"].to_list() == ["banana and apple"]
 
@@ -309,7 +316,7 @@ def test_an_answer_naming_no_fruit_is_promoted_as_null(data_dirs: Path) -> None:
     normalize_question(_QUESTION, backend=backend)
 
     assert _stored()["pl"]["nie mam zdania"] is None
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert frame["canonical"].to_list() == [None]
     assert frame["is_valid"].to_list() == [False]
 
@@ -324,7 +331,7 @@ def test_an_unparsed_answer_fails_the_run_but_keeps_the_paid_results(
     with pytest.raises(ValueError, match="unparsed"):
         normalize_question(_QUESTION, backend=backend)
 
-    assert not normalized_path(_QUESTION).is_file()
+    assert not _normalized(_QUESTION).is_file()
     stored = _stored()["en"]
     assert "starfruit" in stored
     assert "durian" not in stored
@@ -342,7 +349,7 @@ def test_a_crash_mid_batch_keeps_what_was_already_paid_for(data_dirs: Path) -> N
     stored = _stored()["en"]
     assert stored["apricot"] == "other"
     assert "durian" not in stored
-    assert not normalized_path(_QUESTION).is_file()
+    assert not _normalized(_QUESTION).is_file()
 
 
 def test_punctuation_and_whitespace_resolve_offline(data_dirs: Path) -> None:
@@ -351,7 +358,7 @@ def test_punctuation_and_whitespace_resolve_offline(data_dirs: Path) -> None:
     outcome = normalize_question(_QUESTION)
 
     assert outcome.llm_calls == 0
-    frame = pl.read_parquet(normalized_path(_QUESTION))
+    frame = pl.read_parquet(_normalized(_QUESTION))
     assert frame["canonical"].to_list() == ["apple", "apple"]
 
 
@@ -388,4 +395,4 @@ def test_dry_run_counts_llm_work_without_calling_or_writing(data_dirs: Path) -> 
     assert outcome.rows == 2
     assert outcome.distinct == 2
     assert outcome.llm_calls == 1
-    assert not normalized_path(_QUESTION).is_file()
+    assert not _normalized(_QUESTION).is_file()

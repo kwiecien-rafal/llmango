@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from llmango.config import RUNS_DIR
+from llmango.config import get_manifest_path
 from llmango.inputs import InputDeclarations
 from llmango.pricing import PricingEntry
 from llmango.spec import FREE_TEXT, ArmKey
@@ -102,15 +102,10 @@ def build_run_id(question_id: str, created_at: datetime) -> str:
     return f"{question_id}__{stamp}Z"
 
 
-def manifest_path(run_id: str) -> Path:
-    """Return the manifest path for a run id under runs/."""
-    return RUNS_DIR / f"{run_id}.json"
-
-
-def write_manifest(manifest: Manifest) -> Path:
-    """Restate a manifest at runs/<run_id>.json, never leaving it half-written."""
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    manifest_file = manifest_path(manifest.run_id)
+def write_manifest(manifest: Manifest, folder: str) -> Path:
+    """Restate a manifest under its experiment, never leaving it half-written."""
+    manifest_file = get_manifest_path(folder, manifest.run_id)
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
     partial = manifest_file.with_suffix(".partial")
     partial.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     partial.replace(manifest_file)

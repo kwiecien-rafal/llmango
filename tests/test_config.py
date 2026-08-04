@@ -1,6 +1,18 @@
-"""Tests for repo-root-anchored paths and content hashing."""
+"""Tests for repo-root-anchored paths, pipeline settings and content hashing."""
+
+from pathlib import Path
 
 from llmango import config
+
+
+def _stage_paths(folder: str) -> list[Path]:
+    """Every path a pipeline stage writes for one experiment."""
+    return [
+        config.get_raw_results_path(folder, "001a__20260803T090154398Z"),
+        config.get_manifest_path(folder, "001a__20260803T090154398Z"),
+        config.get_normalized_path(folder, "001a"),
+        config.get_aggregate_path(folder, "001a"),
+    ]
 
 
 def test_repo_root_is_the_project_directory() -> None:
@@ -8,25 +20,14 @@ def test_repo_root_is_the_project_directory() -> None:
     assert (config.REPO_ROOT / "pyproject.toml").is_file()
 
 
-def test_paths_live_under_repo_root_and_exist() -> None:
-    paths = [
-        config.PROMPTS_DIR,
-        config.RAW_DIR,
-        config.AGG_DIR,
-        config.RUNS_DIR,
-        config.CHARTS_DIR,
-    ]
-    for path in paths:
-        assert config.REPO_ROOT in path.parents
-        assert path.is_dir()
-
-
 def test_sha256_text_is_deterministic() -> None:
     assert config.sha256_text("hello") == config.sha256_text("hello")
     assert config.sha256_text("hello") != config.sha256_text("world")
 
 
-def test_prompt_tree_helpers_nest_a_question_under_its_experiment() -> None:
-    experiment = config.get_experiment_dir("e001_fruit")
-    assert experiment == config.PROMPTS_DIR / "e001_fruit"
-    assert config.get_question_dir("e001_fruit", "001a") == experiment / "001a"
+def test_every_stage_writes_under_its_own_experiment() -> None:
+    """A path that dropped its folder still round-trips, so nothing else catches it."""
+    for folder in ("e001_fruit", "e002_other"):
+        experiment_dir = config.get_experiment_data_dir(folder)
+        for stage_path in _stage_paths(folder):
+            assert experiment_dir in stage_path.parents

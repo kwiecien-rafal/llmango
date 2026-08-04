@@ -6,10 +6,14 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from llmango.config import DATASET_CARD_FILE, HF_DATASET_REPO, load_env
+from llmango.config import (
+    DATASET_CARD_FILE,
+    HF_DATASET_REPO,
+    get_normalized_path,
+    load_env,
+)
 from llmango.experiments import EXPERIMENTS
 from llmango.questions import load_question
-from llmango.storage import normalized_path
 
 if TYPE_CHECKING:
     from huggingface_hub import HfApi
@@ -71,7 +75,7 @@ def _publishable() -> tuple[dict[str, list[str]], list[str]]:
     skipped: list[str] = []
     for experiment in EXPERIMENTS:
         for question_id in experiment.questions:
-            if normalized_path(question_id).is_file():
+            if get_normalized_path(experiment.folder, question_id).is_file():
                 published.setdefault(experiment.folder, []).append(question_id)
             else:
                 skipped.append(question_id)
@@ -83,7 +87,7 @@ def _uploads(published: dict[str, list[str]]) -> list[Upload]:
     """The Parquet of every published question, filed under its experiment's folder."""
     return [
         Upload(
-            local_path=normalized_path(question_id),
+            local_path=get_normalized_path(folder, question_id),
             path_in_repo=f"{folder}/{question_id}.parquet",
         )
         for folder, question_ids in published.items()

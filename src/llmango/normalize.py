@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict
 
 from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
-from llmango.config import NORMALIZE_MODEL, NORMALIZE_PROVIDER, get_experiment_dir
+from llmango.config import (
+    NORMALIZE_MODEL,
+    NORMALIZE_PROVIDER,
+    get_experiment_prompt_dir,
+)
 from llmango.experiments import spec_for
 from llmango.pricing import guard_cost
 from llmango.rows import column_dtypes
@@ -56,9 +60,7 @@ def normalize_question(
     if schema is None:
         raise ValueError(f"Experiment {spec.folder} has no normalization schema.")
 
-    frame = read_results(
-        f"{question_id}__*.jsonl", column_dtypes(spec.extra_raw_dtypes)
-    )
+    frame = read_results(spec.folder, question_id, column_dtypes(spec.extra_raw_dtypes))
     if frame.is_empty():
         raise FileNotFoundError(
             f"No data for question {question_id} to normalize. "
@@ -94,7 +96,7 @@ def normalize_question(
     normalized = _join_resolutions(frame, resolutions, spec)
 
     return NormalizeOutcome(
-        parquet_path=write_normalized(normalized, question_id),
+        parquet_path=write_normalized(normalized, spec.folder, question_id),
         rows=frame.height,
         distinct=len(pairs),
         llm_calls=len(unresolved),
@@ -276,7 +278,7 @@ def _load_mapping(spec: ExperimentSpec, schema: type[BaseModel]) -> Normalizatio
 
 def _load_prompt(folder: str) -> str:
     """Load the experiment's normalization prompt template."""
-    path = get_experiment_dir(folder) / _PROMPT_FILE
+    path = get_experiment_prompt_dir(folder) / _PROMPT_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Missing normalization prompt: {path}")
 

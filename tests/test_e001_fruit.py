@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from llmango import config as config_module
-from llmango.config import get_experiment_dir, get_question_dir
+from llmango.config import get_experiment_prompt_dir, get_question_prompt_dir
 from llmango.experiments.e001_fruit import experiment as experiment_module
 from llmango.experiments.e001_fruit.experiment import (
     FOLDER,
@@ -44,7 +44,10 @@ def prompts_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _question_data(question_id: str) -> Any:
     """Load the real fruit list a question runs against."""
-    directories = [get_question_dir(FOLDER, question_id), get_experiment_dir(FOLDER)]
+    directories = [
+        get_question_prompt_dir(FOLDER, question_id),
+        get_experiment_prompt_dir(FOLDER),
+    ]
     return load_input_sources(directories, [FRUIT_LIST])[FRUIT_LIST].data
 
 

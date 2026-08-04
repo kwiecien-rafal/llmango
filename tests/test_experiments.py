@@ -2,7 +2,7 @@
 
 import pytest
 
-from llmango.config import get_experiment_dir
+from llmango.config import get_experiment_prompt_dir
 from llmango.experiments import EXPERIMENTS, SPECS, spec_for
 from llmango.experiments.e001_fruit import FRUIT
 
@@ -43,7 +43,7 @@ def test_every_question_folder_is_declared() -> None:
     for spec in EXPERIMENTS:
         found = {
             child.name
-            for child in get_experiment_dir(spec.folder).iterdir()
+            for child in get_experiment_prompt_dir(spec.folder).iterdir()
             if (child / "question.yaml").is_file()
         }
         assert found == set(spec.questions)

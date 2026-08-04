@@ -12,13 +12,18 @@ from conftest import FakeBackend
 from llmango import pricing as pricing_module
 from llmango import runner as runner_module
 from llmango.backends.base import GenRequest, GenResult, Usage
+from llmango.config import get_manifest_path, get_raw_results_path
+from llmango.experiments.e001_fruit import FRUIT
 from llmango.experiments.e001_fruit.experiment import FruitChoice, WyborOwocu
 from llmango.manifest import Manifest
 from llmango.pricing import COST_GUARD_CALLS, PricingTable
 from llmango.rows import column_dtypes
 from llmango.runner import RunPlan, plan, run
 from llmango.spec import FREE_TEXT, answer_field
-from llmango.storage import read_results, results_path
+from llmango.storage import read_results
+
+_QUESTION = "001a"
+_ARMS_QUESTION = "001d"
 
 
 class RefusingBackend:
@@ -82,7 +87,7 @@ def _isolate_dirs(data_dirs: Path) -> None:
     """Redirect output directories into tmp_path for every runner test."""
 
 
-def _plan(question: str = "001a", samples_per_arm: int = 1) -> RunPlan:
+def _plan(question: str = _QUESTION, samples_per_arm: int = 1) -> RunPlan:
     """Plan one run of a question. 001a is asked in en, pl and ja: three arms."""
     return plan(question, samples_per_arm=samples_per_arm)
 
@@ -94,14 +99,15 @@ def _fruit_orders(planned: RunPlan) -> list[list[str]]:
     ]
 
 
-def _raw(pattern: str = "*.jsonl") -> pl.DataFrame:
+def _raw(question_id: str = _QUESTION) -> pl.DataFrame:
     """Read back what the runner appended, under the dtypes it declares."""
-    return read_results(pattern, column_dtypes({}))
+    return read_results(FRUIT.folder, question_id, column_dtypes({}))
 
 
 def _only_manifest(data_dirs: Path) -> Manifest:
     """Read back the one run a test started, the record a crash still leaves in git."""
-    written = list((data_dirs / "runs").glob("*.json"))
+    pattern = get_manifest_path(FRUIT.folder, "*")
+    written = list(pattern.parent.glob(pattern.name))
     assert len(written) == 1
 
     return Manifest.model_validate_json(written[0].read_text(encoding="utf-8"))
@@ -241,7 +247,7 @@ def test_a_run_is_recorded_before_its_first_call_is_paid_for(data_dirs: Path) ->
     assert manifest.samples_written == 0
     assert manifest.samples_total == 3
     assert [arm.usage for arm in manifest.arms] == [None, None, None]
-    assert not results_path(manifest.run_id).exists()
+    assert not get_raw_results_path(FRUIT.folder, manifest.run_id).exists()
 
 
 def test_a_partial_run_records_usage_only_for_the_arms_it_reached(
@@ -324,7 +330,7 @@ def test_a_rerun_is_more_samples_rather_than_a_replacement(
 
     assert first.run_id != second.run_id
     assert first.rows_written == second.rows_written == 6
-    assert _raw("001a__*.jsonl").height == 12
+    assert _raw().height == 12
 
 
 def test_a_run_id_names_the_question_and_when_it_started(
@@ -366,7 +372,7 @@ def test_every_row_carries_the_schema_it_was_asked_under(
 
 def test_one_run_covers_every_arm_a_question_declares() -> None:
     """001d asks one language three ways, so one run writes all three arms."""
-    planned = _plan(question="001d", samples_per_arm=2)
+    planned = _plan(question=_ARMS_QUESTION, samples_per_arm=2)
 
     assert [arm.label for arm in planned.question.arms] == [
         "FruitChoice",
@@ -385,7 +391,7 @@ def test_one_run_covers_every_arm_a_question_declares() -> None:
     ]
     assert outcome.manifest.arms[1].response_schema == WyborOwocu.model_json_schema()
 
-    frame = _raw()
+    frame = _raw(_ARMS_QUESTION)
     assert outcome.rows_written == 6
     assert frame["lang"].to_list() == ["pl"] * 6
     assert frame["answer"].to_list() == ["jabłko"] * 6

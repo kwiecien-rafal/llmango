@@ -31,10 +31,10 @@ def _aggregate(question_id: str, langs: dict[str, Distribution]) -> None:
     """Write one question's aggregate through the writer aggregate itself uses.
 
     Hand-rolling the envelope here would let these tests keep passing against a
-    layout nothing produces, so the real writer builds it. It resolves AGG_DIR
-    through the aggregate module, which data_dirs redirects into tmp_path.
+    layout nothing produces, so the real writer builds it. It resolves its path
+    through config, which data_dirs redirects into tmp_path.
     """
-    _write_aggregate(question_id, SUPPORT, {"FruitChoice": langs}, {})
+    _write_aggregate(_EXPERIMENT, question_id, SUPPORT, {"FruitChoice": langs}, {})
 
 
 def _charts(root: Path) -> Path:

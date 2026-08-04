@@ -7,8 +7,10 @@ import polars as pl
 import pytest
 
 from llmango.aggregate import aggregate_question
+from llmango.config import get_aggregate_path
 from llmango.storage import write_normalized
 
+_FOLDER = "e001_fruit"
 _QUESTION = "001a"
 _ARMS = "001d"
 
@@ -50,21 +52,20 @@ def _write_normalized(rows: list[dict[str, object]], question: str = _QUESTION) 
         "error": pl.String(),
         "chosen_position": pl.Int64(),
     }
-    write_normalized(pl.DataFrame(rows, schema=schema), question)
+    write_normalized(pl.DataFrame(rows, schema=schema), _FOLDER, question)
 
 
-def _read_positions(tmp_path: Path, question: str = _QUESTION) -> dict[str, object]:
+def _read_positions(question: str = _QUESTION) -> dict[str, object]:
     payload = json.loads(
-        (tmp_path / "aggregated" / f"{question}.json").read_text(encoding="utf-8")
+        get_aggregate_path(_FOLDER, question).read_text(encoding="utf-8")
     )
     return payload["positions"]
 
 
-def _read_distributions(
-    tmp_path: Path, question: str = _QUESTION
-) -> dict[str, dict[str, object]]:
-    path = tmp_path / "aggregated" / f"{question}.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def _read_distributions(question: str = _QUESTION) -> dict[str, dict[str, object]]:
+    payload = json.loads(
+        get_aggregate_path(_FOLDER, question).read_text(encoding="utf-8")
+    )
     assert payload["question_id"] == question
     return payload["distributions"]
 
@@ -86,7 +87,7 @@ def aggregated(env: Path) -> Path:
 
 
 def test_distributions_count_valid_answers_and_report_other(aggregated: Path) -> None:
-    languages = _read_distributions(aggregated)["FruitChoice"]
+    languages = _read_distributions()["FruitChoice"]
 
     assert languages["en"]["n"] == 2
     assert languages["en"]["counts"] == {"apple": 1, "banana": 1}
@@ -110,7 +111,7 @@ def test_answers_that_name_no_category_stay_out_of_the_distribution(
 
     aggregate_question(_QUESTION)
 
-    distribution = _read_distributions(env)["FruitChoice"]["en"]
+    distribution = _read_distributions()["FruitChoice"]["en"]
     assert distribution["n"] == 1
     assert distribution["counts"] == {"apple": 1}
     assert distribution["other_share"] == 0.0
@@ -129,12 +130,12 @@ def test_an_arm_records_how_many_of_its_answers_were_invalid(env: Path) -> None:
 
     aggregate_question(_QUESTION)
 
-    assert _read_distributions(env)["FruitChoice"]["en"]["n_invalid"] == 2
+    assert _read_distributions()["FruitChoice"]["en"]["n_invalid"] == 2
 
 
 def test_an_arm_carries_the_shape_of_its_answers(aggregated: Path) -> None:
     """The chart step never recomputes a number, so every statistic is stored."""
-    english = _read_distributions(aggregated)["FruitChoice"]["en"]
+    english = _read_distributions()["FruitChoice"]["en"]
 
     assert english["coverage"] == 2
     assert 0.0 < english["entropy"] < 1.0
@@ -147,7 +148,7 @@ def test_counts_are_stored_rather_than_the_intervals_drawn_from_them(
 ) -> None:
     """A stored interval could only cover the categories an arm picked, and would
     give the ones it never picked a flat cap; the counts derive all of them."""
-    english = _read_distributions(aggregated)["FruitChoice"]["en"]
+    english = _read_distributions()["FruitChoice"]["en"]
 
     assert "intervals" not in english
     assert english["counts"] == {"apple": 1, "banana": 1}
@@ -160,7 +161,7 @@ def test_other_is_left_out_of_the_shape_it_would_distort(env: Path) -> None:
 
     aggregate_question(_QUESTION)
 
-    distribution = _read_distributions(env)["FruitChoice"]["en"]
+    distribution = _read_distributions()["FruitChoice"]["en"]
     assert distribution["counts"] == {"other": 4}
     assert distribution["coverage"] == 0
     assert distribution["entropy"] == 0.0
@@ -179,7 +180,7 @@ def test_each_schema_is_counted_as_its_own_arm(env: Path) -> None:
 
     aggregate_question(_ARMS)
 
-    distributions = _read_distributions(env, _ARMS)
+    distributions = _read_distributions(_ARMS)
     assert distributions["WyborOwocu"]["pl"]["counts"] == {"apple": 1, "banana": 1}
     assert distributions["none"]["pl"]["counts"] == {"apple": 1}
 
@@ -196,7 +197,7 @@ def test_an_arm_that_named_nothing_has_no_entry(env: Path) -> None:
 
     aggregate_question(_ARMS)
 
-    assert list(_read_distributions(env, _ARMS)) == ["FruitChoice"]
+    assert list(_read_distributions(_ARMS)) == ["FruitChoice"]
 
 
 def test_where_a_pick_sat_is_counted_beside_which_fruit_it_was(env: Path) -> None:
@@ -212,7 +213,7 @@ def test_where_a_pick_sat_is_counted_beside_which_fruit_it_was(env: Path) -> Non
 
     aggregate_question(_QUESTION)
 
-    positions = _read_positions(env)["FruitChoice"]["en"]
+    positions = _read_positions()["FruitChoice"]["en"]
     assert positions["counts"] == {"1": 2, "4": 1}
     assert positions["n"] == 3
 
@@ -220,14 +221,14 @@ def test_where_a_pick_sat_is_counted_beside_which_fruit_it_was(env: Path) -> Non
 def test_a_run_that_recorded_no_position_leaves_the_block_empty(
     aggregated: Path,
 ) -> None:
-    assert _read_positions(aggregated) == {}
+    assert _read_positions() == {}
 
 
 def test_the_options_offered_are_stored_beside_the_answers(aggregated: Path) -> None:
     """Ten fruits is what an even spread is measured against, and it comes from
     the experiment's own category set rather than from what happened to be picked."""
     payload = json.loads(
-        (aggregated / "aggregated" / f"{_QUESTION}.json").read_text(encoding="utf-8")
+        get_aggregate_path(_FOLDER, _QUESTION).read_text(encoding="utf-8")
     )
 
     assert payload["support"] == 10

@@ -7,10 +7,13 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from llmango import storage as storage_module
+from llmango import config as config_module
+from llmango.config import get_raw_results_path
 from llmango.rows import column_dtypes
-from llmango.storage import append_result, read_results, results_path
+from llmango.storage import append_result, read_results
 
+_FOLDER = "e001_fruit"
+_QUESTION = "001a"
 _RUN_ID = "001a__20260720T101500000Z"
 
 
@@ -54,17 +57,17 @@ def _row(sample_idx: int, fruit: str) -> dict[str, object]:
 
 def _append(rows: list[dict[str, object]], run_id: str = _RUN_ID) -> None:
     for row in rows:
-        append_result(row, run_id)
+        append_result(row, _FOLDER, run_id)
 
 
-def _read(pattern: str = "*.jsonl") -> pl.DataFrame:
-    return read_results(pattern, column_dtypes({}))
+def _read(question_id: str = _QUESTION) -> pl.DataFrame:
+    return read_results(_FOLDER, question_id, column_dtypes({}))
 
 
 @pytest.fixture(autouse=True)
 def _raw_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Write every run of these tests into tmp_path."""
-    monkeypatch.setattr(storage_module, "RAW_DIR", tmp_path)
+    monkeypatch.setattr(config_module, "DATA_DIR", tmp_path)
     return tmp_path
 
 
@@ -78,9 +81,9 @@ def test_append_then_read_round_trips() -> None:
 
 def test_every_result_is_on_disk_before_the_next_one_is_asked_for() -> None:
     """Persisting per call is the point: what came back survives what follows."""
-    results_file = append_result(_row(0, "apple"), _RUN_ID)
+    results_file = append_result(_row(0, "apple"), _FOLDER, _RUN_ID)
 
-    assert results_file == results_path(_RUN_ID)
+    assert results_file == get_raw_results_path(_FOLDER, _RUN_ID)
     assert results_file.read_text(encoding="utf-8").count("\n") == 1
     assert json.loads(results_file.read_text(encoding="utf-8"))["answer"] == "apple"
 
@@ -134,14 +137,14 @@ def test_declared_dtypes_pin_a_column_that_is_null_in_every_row() -> None:
     """Declared dtypes keep a frame's schema from varying with one run's data."""
     _append([{**_row(0, "apple"), "ripeness": None}])
 
-    frame = read_results("*.jsonl", column_dtypes({"ripeness": pl.String()}))
+    frame = read_results(_FOLDER, _QUESTION, column_dtypes({"ripeness": pl.String()}))
     assert frame.schema["ripeness"] == pl.String
 
 
 def test_a_half_written_final_line_is_dropped_rather_than_failing_the_read() -> None:
     """A killed run can cut its last line mid-write; the rest is still every result."""
     _append([_row(0, "apple"), _row(1, "mango")])
-    results_file = results_path(_RUN_ID)
+    results_file = get_raw_results_path(_FOLDER, _RUN_ID)
     text = results_file.read_text(encoding="utf-8")
     results_file.write_text(text + '{"question_id": "001a", "lan', encoding="utf-8")
 
@@ -151,7 +154,7 @@ def test_a_half_written_final_line_is_dropped_rather_than_failing_the_read() -> 
 
 
 def test_result_file_is_named_after_its_run() -> None:
-    assert results_path(_RUN_ID).name == f"{_RUN_ID}.jsonl"
+    assert get_raw_results_path(_FOLDER, _RUN_ID).name == f"{_RUN_ID}.jsonl"
 
 
 def test_read_results_pools_every_run_of_one_question() -> None:
@@ -165,7 +168,7 @@ def test_read_results_pools_every_run_of_one_question() -> None:
     _append([_row(0, "apple"), _row(1, "mango")])
     _append([_row(0, "pear")], run_id=later)
 
-    frame = _read("001a__*.jsonl")
+    frame = _read()
     assert frame.height == 3
     assert frame["answer"].to_list() == ["apple", "mango", "pear"]
 

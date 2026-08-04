@@ -13,20 +13,20 @@ from pydantic import BaseModel
 from llmango import rows
 from llmango.backends import backend_for
 from llmango.backends.base import Backend, GenRequest
+from llmango.config import get_manifest_path, get_raw_results_path
 from llmango.inputs import render
 from llmango.manifest import (
     ArmRecord,
     Manifest,
     UsageTotals,
     build_run_id,
-    manifest_path,
     write_manifest,
 )
 from llmango.pricing import PricingEntry, guard_run, load_pricing
 from llmango.questions import Arm, PromptTemplate, Question, load_question
 from llmango.rows import CostedSample, Sample
 from llmango.spec import schema_name
-from llmango.storage import append_result, results_path
+from llmango.storage import append_result
 
 ReportProgress = Callable[[Arm, int, int], None]
 
@@ -110,7 +110,7 @@ def run(
     created_at = datetime.now(UTC)
     run_id = build_run_id(question.question_id, created_at)
     manifest = _open_manifest(plan, run_id, created_at, price)
-    write_manifest(manifest)
+    write_manifest(manifest, spec.folder)
     schemas = rows.schema_columns(manifest)
 
     costed_samples: list[CostedSample] = []
@@ -120,10 +120,12 @@ def run(
                 rows.cost_sample(sample, backend.generate(request), price)
             )
             append_result(
-                rows.build_row(costed_samples[-1], manifest, spec, schemas), run_id
+                rows.build_row(costed_samples[-1], manifest, spec, schemas),
+                spec.folder,
+                run_id,
             )
             manifest = _with_usage(manifest, costed_samples)
-            write_manifest(manifest)
+            write_manifest(manifest, spec.folder)
             if report_progress is not None:
                 report_progress(sample.arm, sample.sample_idx + 1, plan.samples_per_arm)
     except KeyboardInterrupt:
@@ -131,8 +133,8 @@ def run(
 
     return RunOutcome(
         manifest=manifest,
-        results_path=results_path(run_id),
-        manifest_path=manifest_path(run_id),
+        results_path=get_raw_results_path(spec.folder, run_id),
+        manifest_path=get_manifest_path(spec.folder, run_id),
     )
 
 

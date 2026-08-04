@@ -8,6 +8,7 @@ import polars as pl
 import pytest
 import yaml
 
+from llmango.experiments.e001_fruit import FRUIT
 from llmango.publish import REPO_TYPE, PublishOutcome, publish_all
 from llmango.storage import write_normalized
 
@@ -42,6 +43,7 @@ def _normalize(question_id: str) -> None:
     """Write a question's normalized Parquet through the writer normalize uses."""
     write_normalized(
         pl.DataFrame({"question_id": [question_id], "canonical": ["apple"]}),
+        FRUIT.folder,
         question_id,
     )
 

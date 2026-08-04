@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from llmango.aggregate import Aggregate
-from llmango.config import AGG_DIR, CHARTS_DIR
+from llmango.config import get_aggregate_path, get_charts_dir
 from llmango.experiments import EXPERIMENTS
 from llmango.plot import ChartDef, Row, save, styled
 from llmango.spec import ExperimentSpec
@@ -56,7 +56,7 @@ def analyze_all() -> list[AnalyzeOutcome]:
 def _analyze(experiment: ExperimentSpec) -> AnalyzeOutcome:
     """Draw one experiment's declared charts, skipping those missing an aggregate."""
     definitions = _definitions(experiment.folder)
-    aggregates = _load(experiment.questions)
+    aggregates = _load(experiment.folder, experiment.questions)
 
     if not aggregates:
         return AnalyzeOutcome(
@@ -66,7 +66,8 @@ def _analyze(experiment: ExperimentSpec) -> AnalyzeOutcome:
             index_path=None,
         )
 
-    directory = _chart_dir(experiment.folder)
+    directory = get_charts_dir(experiment.folder)
+    directory.mkdir(parents=True, exist_ok=True)
     drawn: list[Chart] = []
     skipped: list[str] = []
     for definition in definitions:
@@ -89,14 +90,14 @@ def _definitions(folder: str) -> tuple[ChartDef, ...]:
     return cast(tuple[ChartDef, ...], module.CHARTS)
 
 
-def _load(question_ids: tuple[str, ...]) -> dict[str, Aggregate]:
+def _load(folder: str, question_ids: tuple[str, ...]) -> dict[str, Aggregate]:
     """Read the aggregates an experiment's questions have, skipping those without."""
     found: dict[str, Aggregate] = {}
     for question_id in question_ids:
-        path = AGG_DIR / f"{question_id}.json"
-        if path.is_file():
+        aggregate_file = get_aggregate_path(folder, question_id)
+        if aggregate_file.is_file():
             found[question_id] = cast(
-                Aggregate, json.loads(path.read_text(encoding="utf-8"))
+                Aggregate, json.loads(aggregate_file.read_text(encoding="utf-8"))
             )
 
     return found
@@ -135,11 +136,3 @@ def _write_index(folder: str, charts: list[Chart], directory: Path) -> Path:
     )
 
     return path
-
-
-def _chart_dir(folder: str) -> Path:
-    """The served directory an experiment's charts are written into."""
-    directory = CHARTS_DIR / folder
-    directory.mkdir(parents=True, exist_ok=True)
-
-    return directory

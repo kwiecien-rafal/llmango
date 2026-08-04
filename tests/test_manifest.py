@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from llmango import manifest as manifest_module
+from llmango import config as config_module
 from llmango.manifest import (
     ArmRecord,
     Manifest,
@@ -108,12 +108,12 @@ def test_run_ids_a_millisecond_apart_do_not_collide() -> None:
 def test_manifest_is_written_under_its_run_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(manifest_module, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(config_module, "DATA_DIR", tmp_path)
     manifest = _manifest()
 
-    path = write_manifest(manifest)
+    path = write_manifest(manifest, "e001_fruit")
 
-    assert path == tmp_path / "run-001.json"
+    assert path == tmp_path / "e001_fruit" / "manifests" / "run-001.json"
     assert Manifest.model_validate_json(path.read_text("utf-8")) == manifest
 
 

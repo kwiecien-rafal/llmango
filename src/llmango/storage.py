@@ -8,18 +8,13 @@ from pathlib import Path
 
 import polars as pl
 
-from llmango.config import NORMALIZED_DIR, RAW_DIR
+from llmango.config import get_normalized_path, get_raw_dir, get_raw_results_path
 
 
-def results_path(run_id: str) -> Path:
-    """Return the JSONL path one run appends its results to."""
-    return RAW_DIR / f"{run_id}.jsonl"
-
-
-def append_result(raw_row: dict[str, object], run_id: str) -> Path:
+def append_result(raw_row: dict[str, object], folder: str, run_id: str) -> Path:
     """Append one result to its run's JSONL, closed so a kill keeps what came back."""
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    results_file = results_path(run_id)
+    get_raw_dir(folder).mkdir(parents=True, exist_ok=True)
+    results_file = get_raw_results_path(folder, run_id)
     with results_file.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(raw_row, ensure_ascii=False, default=_json_default) + "\n"
@@ -28,9 +23,11 @@ def append_result(raw_row: dict[str, object], run_id: str) -> Path:
     return results_file
 
 
-def read_results(pattern: str, dtypes: Mapping[str, pl.DataType]) -> pl.DataFrame:
-    """Read the raw files matching a glob under data/raw/, back under their dtypes."""
-    results_files = sorted(RAW_DIR.glob(pattern))
+def read_results(
+    folder: str, question_id: str, dtypes: Mapping[str, pl.DataType]
+) -> pl.DataFrame:
+    """Pool every run of one question, back under the dtypes raw was written with."""
+    results_files = sorted(get_raw_dir(folder).glob(f"{question_id}__*.jsonl"))
     if not results_files:
         return pl.DataFrame()
 
@@ -46,15 +43,10 @@ def read_results(pattern: str, dtypes: Mapping[str, pl.DataType]) -> pl.DataFram
     )
 
 
-def normalized_path(question_id: str) -> Path:
-    """Return the normalized Parquet path for a question under data/normalized/."""
-    return NORMALIZED_DIR / f"{question_id}.parquet"
-
-
-def write_normalized(frame: pl.DataFrame, question_id: str) -> Path:
+def write_normalized(frame: pl.DataFrame, folder: str, question_id: str) -> Path:
     """Write a question's normalized frame whole, so what it publishes is complete."""
-    NORMALIZED_DIR.mkdir(parents=True, exist_ok=True)
-    normalized_file = normalized_path(question_id)
+    normalized_file = get_normalized_path(folder, question_id)
+    normalized_file.parent.mkdir(parents=True, exist_ok=True)
     partial = normalized_file.with_suffix(".partial")
     frame.write_parquet(partial)
     partial.replace(normalized_file)

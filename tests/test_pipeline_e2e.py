@@ -10,11 +10,12 @@ import pytest
 from llmango.aggregate import aggregate_question
 from llmango.analyze import analyze_all
 from llmango.backends.base import Backend
+from llmango.config import get_aggregate_path, get_charts_dir, get_normalized_path
 from llmango.experiments.e001_fruit import experiment as fruit_module
 from llmango.normalize import normalize_question
 from llmango.rows import column_dtypes
 from llmango.runner import plan, run
-from llmango.storage import normalized_path, read_results
+from llmango.storage import read_results
 
 _QUESTION = "001a"
 _FOLDER = "e001_fruit"
@@ -33,8 +34,8 @@ def pipeline(data_dirs: Path) -> Path:
     return data_dirs
 
 
-def _aggregate(tmp_path: Path) -> dict[str, dict[str, object]]:
-    path = tmp_path / "aggregated" / f"{_QUESTION}.json"
+def _aggregate() -> dict[str, dict[str, object]]:
+    path = get_aggregate_path(_FOLDER, _QUESTION)
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload["distributions"]["FruitChoice"]
 
@@ -47,7 +48,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     run_outcome = run(planned, backend)
     assert run_outcome.rows_written == 12
 
-    raw = read_results("*.jsonl", column_dtypes({}))
+    raw = read_results(_FOLDER, _QUESTION, column_dtypes({}))
     assert raw.height == 12
     assert all(rid == "chatcmpl-fake" for rid in raw["response_id"].to_list())
     assert all(
@@ -59,7 +60,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     assert normalize_outcome.distinct == 10
     assert normalize_outcome.llm_calls == 0
 
-    normalized = pl.read_parquet(normalized_path(_QUESTION))
+    normalized = pl.read_parquet(get_normalized_path(_FOLDER, _QUESTION))
     timestamp = pl.Datetime(time_unit="us", time_zone="UTC")
     assert normalized.schema["created_at"] == timestamp
     assert normalized.schema["provider_created_at"] == timestamp
@@ -67,7 +68,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
 
     aggregate_question(_QUESTION)
 
-    distributions = _aggregate(pipeline)
+    distributions = _aggregate()
 
     assert distributions["en"]["counts"] == {"apple": 1, "banana": 2}
     assert distributions["pl"]["counts"] == {"apple": 1, "banana": 1, "other": 1}
@@ -90,7 +91,7 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         "schema_effect",
         "randomness",
     ]
-    charts = pipeline / "charts" / _FOLDER
+    charts = get_charts_dir(_FOLDER)
     assert (charts / "language_drift.svg").read_text(encoding="utf-8").count("<svg")
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
     drift = index["charts"][0]

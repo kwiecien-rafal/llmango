@@ -9,7 +9,7 @@ from typing import Any, cast
 import polars as pl
 import yaml
 
-from llmango.config import get_experiment_dir, get_question_dir
+from llmango.config import get_experiment_prompt_dir, get_question_prompt_dir
 from llmango.inputs import InputRequest, ResolvedInput, load_input_sources
 from llmango.schemas import LLMResponse
 from llmango.spec import OTHER_CATEGORY, AnswerMap, ExperimentSpec, NormalizationMap
@@ -156,8 +156,8 @@ def preprocess(text: str) -> str:
 def normalization_map() -> NormalizationMap:
     """Map the fruit labels of every question, plus the stored answers, onto ids."""
     question_dirs = [
-        get_experiment_dir(FOLDER),
-        *(get_question_dir(FOLDER, question_id) for question_id in QUESTIONS),
+        get_experiment_prompt_dir(FOLDER),
+        *(get_question_prompt_dir(FOLDER, question_id) for question_id in QUESTIONS),
     ]
     mapping: NormalizationMap = {}
     for question_dir in question_dirs:

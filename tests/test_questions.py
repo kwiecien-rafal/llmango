@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from llmango import questions as questions_module
-from llmango.config import get_question_dir
+from llmango.config import get_question_prompt_dir
 from llmango.experiments.e001_fruit.experiment import FRUIT, FruitChoice, WyborOwocu
 from llmango.questions import (
     LanguageAsk,
@@ -133,7 +133,7 @@ def test_a_language_declared_twice_raises() -> None:
 def test_every_declared_language_has_a_template() -> None:
     question = load_question("001a")
     for lang in question.languages:
-        template = load_prompt_template(get_question_dir(FOLDER, "001a"), lang)
+        template = load_prompt_template(get_question_prompt_dir(FOLDER, "001a"), lang)
         assert template.lang == lang
         assert "{fruit_list}" in template.text
 
@@ -157,4 +157,4 @@ def test_load_question_unknown_raises() -> None:
 
 def test_load_template_missing_language_raises() -> None:
     with pytest.raises(FileNotFoundError):
-        load_prompt_template(get_question_dir(FOLDER, "001a"), "xx")
+        load_prompt_template(get_question_prompt_dir(FOLDER, "001a"), "xx")

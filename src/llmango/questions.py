@@ -7,7 +7,11 @@ from typing import Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from llmango.config import get_experiment_dir, get_question_dir, sha256_text
+from llmango.config import (
+    get_experiment_prompt_dir,
+    get_question_prompt_dir,
+    sha256_text,
+)
 from llmango.experiments import spec_for
 from llmango.inputs import (
     InputDeclarations,
@@ -143,7 +147,7 @@ class Question:
 def load_question(question_id: str) -> Question:
     """Load and validate a question by its id (e.g. 001a)."""
     spec = spec_for(question_id)
-    question_dir = get_question_dir(spec.folder, question_id)
+    question_dir = get_question_prompt_dir(spec.folder, question_id)
 
     question_yaml_path = question_dir / _QUESTION_FILE
     if not question_yaml_path.is_file():
@@ -156,7 +160,8 @@ def load_question(question_id: str) -> Question:
     languages = [entry.language for entry in question_config.ask]
     prompt_templates = _load_prompt_templates(question_dir, languages)
     input_sources = load_input_sources(
-        [question_dir, get_experiment_dir(spec.folder)], list(question_config.inputs)
+        [question_dir, get_experiment_prompt_dir(spec.folder)],
+        list(question_config.inputs),
     )
 
     for lang, prompt_template in prompt_templates.items():
