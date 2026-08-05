@@ -103,7 +103,7 @@ def test_a_chart_whose_questions_lack_aggregates_is_skipped(baseline: Path) -> N
         "order_effect",
         "shuffled_choice",
         "position_bias",
-        "shuffle_effect",
+        "movement",
         "schema_effect",
         "randomness",
     ]
@@ -123,7 +123,7 @@ def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
     assert outcome.skipped == [
         "shuffled_choice",
         "position_bias",
-        "shuffle_effect",
+        "movement",
         "schema_effect",
         "randomness",
     ]
@@ -131,7 +131,7 @@ def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
 
     order = next(chart for chart in outcome.charts if chart.name == "order_effect")
     assert order.questions == ["001a", "001b"]
-    assert order.columns == ["001a order", "001b order"]
+    assert order.columns == ["en / 001a order", "en / 001b order"]
 
 
 def test_every_experiment_is_analyzed_in_one_pass(both_orders: Path) -> None:

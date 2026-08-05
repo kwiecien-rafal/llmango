@@ -4,12 +4,14 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from llmango.aggregate import Aggregate, Distribution
+from llmango.experiments.e001_fruit.palette import language_color
 from llmango.plot import (
     COUNT,
     ChartDef,
     Drawn,
     distribution,
     estimates,
+    panels,
     question_distribution,
     summary,
 )
@@ -21,8 +23,11 @@ from llmango.stats import (
 )
 
 _SCHEMA = "FruitChoice"
-_SCHEMA_LANGUAGES = {_SCHEMA: "en", "WyborOwocu": "pl"}
+_SCHEMA_LANGUAGES = {_SCHEMA: "en", "WyborOwocu": "pl", "KudamonoSentaku": "ja"}
 _ENGLISH = "en"
+_NATIVE_SCHEMA = "native schema"
+_ORDER_SWAP = "001a vs 001b"
+_SHUFFLE = "001a vs 001c"
 _ONE_FRUIT_ALWAYS = 1.0
 _EMOJI_DIR = Path(__file__).parent / "emoji"
 
@@ -60,21 +65,17 @@ def schema_label(schema: str) -> str:
 
 def language_drift(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     """001a's three language arms: the baseline distribution."""
-    return _fruit_distribution(aggregates["001a"], title)
+    return _fruit_distribution(aggregates["001a"], title, zeros_written=True)
 
 
 def order_effect(aggregates: dict[str, Aggregate], title: str) -> Drawn:
-    """001a against 001b: one English prompt over two fixed orders of one list."""
-    cells = {
-        "001a order": _english(aggregates["001a"]),
-        "001b order": _english(aggregates["001b"]),
-    }
-
-    return distribution(
-        cells=cells,
-        title=title,
-        category_icon=fruit_icon,
-        categories=_fruit_categories(cells.values()),
+    """001a against 001b: three prompts over two fixed orders of one list."""
+    return _fruit_panels(
+        {
+            "001a order": _by_language(aggregates["001a"]),
+            "001b order": _by_language(aggregates["001b"]),
+        },
+        title,
     )
 
 
@@ -96,6 +97,7 @@ def position_bias(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     return distribution(
         cells=arms,
         title=title,
+        series_color=language_color,
         row_label="position",
         categories=[str(place) for place in range(1, support + 1)],
         reference=1.0 / support if support else None,
@@ -103,75 +105,119 @@ def position_bias(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     )
 
 
-def shuffle_effect(aggregates: dict[str, Aggregate], title: str) -> Drawn:
-    """How far 001a's fixed order moved each language, measured against 001c."""
-    fixed = aggregates["001a"]["distributions"][_SCHEMA]
-    shuffled = aggregates["001c"]["distributions"][_SCHEMA]
-    langs = sorted(set(fixed) & set(shuffled))
-    categories = sorted(
-        {
-            name
-            for lang in langs
-            for name in fixed[lang]["counts"] | shuffled[lang]["counts"]
-        }
-    )
+def movement(aggregates: dict[str, Aggregate], title: str) -> Drawn:
+    """How far each language moved when 001a's order was swapped, and when shuffled."""
+    fixed = _by_language(aggregates["001a"])
+    moved = {
+        _ORDER_SWAP: _by_language(aggregates["001b"]),
+        _SHUFFLE: _by_language(aggregates["001c"]),
+    }
+    langs = sorted(set(fixed).intersection(*(set(arms) for arms in moved.values())))
     pairs = {
-        lang: (_aligned(fixed[lang], categories), _aligned(shuffled[lang], categories))
+        lang: {name: _pair(fixed[lang], arms[lang]) for name, arms in moved.items()}
         for lang in langs
     }
 
     return summary(
-        cells={lang: total_variation(*pair) for lang, pair in pairs.items()},
+        cells={
+            lang: {name: total_variation(*pair) for name, pair in against.items()}
+            for lang, against in pairs.items()
+        },
         title=title,
         value_label="share of answers that moved",
-        row_label="language",
-        counts={lang: fixed[lang]["n"] + shuffled[lang]["n"] for lang in langs},
-        intervals={
-            lang: total_variation_interval(*pair) for lang, pair in pairs.items()
+        row_label="manipulation",
+        counts={
+            lang: {
+                name: fixed[lang]["n"] + arms[lang]["n"] for name, arms in moved.items()
+            }
+            for lang in langs
         },
+        intervals={
+            lang: {
+                name: total_variation_interval(*pair) for name, pair in against.items()
+            }
+            for lang, against in pairs.items()
+        },
+        series_color=language_color,
     )
 
 
 def schema_effect(aggregates: dict[str, Aggregate], title: str) -> Drawn:
-    """001d's three schema arms, all asked by the same Polish prompt."""
-    return _fruit_distribution(aggregates["001d"], title)
+    """001d's eight arms: every language under the English schema, its own, and none."""
+    return _fruit_panels(_by_schema(aggregates["001d"]), title)
 
 
 def randomness(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     """How many fruits each arm behaved as though it was choosing between."""
-    arms = {
-        _arm_name(question_id, aggregate, schema, lang): (aggregate["support"], cell)
-        for question_id, aggregate in sorted(aggregates.items())
-        for schema, langs in sorted(aggregate["distributions"].items())
-        for lang, cell in sorted(langs.items())
-    }
+    arms = _named_arms(aggregates)
 
     return estimates(
-        cells={name: cell["effective_choices"] for name, (_, cell) in arms.items()},
+        cells={name: cell["effective_choices"] for name, (_, _, cell) in arms.items()},
         title=title,
-        value_label=(
-            f"effective choices (1 = one fruit always, of {_FRUITS_OFFERED} offered)"
-        ),
+        value_label="number of effective fruit choices",
         row_label="arm",
-        counts={name: cell["n"] for name, (_, cell) in arms.items()},
+        counts={name: cell["n"] for name, (_, _, cell) in arms.items()},
         intervals={
             name: effective_choices_interval(_picked(cell), support)
-            for name, (support, cell) in arms.items()
+            for name, (_, support, cell) in arms.items()
         },
+        series_color=lambda name: language_color(arms[name][0]),
         unit=COUNT,
         floor=_ONE_FRUIT_ALWAYS,
     )
 
 
-def _fruit_distribution(aggregate: Aggregate, title: str) -> Drawn:
+def _fruit_distribution(
+    aggregate: Aggregate, title: str, zeros_written: bool = False
+) -> Drawn:
     """Draw one question's arms over the fruits any of them picked."""
     return question_distribution(
         aggregate,
         title,
+        series_color=language_color,
         schema_label=schema_label,
         category_icon=fruit_icon,
         categories=_fruit_categories(_cells(aggregate)),
+        zeros_written=zeros_written,
     )
+
+
+def _fruit_panels(facets: dict[str, dict[str, Distribution]], title: str) -> Drawn:
+    """Draw one panel per thing a question varies, over the fruits its arms picked."""
+    return panels(
+        cells=facets,
+        title=title,
+        series_color=language_color,
+        category_icon=fruit_icon,
+        categories=_fruit_categories(
+            cell for panel in facets.values() for cell in panel.values()
+        ),
+    )
+
+
+def _by_language(aggregate: Aggregate) -> dict[str, Distribution]:
+    """One question's arms keyed by the language each of them was asked in."""
+    return dict(sorted(aggregate["distributions"][_SCHEMA].items()))
+
+
+def _by_schema(aggregate: Aggregate) -> dict[str, dict[str, Distribution]]:
+    """001d's arms as one panel per schema asked: English, the prompt's own, none."""
+    distributions = aggregate["distributions"]
+
+    return {
+        schema_label(_SCHEMA): dict(sorted(distributions[_SCHEMA].items())),
+        _NATIVE_SCHEMA: {
+            lang: distributions[schema][lang]
+            for schema, lang in sorted(_SCHEMA_LANGUAGES.items(), key=_by_value)
+            if lang != _ENGLISH and lang in distributions.get(schema, {})
+        },
+        schema_label(FREE_TEXT): dict(sorted(distributions[FREE_TEXT].items())),
+    }
+
+
+def _by_value(entry: tuple[str, str]) -> str:
+    """Sort a schema by the language it is written in rather than by its name."""
+    return entry[1]
 
 
 def _fruit_categories(cells: Iterable[Distribution]) -> list[str]:
@@ -196,9 +242,11 @@ def _picked(cell: Distribution) -> list[int]:
     return [count for name, count in cell["counts"].items() if name != OTHER_CATEGORY]
 
 
-def _english(aggregate: Aggregate) -> Distribution:
-    """One question's English FruitChoice arm, the arm both fixed orders share."""
-    return aggregate["distributions"][_SCHEMA][_ENGLISH]
+def _pair(left: Distribution, right: Distribution) -> tuple[list[int], list[int]]:
+    """Two arms' counts over one shared category order, so they can be compared."""
+    categories = sorted(left["counts"] | right["counts"])
+
+    return _aligned(left, categories), _aligned(right, categories)
 
 
 def _aligned(cell: Distribution, categories: list[str]) -> list[int]:
@@ -206,10 +254,26 @@ def _aligned(cell: Distribution, categories: list[str]) -> list[int]:
     return [cell["counts"].get(category, 0) for category in categories]
 
 
+def _named_arms(
+    aggregates: dict[str, Aggregate],
+) -> dict[str, tuple[str, int, Distribution]]:
+    """Every arm of every question, named across them and kept beside its numbers."""
+    return {
+        _arm_name(question_id, aggregate, schema, lang): (
+            lang,
+            aggregate["support"],
+            cell,
+        )
+        for question_id, aggregate in sorted(aggregates.items())
+        for schema, langs in sorted(aggregate["distributions"].items())
+        for lang, cell in sorted(langs.items())
+    }
+
+
 def _arm_name(question_id: str, aggregate: Aggregate, schema: str, lang: str) -> str:
-    """Name one arm across questions, by whichever of schema and language varies."""
+    """Name one arm across questions, by every dimension its question varies."""
     if len(aggregate["distributions"]) > 1:
-        return f"{question_id} {schema_label(schema)}"
+        return f"{question_id} {lang} / {schema_label(schema)}"
 
     return f"{question_id} {lang}"
 
@@ -225,7 +289,7 @@ CHARTS = (
     ChartDef(
         "order_effect",
         number="1.2",
-        title="Answer distribution by option order in 001b vs 001a",
+        title="Answer distribution by option order in 001a vs 001b",
         questions=("001a", "001b"),
         draw=order_effect,
     ),
@@ -244,11 +308,11 @@ CHARTS = (
         draw=position_bias,
     ),
     ChartDef(
-        "shuffle_effect",
+        "movement",
         number="1.5",
-        title="How much of the fixed order was position in 001a vs 001c",
-        questions=("001a", "001c"),
-        draw=shuffle_effect,
+        title="How far each language moved when 001a's order was swapped or shuffled",
+        questions=("001a", "001b", "001c"),
+        draw=movement,
     ),
     ChartDef(
         "schema_effect",

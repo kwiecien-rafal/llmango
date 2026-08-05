@@ -35,9 +35,9 @@ all question *args:
     just aggregate {{ question }}
     just analyze
 
-# Serve the site with hot reload; charts refresh as `just analyze` rewrites them.
-site:
-    npm --prefix site run dev
+# Serve the site on the LAN with hot reload; charts refresh as `just analyze` rewrites them.
+site *args:
+    npm --prefix site run dev -- --host {{ args }}
 
 # Build the static site into site/dist/.
 site-build:

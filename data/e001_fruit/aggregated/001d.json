@@ -3,6 +3,39 @@
   "support": 10,
   "distributions": {
     "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "apple": 1,
+          "banana": 1,
+          "lychee": 1594,
+          "mango": 377,
+          "pineapple": 2,
+          "pomegranate": 21,
+          "strawberry": 2,
+          "watermelon": 2
+        },
+        "other_share": 0.0,
+        "entropy": 0.249,
+        "effective_choices": 1.7741,
+        "tvd_from_uniform": 0.7855,
+        "coverage": 8
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1546,
+          "mango": 247,
+          "pomegranate": 207
+        },
+        "other_share": 0.0,
+        "entropy": 0.3008,
+        "effective_choices": 1.9989,
+        "tvd_from_uniform": 0.7,
+        "coverage": 3
+      },
       "pl": {
         "n": 2000,
         "n_invalid": 0,
@@ -18,6 +51,22 @@
         "effective_choices": 1.9491,
         "tvd_from_uniform": 0.765,
         "coverage": 5
+      }
+    },
+    "KudamonoSentaku": {
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1426,
+          "mango": 392,
+          "pomegranate": 182
+        },
+        "other_share": 0.0,
+        "entropy": 0.3384,
+        "effective_choices": 2.1798,
+        "tvd_from_uniform": 0.709,
+        "coverage": 3
       }
     },
     "WyborOwocu": {
@@ -38,6 +87,38 @@
       }
     },
     "none": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "lychee": 1539,
+          "mango": 79,
+          "pineapple": 33,
+          "pomegranate": 349
+        },
+        "other_share": 0.0,
+        "entropy": 0.305,
+        "effective_choices": 2.0186,
+        "tvd_from_uniform": 0.744,
+        "coverage": 4
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "apple": 1,
+          "grape": 1,
+          "lychee": 1017,
+          "mango": 417,
+          "pineapple": 34,
+          "pomegranate": 530
+        },
+        "other_share": 0.0,
+        "entropy": 0.4781,
+        "effective_choices": 3.0067,
+        "tvd_from_uniform": 0.682,
+        "coverage": 6
+      },
       "pl": {
         "n": 2000,
         "n_invalid": 0,
@@ -57,6 +138,47 @@
   },
   "positions": {
     "FruitChoice": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "1": 8,
+          "10": 226,
+          "2": 191,
+          "3": 216,
+          "4": 215,
+          "5": 211,
+          "6": 225,
+          "7": 217,
+          "8": 272,
+          "9": 219
+        },
+        "other_share": 0.0,
+        "entropy": 0.961,
+        "effective_choices": 9.1404,
+        "tvd_from_uniform": 0.1005,
+        "coverage": 10
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 177,
+          "2": 156,
+          "3": 208,
+          "4": 265,
+          "5": 224,
+          "6": 243,
+          "7": 247,
+          "8": 247,
+          "9": 233
+        },
+        "other_share": 0.0,
+        "entropy": 0.9499,
+        "effective_choices": 8.9096,
+        "tvd_from_uniform": 0.1335,
+        "coverage": 9
+      },
       "pl": {
         "n": 2000,
         "n_invalid": 0,
@@ -77,6 +199,28 @@
         "effective_choices": 8.7275,
         "tvd_from_uniform": 0.163,
         "coverage": 10
+      }
+    },
+    "KudamonoSentaku": {
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 192,
+          "2": 121,
+          "3": 182,
+          "4": 257,
+          "5": 215,
+          "6": 258,
+          "7": 249,
+          "8": 271,
+          "9": 255
+        },
+        "other_share": 0.0,
+        "entropy": 0.9447,
+        "effective_choices": 8.8041,
+        "tvd_from_uniform": 0.1525,
+        "coverage": 9
       }
     },
     "WyborOwocu": {
@@ -102,6 +246,46 @@
       }
     },
     "none": {
+      "en": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 237,
+          "2": 106,
+          "3": 209,
+          "4": 221,
+          "5": 228,
+          "6": 262,
+          "7": 241,
+          "8": 268,
+          "9": 228
+        },
+        "other_share": 0.0,
+        "entropy": 0.9448,
+        "effective_choices": 8.807,
+        "tvd_from_uniform": 0.147,
+        "coverage": 9
+      },
+      "ja": {
+        "n": 2000,
+        "n_invalid": 0,
+        "counts": {
+          "10": 132,
+          "2": 36,
+          "3": 197,
+          "4": 262,
+          "5": 269,
+          "6": 289,
+          "7": 288,
+          "8": 288,
+          "9": 239
+        },
+        "other_share": 0.0,
+        "entropy": 0.9162,
+        "effective_choices": 8.2452,
+        "tvd_from_uniform": 0.2175,
+        "coverage": 9
+      },
       "pl": {
         "n": 2000,
         "n_invalid": 0,

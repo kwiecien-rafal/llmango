@@ -15,6 +15,7 @@ from llmango.questions import (
     load_prompt_template,
     load_question,
 )
+from llmango.spec import FREE_TEXT
 
 FOLDER = "e001_fruit"
 
@@ -88,12 +89,22 @@ def test_resolve_asks_the_hook_for_the_sample_it_is_given() -> None:
 
 
 def test_one_language_asked_several_ways_is_several_arms() -> None:
-    """001d asks Polish three ways, so it is three arms of one language."""
+    """001d asks each language its own way: under the English schema, under its
+    own where it has one, and under none. English has no foreign schema to be
+    asked under, so it contributes two arms where the other two contribute three."""
     question = load_question("001d")
 
-    assert [arm.schema for arm in question.arms] == [FruitChoice, WyborOwocu, None]
-    assert all(arm.lang == "pl" for arm in question.arms)
-    assert question.languages == ["pl"]
+    assert [(arm.label, arm.lang) for arm in question.arms] == [
+        ("FruitChoice", "en"),
+        (FREE_TEXT, "en"),
+        ("FruitChoice", "pl"),
+        ("WyborOwocu", "pl"),
+        (FREE_TEXT, "pl"),
+        ("FruitChoice", "ja"),
+        ("KudamonoSentaku", "ja"),
+        (FREE_TEXT, "ja"),
+    ]
+    assert question.languages == ["en", "pl", "ja"]
 
 
 def test_each_language_may_name_its_own_schema() -> None:

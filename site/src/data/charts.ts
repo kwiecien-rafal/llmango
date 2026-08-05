@@ -29,6 +29,7 @@ export type Chart = {
   name: string;
   number: string;
   file: string;
+  narrow_file: string;
   questions: string[];
   title: string;
   row_label: string;

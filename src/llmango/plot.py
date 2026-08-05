@@ -1,10 +1,12 @@
 """Everything an experiment needs to draw a chart, and how a figure is written."""
 
+import re
 from collections import Counter
-from collections.abc import Callable, Iterable
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, cos, radians, sin
 from pathlib import Path
 from textwrap import wrap
 from typing import Any
@@ -15,38 +17,43 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.image import imread
+from matplotlib.layout_engine import ConstrainedLayoutEngine
+from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
-from matplotlib.patches import Patch, PathPatch
+from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.path import Path as DrawPath
 from matplotlib.textpath import text_to_path
 from matplotlib.ticker import FuncFormatter, MaxNLocator
-from matplotlib.transforms import Affine2D, ScaledTranslation
+from matplotlib.transforms import (
+    Affine2D,
+    ScaledTranslation,
+    blended_transform_factory,
+)
 from matplotlib.typing import RcKeyType
 
 from llmango.aggregate import Aggregate, Distribution
 from llmango.spec import FREE_TEXT, OTHER_CATEGORY
 from llmango.stats import wilson_interval
 
-ARM_COLORS = ("#0072B2", "#D55E00", "#009E73")
 INK = "#767676"
-
-LIGHT_SURFACE = "#f9f9f7"
-DARK_SURFACE = "#0d0d0d"
+FRAME = "#8b6f4e"
 
 TEXT_FAMILY = "DejaVu Sans"
 
-_ARTICLE_WIDTH_IN = 6.58
-_TITLE_WIDTH_IN = 4.9
 _COLUMN_IN = 0.17
 _BAR_IN = 0.14
 _COLUMN_GAP_IN = 0.04
 _GROUP_PAD_IN = 0.08
+_COLUMN_STEP = (_COLUMN_IN + _COLUMN_GAP_IN) / _COLUMN_IN
+_BAR_STEP = (_BAR_IN + _COLUMN_GAP_IN) / _BAR_IN
 _MAX_HEIGHT_IN = 12.0
 _PLOT_HEIGHT_IN = 2.5
+_PANEL_IN = 1.9
+_ROW_RULE_IN = 0.18
 _BAR_CHROME_IN = 1.1
 _DOT_ROW_IN = 0.3
 _LEGEND_IN = 0.34
-_LABEL_CHAR_IN = 0.075
+_TITLE_LINE_IN = 0.24
 _MAX_COLUMN_IN = 0.42
 _CORNER_PX = 4.0
 _MIN_MARK_PX = 3.0
@@ -55,10 +62,12 @@ _ZERO_DOT_PT = 2.0
 _ZERO_GAP_PT = 3.0
 _HEADROOM = 1.09
 _BAR_HEADROOM = 1.18
+_ROW_SPACE = 0.12
+_BAND_ALPHA = 0.1
 _PLOT_GUTTER_IN = 1.0
 _PLOT_BAND_IN = 1.7
-_LABEL_ROTATION = 45.0
-_SHORT_LABEL = 3
+_TURN = (-45.0, -90.0)
+_PANEL_TITLE_WEIGHT = "semibold"
 _FINE_SHARE = 0.1
 _WHOLE_SHARE = 1.0
 _APART_POINTS = 1.0
@@ -72,11 +81,17 @@ _LEGEND_PT = 11.0
 _TITLE_PT = 13.0
 _BODY_PT = 12.0
 _TICK_PAD_PT = 4.5
+_TITLE_PAD_PT = 10.0
+_OVER_LEGEND_PT = 30.0
+_KEY_DROP_PT = 8.1
+_ROW_RULE_PT = 1.0
+_ROW_RULE_GAP_PT = 7.0
 _ICON_PT = 15.5
 _ICON_GAP_PT = 2.75
 _ICON_DROP_PT = 10.5
 _ICON_SOURCE_PX = 128.0
 _EXPORT_DPI = _ICON_SOURCE_PX * 72.0 / _ICON_PT
+_HASHED_ID = re.compile(r'id="([A-Za-z]+[0-9a-f]{10})"')
 
 _STYLE: dict[RcKeyType, Any] = {
     "svg.hashsalt": "llmango",
@@ -93,10 +108,33 @@ _STYLE: dict[RcKeyType, Any] = {
     "axes.titlesize": _TITLE_PT,
 }
 
+
+@dataclass(frozen=True)
+class Canvas:
+    """One width a chart is drawn to be read at, since the page reads it at two."""
+
+    width_in: float
+    title_width_in: float
+
+
+WIDE = Canvas(width_in=8.3125, title_width_in=6.19)
+NARROW = Canvas(width_in=4.375, title_width_in=3.26)
+
+_canvas: ContextVar[Canvas] = ContextVar("canvas", default=WIDE)
+
+
+def _width() -> float:
+    """How wide the figure being drawn is, which the page decides and not the chart."""
+    return _canvas.get().width_in
+
+
 Row = dict[str, Any]
 CategoryLabel = Callable[[str], str]
 CategoryIcon = Callable[[str], Path | None]
 SchemaLabel = Callable[[str], str]
+SeriesColor = Callable[[str], str]
+
+_SHARE_LABEL = "share of valid answers"
 
 
 def _write_share(value: float) -> str:
@@ -176,6 +214,24 @@ class Arm:
 
 
 @dataclass(frozen=True)
+class Written:
+    """One category's name under its column: what fits flat, and what turns down."""
+
+    flat: str
+    turned: str
+
+
+@dataclass(frozen=True)
+class Piece:
+    """One run of a name that turned: what it says, its angle and where it hangs."""
+
+    text: str
+    angle: float
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
 class Series:
     """One drawn series: its column values and the labels written over them."""
 
@@ -225,35 +281,28 @@ class ChartDef:
 def distribution(
     cells: dict[str, Distribution],
     title: str,
+    series_color: SeriesColor,
     category_label: CategoryLabel | None = None,
     category_icon: CategoryIcon | None = None,
     row_label: str = "category",
     categories: list[str] | None = None,
     reference: float | None = None,
     horizontal: bool = False,
+    zeros_written: bool = False,
 ) -> Drawn:
     """Draw labeled arms' category shares, and return the numbers behind them."""
-    _refuse_beyond_palette(cells, title)
     shown_categories = categories or _categories(cells.values())
-    shares = [
-        [_share(cell, category) for category in shown_categories]
-        for cell in cells.values()
-    ]
-    series = [
-        Series(label=label, color=ARM_COLORS[index], values=values, labels=labels)
-        for index, (label, values, labels) in enumerate(
-            zip(cells, shares, _written_columns(shares), strict=True)
-        )
-    ]
+    series = list(
+        _series(cells, shown_categories, series_color, zeros_written).values()
+    )
     written_categories = _shown(shown_categories, category_label)
-    value_label = "share of valid answers"
     legend = len(cells) > 1
     figure = (
         bars(
             category_labels=written_categories,
             series=series,
             title=title,
-            value_label=value_label,
+            value_label=_SHARE_LABEL,
             unit=SHARE,
             legend=legend,
             reference=reference,
@@ -263,7 +312,7 @@ def distribution(
             category_labels=written_categories,
             series=series,
             title=title,
-            value_label=value_label,
+            value_label=_SHARE_LABEL,
             unit=SHARE,
             legend=legend,
             category_icons=_pictured(shown_categories, category_icon),
@@ -284,10 +333,12 @@ def distribution(
 def question_distribution(
     aggregate: Aggregate,
     title: str,
+    series_color: SeriesColor,
     schema_label: SchemaLabel | None = None,
     category_label: CategoryLabel | None = None,
     category_icon: CategoryIcon | None = None,
     categories: list[str] | None = None,
+    zeros_written: bool = False,
 ) -> Drawn:
     """Draw one question's arms, labeled by whichever of its dimensions varies."""
     arms = _arms(aggregate["distributions"])
@@ -296,41 +347,93 @@ def question_distribution(
     return distribution(
         cells=dict(zip(labels, arms.values(), strict=True)),
         title=title,
+        series_color=series_color,
         category_label=category_label,
         category_icon=category_icon,
         categories=categories,
+        zeros_written=zeros_written,
+    )
+
+
+def panels(
+    cells: dict[str, dict[str, Distribution]],
+    title: str,
+    series_color: SeriesColor,
+    category_label: CategoryLabel | None = None,
+    category_icon: CategoryIcon | None = None,
+    row_label: str = "category",
+    categories: list[str] | None = None,
+    zeros_written: bool = False,
+) -> Drawn:
+    """Draw one panel per thing a question varies, its series colored throughout."""
+    shown_categories = categories or _categories(
+        cell for panel in cells.values() for cell in panel.values()
+    )
+    drawn = {
+        name: _series(panel, shown_categories, series_color, zeros_written)
+        for name, panel in cells.items()
+    }
+    order = list(dict.fromkeys(label for panel in cells.values() for label in panel))
+    figure = panel_columns(
+        panels=[(name, list(series.values())) for name, series in drawn.items()],
+        order=order,
+        category_labels=_shown(shown_categories, category_label),
+        title=title,
+        value_label=_SHARE_LABEL,
+        unit=SHARE,
+        category_icons=_pictured(shown_categories, category_icon),
+    )
+    placed = [
+        (f"{label} / {name}", drawn[name][label], panel[label])
+        for label in order
+        for name, panel in cells.items()
+        if label in panel
+    ]
+
+    return Drawn(
+        figure=figure,
+        title=title,
+        row_label=row_label,
+        unit=SHARE.name,
+        columns=[column for column, _, _ in placed],
+        rows=_rows(
+            shown_categories,
+            [entry for _, entry, _ in placed],
+            [cell for _, _, cell in placed],
+        ),
     )
 
 
 def summary(
-    cells: dict[str, float],
+    cells: dict[str, dict[str, float]],
     title: str,
     value_label: str,
     row_label: str,
-    counts: dict[str, int],
-    intervals: dict[str, tuple[float, float]],
+    counts: dict[str, dict[str, int]],
+    intervals: dict[str, dict[str, tuple[float, float]]],
+    series_color: SeriesColor,
     unit: Unit = SHARE,
-    reference: float | None = None,
 ) -> Drawn:
-    """Draw one number per named thing, which is what a cross-question chart has."""
-    plotted = _with_intervals(cells, intervals)
-    values = [estimate.value for estimate in plotted]
+    """Draw one number per named thing per series, which a cross-question chart has."""
+    shown_categories = list(
+        dict.fromkeys(name for series in cells.values() for name in series)
+    )
+    values = [
+        [series[category] for category in shown_categories] for series in cells.values()
+    ]
     series = [
-        Series(
-            label=value_label,
-            color=ARM_COLORS[0],
-            values=values,
-            labels=[unit.write_column(value, values) for value in values],
+        Series(label=label, color=series_color(label), values=row, labels=written)
+        for label, row, written in zip(
+            cells, values, _written_columns(values, unit), strict=True
         )
     ]
     figure = columns(
-        category_labels=[estimate.label for estimate in plotted],
+        category_labels=shown_categories,
         series=series,
         title=title,
         value_label=value_label,
         unit=unit,
-        legend=False,
-        reference=reference,
+        legend=len(cells) > 1,
     )
 
     return Drawn(
@@ -338,8 +441,8 @@ def summary(
         title=title,
         row_label=row_label,
         unit=unit.name,
-        columns=[value_label],
-        rows=_estimate_rows(plotted, counts, unit),
+        columns=list(cells),
+        rows=_summary_rows(shown_categories, cells, counts, intervals, unit),
     )
 
 
@@ -350,6 +453,7 @@ def estimates(
     row_label: str,
     counts: dict[str, int],
     intervals: dict[str, tuple[float, float]],
+    series_color: SeriesColor,
     unit: Unit = SHARE,
     floor: float = 0.0,
 ) -> Drawn:
@@ -361,10 +465,17 @@ def estimates(
     numbers occupy. What that buys is the overlap between two intervals, which is
     what says whether two arms differ at all.
     """
-    plotted = _with_intervals(cells, intervals)
+    plotted = [Estimate(name, value, *intervals[name]) for name, value in cells.items()]
 
     return Drawn(
-        figure=dots(plotted, title, value_label, unit, floor),
+        figure=dots(
+            plotted,
+            [series_color(estimate.label) for estimate in plotted],
+            title,
+            value_label,
+            unit,
+            floor,
+        ),
         title=title,
         row_label=row_label,
         unit=unit.name,
@@ -373,11 +484,41 @@ def estimates(
     )
 
 
-def _with_intervals(
-    cells: dict[str, float], intervals: dict[str, tuple[float, float]]
-) -> list[Estimate]:
-    """Pair every named number with its interval, in the order they were given."""
-    return [Estimate(name, value, *intervals[name]) for name, value in cells.items()]
+def _series(
+    cells: dict[str, Distribution],
+    categories: list[str],
+    series_color: SeriesColor,
+    zeros_written: bool,
+) -> dict[str, Series]:
+    """Build one drawn series per arm, each column written at the precision it needs."""
+    shares = [
+        [_share(cell, category) for category in categories] for cell in cells.values()
+    ]
+
+    return {
+        label: Series(
+            label=label,
+            color=series_color(label),
+            values=values,
+            labels=written if zeros_written else _only_picked(values, written),
+        )
+        for label, values, written in zip(
+            cells, shares, _written_columns(shares), strict=True
+        )
+    }
+
+
+def _only_picked(values: list[float], written: list[str]) -> list[str]:
+    """Leave a category this arm never picked its dotted footprint and no number.
+
+    The mark under an empty slot says the arm picked none of that category, and it
+    says it in the arm's own color. A chart that has already shown a reader what
+    one looks like spends nothing further on writing every one of them out, and
+    the number is in the table under the figure either way.
+    """
+    return [
+        text if value > 0 else "" for value, text in zip(values, written, strict=True)
+    ]
 
 
 def _estimate_rows(
@@ -401,6 +542,32 @@ def _estimate_rows(
     ]
 
 
+def _summary_rows(
+    categories: list[str],
+    cells: dict[str, dict[str, float]],
+    counts: dict[str, dict[str, int]],
+    intervals: dict[str, dict[str, tuple[float, float]]],
+    unit: Unit,
+) -> list[Row]:
+    """Describe every plotted number, one row per named thing, for the table view."""
+    return [
+        {
+            "label": category,
+            "cells": [
+                {
+                    "value": series[category],
+                    "n": counts[label][category],
+                    "lo": intervals[label][category][0],
+                    "hi": intervals[label][category][1],
+                    **_written(unit, series[category], *intervals[label][category]),
+                }
+                for label, series in cells.items()
+            ],
+        }
+        for category in categories
+    ]
+
+
 def _written(unit: Unit, value: float, low: float, high: float) -> dict[str, str]:
     """Write a cell's number and its interval, so the site prints and never formats."""
     return {
@@ -409,9 +576,15 @@ def _written(unit: Unit, value: float, low: float, high: float) -> dict[str, str
     }
 
 
-def styled() -> AbstractContextManager[None]:
-    """Apply the chart style every chart is drawn and saved under."""
-    return matplotlib.rc_context(_STYLE)
+@contextmanager
+def styled(canvas: Canvas = WIDE) -> Generator[None]:
+    """Apply the style and the width every chart is drawn and saved under."""
+    token = _canvas.set(canvas)
+    try:
+        with matplotlib.rc_context(_STYLE):
+            yield
+    finally:
+        _canvas.reset(token)
 
 
 def save(figure: Figure, path: Path) -> Path:
@@ -423,8 +596,21 @@ def save(figure: Figure, path: Path) -> Path:
         transparent=True,
         metadata={"Date": None},
     )
+    path.write_text(_settled_ids(path.read_text(encoding="utf-8")), encoding="utf-8")
 
     return path
+
+
+def _settled_ids(document: str) -> str:
+    """Number the ids matplotlib hashes, since a clip path's hashes its address."""
+    settled: dict[str, str] = {}
+    for found in _HASHED_ID.findall(document):
+        settled.setdefault(found, f"id{len(settled)}")
+
+    for found, numbered in settled.items():
+        document = document.replace(found, numbered)
+
+    return document
 
 
 def columns(
@@ -438,45 +624,114 @@ def columns(
     reference: float | None = None,
 ) -> Figure:
     """Draw one vertical bar chart, grouped when it carries several series."""
-    count = len(series)
-    pitch = count * _COLUMN_IN + (count - 1) * _COLUMN_GAP_IN + _GROUP_PAD_IN
     icons: list[Path | None] = category_icons or [None] * len(category_labels)
     pictured = _any_icon(icons)
-    turned = not pictured and _needs_turning(category_labels)
     slots = max(len(category_labels), 1)
-    turned_values = not _values_fit(series, pitch, slots)
+    stacked = _stacks(category_labels, icons, slots)
+    written = _written_categories(category_labels, stacked, slots)
+    turned_values = not _values_fit(series, _placed(slots, len(series)), slots)
     figure = Figure(
         figsize=(
-            _ARTICLE_WIDTH_IN,
-            _height(category_labels, legend, turned, pictured),
+            _width(),
+            _height(written, title, legend, stacked, pictured),
         ),
         layout="constrained",
     )
     axes = figure.add_subplot()
-    offsets = _offsets(count, _COLUMN_IN, pitch)
 
     _frame(
         axes,
-        category_labels,
+        written,
         title,
         value_label,
         unit,
         legend,
-        turned,
         _top(series, reference, _headroom(series, turned_values)),
     )
     if reference is not None:
         _reference(axes, reference, horizontal=False)
-    _icons(figure, axes, category_labels, icons)
-    _annotate_above(axes, series, offsets, turned_values)
+    _named(figure, axes, written, icons, stacked, worded=True)
     if legend:
-        _legend(axes, series)
+        _legend(figure, axes, series)
 
     _settle(figure)
-    thickness = _thickness(axes, figure, _COLUMN_IN / pitch, horizontal=False)
+    _draw_columns(
+        axes, figure, series, list(range(len(series))), len(series), turned_values
+    )
+
+    return figure
+
+
+def panel_columns(
+    panels: list[tuple[str, list[Series]]],
+    order: list[str],
+    category_labels: list[str],
+    title: str,
+    value_label: str,
+    unit: Unit,
+    category_icons: list[Path | None] | None = None,
+) -> Figure:
+    """Draw one column chart per panel, stacked over one shared category axis."""
+    places = [[order.index(entry.label) for entry in series] for _, series in panels]
+    drawn = [entry for _, series in panels for entry in series]
+    icons: list[Path | None] = category_icons or [None] * len(category_labels)
+    pictured = _any_icon(icons)
+    slots = max(len(category_labels), 1)
+    stacked = pictured or _stacks(category_labels, icons, slots)
+    written = _written_categories(category_labels, stacked, slots)
+    offsets = _placed(slots, len(order))
+    turned_values = not all(
+        _values_fit(series, [offsets[place] for place in at], slots)
+        for (_, series), at in zip(panels, places, strict=True)
+    )
+    top = _top(drawn, None, _headroom(drawn, turned_values))
+    figure = Figure(
+        figsize=(
+            _width(),
+            _panel_height(len(panels), written, title, stacked, pictured),
+        ),
+        layout=ConstrainedLayoutEngine(hspace=_ROW_SPACE),
+    )
+    plots = [
+        figure.add_subplot(len(panels), 1, index + 1) for index in range(len(panels))
+    ]
+
+    figure.suptitle(_wrapped(title), fontsize=_TITLE_PT)
+    figure.supylabel(value_label, fontsize=_AXIS_LABEL_PT)
+    for axes, (name, _) in zip(plots, panels, strict=True):
+        keyed, bottom = axes is plots[0], axes is plots[-1]
+        _panel_frame(axes, written, name, unit, top, keyed)
+        if keyed:
+            _legend(figure, axes, _keyed(order, drawn), above=_TITLE_PAD_PT)
+        else:
+            _row_rule(figure, axes)
+        _named(figure, axes, written, icons, stacked, worded=bottom)
+
+    _settle(figure)
+    _banded(figure, plots, slots)
+    for axes, (_, series), at in zip(plots, panels, places, strict=True):
+        _draw_columns(axes, figure, series, at, len(order), turned_values)
+
+    return figure
+
+
+def _draw_columns(
+    axes: Axes,
+    figure: Figure,
+    series: list[Series],
+    places: list[int],
+    count: int,
+    turned_values: bool,
+) -> None:
+    """Draw one plot's columns and their values, once the layout under them is final."""
+    thickness = _thickness(axes, figure, _COLUMN_IN / _pitch(count), horizontal=False)
     thickness_pt = _in_points(axes, figure, thickness, horizontal=False)
     radius_x, radius_y = _in_data_units(axes, _CORNER_PX)
     _, shortest = _in_data_units(axes, _MIN_MARK_PX)
+    grouped = _offsets(count, thickness, _COLUMN_STEP)
+    offsets = [grouped[place] for place in places]
+
+    _annotate_above(axes, series, offsets, turned_values)
     for entry, offset in zip(series, offsets, strict=True):
         for slot, value in enumerate(entry.values):
             if value > 0:
@@ -504,8 +759,6 @@ def columns(
                     )
                 )
 
-    return figure
-
 
 def bars(
     category_labels: list[str],
@@ -521,11 +774,11 @@ def bars(
     pitch = count * _BAR_IN + (count - 1) * _COLUMN_GAP_IN + _GROUP_PAD_IN
     slots = max(len(category_labels), 1)
     figure = Figure(
-        figsize=(_ARTICLE_WIDTH_IN, _bar_height(slots, pitch, legend)),
+        figsize=(_width(), _bar_height(slots, pitch, legend)),
         layout="constrained",
     )
     axes = figure.add_subplot()
-    offsets = _offsets(count, _BAR_IN, pitch)
+    offsets = _offsets(count, _BAR_IN / pitch, _BAR_STEP)
 
     _horizontal_frame(
         axes,
@@ -541,7 +794,7 @@ def bars(
         _reference(axes, reference, horizontal=True)
     _annotate_beside(axes, series, offsets)
     if legend:
-        _legend(axes, series)
+        _legend(figure, axes, series)
 
     _settle(figure)
     thickness = _thickness(axes, figure, _BAR_IN / pitch, horizontal=True)
@@ -581,14 +834,19 @@ def bars(
 
 
 def dots(
-    plotted: list[Estimate], title: str, value_label: str, unit: Unit, floor: float
+    plotted: list[Estimate],
+    colors: list[str],
+    title: str,
+    value_label: str,
+    unit: Unit,
+    floor: float,
 ) -> Figure:
     """Draw every estimate as a dot on its own row, its interval the line under it."""
     slots = max(len(plotted), 1)
     end = _end(plotted, floor)
     labels = [estimate.label for estimate in plotted]
     figure = Figure(
-        figsize=(_ARTICLE_WIDTH_IN, _bar_height(slots, _DOT_ROW_IN, legend=False)),
+        figsize=(_width(), _bar_height(slots, _DOT_ROW_IN, legend=False)),
         layout="constrained",
     )
     axes = figure.add_subplot()
@@ -603,21 +861,24 @@ def dots(
         end,
         legend=False,
     )
-    for slot, estimate in enumerate(plotted):
+    axes.tick_params(axis="y", pad=_DOT_PT / 2.0 + _TICK_PAD_PT)
+    for slot, (estimate, color) in enumerate(zip(plotted, colors, strict=True)):
         axes.plot(
             [estimate.low, estimate.high],
             [slot, slot],
-            color=ARM_COLORS[0],
+            color=color,
             linewidth=_INTERVAL_PT,
             solid_capstyle="round",
+            clip_on=False,
         )
         axes.plot(
             [estimate.value],
             [slot],
             marker="o",
             markersize=_DOT_PT,
-            color=ARM_COLORS[0],
+            color=color,
             linestyle="none",
+            clip_on=False,
         )
         axes.annotate(
             unit.write(estimate.value),
@@ -640,11 +901,22 @@ def _end(plotted: list[Estimate], floor: float) -> float:
     return floor + span * _BAR_HEADROOM if span > 0 else floor + 1.0
 
 
-def _offsets(count: int, thickness_in: float, pitch: float) -> list[float]:
-    """Where each series sits inside a category's slot, the group centred on it."""
-    step = (thickness_in + _COLUMN_GAP_IN) / pitch
+def _pitch(count: int) -> float:
+    """How wide a group of columns sits, which is what a category's slot holds."""
+    return count * _COLUMN_IN + (count - 1) * _COLUMN_GAP_IN + _GROUP_PAD_IN
 
-    return [(index - (count - 1) / 2) * step for index in range(count)]
+
+def _offsets(count: int, thickness: float, step: float) -> list[float]:
+    """Where each series sits inside a category's slot, the group centred on it."""
+    return [(index - (count - 1) / 2) * thickness * step for index in range(count)]
+
+
+def _placed(slots: int, count: int) -> list[float]:
+    """Where a group's columns will land, close enough to ask whether values fit."""
+    room = (_width() - _PLOT_GUTTER_IN) / max(slots, 1)
+    thickness = min(_COLUMN_IN / _pitch(count), _MAX_COLUMN_IN / room)
+
+    return _offsets(count, thickness, _COLUMN_STEP)
 
 
 def _bar_height(slots: int, pitch: float, legend: bool) -> float:
@@ -663,15 +935,14 @@ def _written_width(label: str, size: float) -> float:
     return float(width)
 
 
-def _values_fit(series: list[Series], pitch: float, slots: int) -> bool:
+def _values_fit(series: list[Series], offsets: list[float], slots: int) -> bool:
     """Whether every value written flat clears the value written next along the axis."""
-    category = (_ARTICLE_WIDTH_IN - _PLOT_GUTTER_IN) / max(slots, 1)
+    category = (_width() - _PLOT_GUTTER_IN) / max(slots, 1)
     written = sorted(
         ((slot + offset) * category, _written_width(text, _VALUE_PT) / 72.0)
-        for entry, offset in zip(
-            series, _offsets(len(series), _COLUMN_IN, pitch), strict=True
-        )
+        for entry, offset in zip(series, offsets, strict=True)
         for slot, text in enumerate(entry.labels)
+        if text
     )
 
     return all(
@@ -693,7 +964,12 @@ def _headroom(series: list[Series], turned: bool) -> float:
 def _widest_value(series: list[Series]) -> float:
     """How wide in points the longest value any series writes sits."""
     return max(
-        (_written_width(text, _VALUE_PT) for entry in series for text in entry.labels),
+        (
+            _written_width(text, _VALUE_PT)
+            for entry in series
+            for text in entry.labels
+            if text
+        ),
         default=0.0,
     )
 
@@ -719,14 +995,41 @@ def _thickness(axes: Axes, figure: Figure, wanted: float, horizontal: bool) -> f
 
 
 def _height(
-    category_labels: list[str], legend: bool, turned: bool, pictured: bool
+    written: list[Written],
+    title: str,
+    legend: bool,
+    stacked: bool,
+    pictured: bool,
 ) -> float:
-    """Leave a figure room for the labels under its axis, turned or written flat."""
-    longest = max((len(label) for label in category_labels), default=0)
-    hanging = longest * _LABEL_CHAR_IN * 0.71 if turned else 0.0
-    band = _icon_band() / 72.0 if pictured else 0.0
+    """Leave a figure room for the labels under its axis, hung under or beside.
 
-    return _PLOT_HEIGHT_IN + hanging + band + (_LEGEND_IN if legend else 0.0)
+    A title wraps to whatever the canvas it is read at leaves it, and every line
+    past the first is height the plot under it does not get. Narrow, that is what
+    stands between an axis label and the bottom of the figure.
+    """
+    strip = _label_strip(written, stacked, pictured)
+    wrapped = _wrapped(title).count("\n") * _TITLE_LINE_IN
+
+    return _PLOT_HEIGHT_IN + strip + wrapped + (_LEGEND_IN if legend else 0.0)
+
+
+def _label_strip(written: list[Written], stacked: bool, pictured: bool) -> float:
+    """How deep in inches the categories sit under their axis, pictured and turned."""
+    if not stacked:
+        return (_icon_band() if pictured else 0.0) / 72.0
+
+    hanging = max((_reach(entry) for entry in written), default=0.0)
+
+    return (_word_drop(pictured) + max(hanging, _line_height())) / 72.0
+
+
+def _panel_height(
+    count: int, written: list[Written], title: str, stacked: bool, pictured: bool
+) -> float:
+    """Grow a faceted figure down the page, since its width is the article's."""
+    one = _height(written, title, legend=True, stacked=stacked, pictured=pictured)
+
+    return one + (count - 1) * (_PANEL_IN + _ROW_RULE_IN)
 
 
 def _shown(categories: list[str], category_label: CategoryLabel | None) -> list[str]:
@@ -745,17 +1048,6 @@ def _pictured(
         return [None] * len(categories)
 
     return [category_icon(category) for category in categories]
-
-
-def _refuse_beyond_palette(cells: dict[str, Distribution], title: str) -> None:
-    """Refuse a comparison the palette cannot color, since wrapping it would lie."""
-    if len(cells) > len(ARM_COLORS):
-        raise ValueError(
-            f"{title} has {len(cells)} arms but the palette holds {len(ARM_COLORS)}. "
-            f"The cap is a property of a transparent export, not of the palette: no "
-            f"fourth color clears both page surfaces. Fold the tail into one series, "
-            f"split the comparison across charts, or plot a summary instead."
-        )
 
 
 def _arms(distributions: dict[str, dict[str, Distribution]]) -> dict[Arm, Distribution]:
@@ -821,13 +1113,13 @@ def _share(cell: Distribution, category: str) -> float:
     return round(cell["counts"].get(category, 0) / total, 4)
 
 
-def _written_columns(shares: list[list[float]]) -> list[list[str]]:
-    """Write every column's share at the precision its own group turns out to need."""
-    groups = [list(group) for group in zip(*shares, strict=True)]
+def _written_columns(plotted: list[list[float]], unit: Unit = SHARE) -> list[list[str]]:
+    """Write every column's number at the precision its own group turns out to need."""
+    groups = [list(group) for group in zip(*plotted, strict=True)]
 
     return [
-        [_write_column(value, groups[slot]) for slot, value in enumerate(values)]
-        for values in shares
+        [unit.write_column(value, groups[slot]) for slot, value in enumerate(values)]
+        for values in plotted
     ]
 
 
@@ -874,29 +1166,88 @@ def _settle(figure: Figure) -> None:
 
 def _frame(
     axes: Axes,
-    category_labels: list[str],
+    written: list[Written],
     title: str,
     value_label: str,
     unit: Unit,
     legend: bool,
-    turned: bool,
     top: float,
 ) -> None:
     """Set up the plot frame: a recessive grid, its own unit and room for labels."""
+    _value_axis(axes, written, unit, top)
+    axes.set_ylabel(value_label, fontsize=_AXIS_LABEL_PT)
+    _bare(axes, title, legend)
+
+
+def _panel_frame(
+    axes: Axes,
+    written: list[Written],
+    name: str,
+    unit: Unit,
+    top: float,
+    keyed: bool,
+) -> None:
+    """Set up one panel's frame, named in the weight that tells a row from a title."""
+    _value_axis(axes, written, unit, top)
+    axes.set_title(
+        name,
+        loc="left",
+        fontsize=_AXIS_LABEL_PT,
+        fontweight=_PANEL_TITLE_WEIGHT,
+        pad=_TITLE_PAD_PT + _KEY_DROP_PT if keyed else _TITLE_PAD_PT,
+    )
+    _stripped(axes)
+
+
+def _row_rule(figure: Figure, axes: Axes) -> None:
+    """Rule one panel off from the one above it, just over the name it is given."""
+    above = _TITLE_PAD_PT + _AXIS_LABEL_PT + _ROW_RULE_GAP_PT
+    axes.add_artist(
+        Line2D(
+            (0.0, 1.0),
+            (1.0, 1.0),
+            transform=axes.transAxes
+            + ScaledTranslation(0.0, above / 72.0, figure.dpi_scale_trans),
+            color=FRAME,
+            linewidth=_ROW_RULE_PT,
+            clip_on=False,
+        )
+    )
+
+
+def _banded(figure: Figure, plots: list[Axes], slots: int) -> None:
+    """Shade every other category the whole height of the stack it is read down.
+
+    The shading belongs to the category, not to any one panel, so it is one band
+    behind the panels rather than a band drawn inside each: it passes behind the
+    rules between them and behind every row of pictures, and a fruit is one
+    unbroken column from the top panel's ceiling to the foot of the figure.
+    """
+    top = plots[0].get_position().y1
+    span = blended_transform_factory(plots[0].transData, figure.transFigure)
+    for slot in range(0, slots, 2):
+        figure.add_artist(
+            Rectangle(
+                (slot - 0.5, 0.0),
+                1.0,
+                top,
+                transform=span,
+                facecolor=FRAME,
+                edgecolor="none",
+                alpha=_BAND_ALPHA,
+                zorder=-1,
+            )
+        )
+
+
+def _value_axis(axes: Axes, written: list[Written], unit: Unit, top: float) -> None:
+    """Scale a column chart: its categories along x, its unit and grid up y."""
     axes.set_ylim(0.0, top)
-    axes.set_xlim(-0.5, max(len(category_labels), 1) - 0.5)
+    axes.set_xlim(-0.5, max(len(written), 1) - 0.5)
     axes.yaxis.set_major_locator(MaxNLocator(nbins=4, steps=[1, 2, 2.5, 5, 10]))
     axes.yaxis.set_major_formatter(_tick_format(unit))
-    axes.set_xticks(range(len(category_labels)), labels=category_labels)
-    axes.set_ylabel(value_label, fontsize=_AXIS_LABEL_PT)
+    axes.set_xticks(range(len(written)), labels=[entry.flat for entry in written])
     axes.grid(axis="y", color=INK, alpha=0.25, linewidth=0.6)
-    _bare(axes, title, legend)
-    if turned:
-        for label in axes.get_xticklabels():
-            label.set_rotation(_LABEL_ROTATION)
-            label.set_rotation_mode("anchor")
-            label.set_horizontalalignment("right")
-            label.set_verticalalignment("top")
 
 
 def _horizontal_frame(
@@ -923,7 +1274,14 @@ def _horizontal_frame(
 
 def _bare(axes: Axes, title: str, legend: bool) -> None:
     """Strip a plot to its centred title and its grid, which both forms share."""
-    axes.set_title(_wrapped(title), loc="center", pad=30 if legend else 10)
+    axes.set_title(
+        _wrapped(title), loc="center", pad=_OVER_LEGEND_PT if legend else _TITLE_PAD_PT
+    )
+    _stripped(axes)
+
+
+def _stripped(axes: Axes) -> None:
+    """Take a plot down to its grid, which every form a chart takes shares."""
     axes.set_axisbelow(True)
     axes.tick_params(length=0)
     for spine in axes.spines.values():
@@ -932,11 +1290,12 @@ def _bare(axes: Axes, title: str, legend: bool) -> None:
 
 def _wrapped(title: str) -> str:
     """Break a title over lines, since a figure no longer widens to fit one."""
+    room = _canvas.get().title_width_in
     written = _written_width(title, _TITLE_PT) / 72.0
-    if written <= _TITLE_WIDTH_IN:
+    if written <= room:
         return title
 
-    return "\n".join(wrap(title, ceil(len(title) * _TITLE_WIDTH_IN / written)))
+    return "\n".join(wrap(title, ceil(len(title) * room / written)))
 
 
 def _tick_format(unit: Unit) -> FuncFormatter:
@@ -948,9 +1307,71 @@ def _tick_format(unit: Unit) -> FuncFormatter:
     return FuncFormatter(write_tick)
 
 
-def _needs_turning(category_labels: list[str]) -> bool:
-    """Turn category names only when they are too long to sit side by side."""
-    return max((len(label) for label in category_labels), default=0) > _SHORT_LABEL
+def _stacks(category_labels: list[str], icons: list[Path | None], slots: int) -> bool:
+    """Whether a category's word is too wide to sit beside its picture on one line."""
+    return any(
+        _label_width(label, icon) > _room(slots)
+        for label, icon in zip(category_labels, icons, strict=True)
+    )
+
+
+def _room(slots: int) -> float:
+    """How wide in inches one category's own column is, which is what it may fill."""
+    return (_width() - _PLOT_GUTTER_IN) / max(slots, 1)
+
+
+def _label_width(label: str, icon: Path | None) -> float:
+    """How wide in inches one category's label sits, its picture beside its word."""
+    beside = _ICON_PT + _ICON_GAP_PT if icon is not None else 0.0
+
+    return (_written_width(label, _TICK_PT) + beside) / 72.0
+
+
+def _written_categories(
+    category_labels: list[str], stacked: bool, slots: int
+) -> list[Written]:
+    """Lay every category's name out flat, turning down what runs past its column."""
+    if not stacked:
+        return [Written(flat=label, turned="") for label in category_labels]
+
+    return [_broken(label, _room(slots)) for label in category_labels]
+
+
+def _broken(label: str, room: float) -> Written:
+    """Break a name at the last letter that fits its column, the rest turning down.
+
+    A name too long for its column used to be turned whole, which spent height on
+    every name to fit the longest and asked the reader to tilt for all of them.
+    Broken instead, a name reads flat until it reaches the column beside it and
+    then turns the corner: still one word, and still one word read left to right.
+
+    A name that fits keeps the whole column, since only a name that has to turn
+    owes the turn the width it will take. One letter always stays flat, so that
+    however narrow the column gets, the name still starts where the eye is.
+    """
+    if _written_width(label, _TICK_PT) / 72.0 <= room:
+        return Written(flat=label, turned="")
+
+    kept = room - _line_height() / 72.0
+    for cut in range(len(label) - 1, 1, -1):
+        if _written_width(label[:cut], _TICK_PT) / 72.0 <= kept:
+            return Written(flat=label[:cut], turned=label[cut:])
+
+    return Written(flat=label[:1], turned=label[1:])
+
+
+def _line_height() -> float:
+    """How deep in points one written line of category names sits.
+
+    Matplotlib lays every single-line label out to at least the extent of "lp",
+    so that pair is what a row of names occupies whatever letters it happens to
+    carry, and what a name turned on its side claims across its column.
+    """
+    _, ascent, descent = text_to_path.get_text_width_height_descent(
+        "lp", FontProperties(family=TEXT_FAMILY, size=_TICK_PT), ismath=False
+    )
+
+    return float(ascent + descent)
 
 
 def _reference(axes: Axes, value: float, horizontal: bool) -> None:
@@ -967,42 +1388,161 @@ def _reference(axes: Axes, value: float, horizontal: bool) -> None:
         axes.axhline(value, **chrome)
 
 
-def _icons(
-    figure: Figure, axes: Axes, category_labels: list[str], icons: list[Path | None]
+def _named(
+    figure: Figure,
+    axes: Axes,
+    written: list[Written],
+    icons: list[Path | None],
+    stacked: bool,
+    worded: bool,
 ) -> None:
-    """Set each category's picture into its label, immediately before its word."""
-    if not _any_icon(icons):
+    """Name every category under one plot: its picture, and the word that follows.
+
+    A panel that is not the last of a stack is given the pictures alone. The words
+    are written once, under the bottom panel, and a row of fruit is what lets a
+    column be found in the panels above without reading down to them.
+    """
+    axes.tick_params(labelbottom=worded)
+    pictured = _any_icon(icons)
+    if not pictured and not stacked:
         return
 
     axes.tick_params(axis="x", pad=_TICK_PAD_PT)
-    for written in axes.get_xticklabels():
-        written.set_transform(written.get_transform() + _word_shift(figure))
+    if pictured:
+        _pictured_row(axes, written, icons, stacked)
+    if not worded:
+        return
+
+    drop = _word_drop(pictured)
+    for label, entry in zip(axes.get_xticklabels(), written, strict=True):
+        shift = _word_shift(figure, stacked, entry, drop)
+        label.set_transform(label.get_transform() + shift)
+    if stacked:
+        _hung(axes, written, pictured)
+
+
+def _pictured_row(
+    axes: Axes, written: list[Written], icons: list[Path | None], stacked: bool
+) -> None:
+    """Set each category's picture under its tick, above its word or ahead of it."""
     for slot, icon in enumerate(icons):
-        if icon is not None:
-            image = imread(icon)
-            beside = (
-                -(_written_width(category_labels[slot], _TICK_PT) + _ICON_GAP_PT) / 2.0
+        if icon is None:
+            continue
+
+        image = imread(icon)
+        beside = (
+            0.0
+            if stacked
+            else -(_written_width(written[slot].flat, _TICK_PT) + _ICON_GAP_PT) / 2.0
+        )
+        axes.add_artist(
+            AnnotationBbox(
+                OffsetImage(image, zoom=_ICON_PT / image.shape[0]),
+                (slot, 0.0),
+                xybox=(beside, -_ICON_DROP_PT),
+                xycoords=("data", "axes fraction"),
+                boxcoords="offset points",
+                box_alignment=(0.5, 0.5),
+                pad=0.0,
+                frameon=False,
+                annotation_clip=False,
             )
-            axes.add_artist(
-                AnnotationBbox(
-                    OffsetImage(image, zoom=_ICON_PT / image.shape[0]),
-                    (slot, 0.0),
-                    xybox=(beside, -_ICON_DROP_PT),
-                    xycoords=("data", "axes fraction"),
-                    boxcoords="offset points",
-                    box_alignment=(0.5, 0.5),
-                    pad=0.0,
-                    frameon=False,
-                    annotation_clip=False,
-                )
+        )
+
+
+def _hung(axes: Axes, written: list[Written], pictured: bool) -> None:
+    """Hang the rest of a broken name off the end of the part that stayed flat."""
+    top = -(_TICK_PAD_PT + _word_drop(pictured))
+    for slot, entry in enumerate(written):
+        for piece in _bent(entry, top):
+            axes.annotate(
+                piece.text,
+                (slot, 0.0),
+                xycoords=("data", "axes fraction"),
+                xytext=(piece.x, piece.y),
+                textcoords="offset points",
+                rotation=piece.angle,
+                rotation_mode="anchor",
+                va="center",
+                ha="left",
+                fontsize=_TICK_PT,
+                color=INK,
+                annotation_clip=False,
             )
 
 
-def _word_shift(figure: Figure) -> ScaledTranslation:
-    """Move a word clear of its picture, so picture and word centre together."""
+def _bent(entry: Written, top: float) -> list[Piece]:
+    """Walk a broken name round its corner, one run per angle it is written at.
+
+    The turn is taken in two steps rather than one. A name that snapped through a
+    right angle read as two names set at right angles to each other; the letter it
+    broke at takes half the turn instead, and the word bends around the edge of
+    its column. The runs sit on one line that turns under them, each beginning
+    where the one before it ended, so the letters keep the spacing they would have
+    had on a straight line and the word simply follows the bend.
+    """
+    x = (_written_width(entry.flat, _TICK_PT) - _turn_band(entry)) / 2.0
+    y = top - _line_height() / 2.0
+    walked: list[Piece] = []
+    for text, angle in zip(_runs(entry.turned), _TURN, strict=True):
+        walked.append(Piece(text=text, angle=angle, x=x, y=y))
+        x, y = _onward(x, y, angle, _written_width(text, _TICK_PT))
+
+    return [piece for piece in walked if piece.text]
+
+
+def _runs(turned: str) -> tuple[str, str]:
+    """Split what turns into the letter that takes half the turn and the rest."""
+    return turned[:1], turned[1:]
+
+
+def _onward(x: float, y: float, angle: float, run: float) -> tuple[float, float]:
+    """Move along a run's own line, which is where the run after it is measured from."""
+    return x + run * cos(radians(angle)), y + run * sin(radians(angle))
+
+
+def _reach(entry: Written) -> float:
+    """How far in points under its own line a broken name reaches, corner and all."""
+    height = _line_height()
+    fallen = [piece.y + _dips(piece, height) for piece in _bent(entry, 0.0)]
+
+    return -min(fallen) if fallen else 0.0
+
+
+def _dips(piece: Piece, height: float) -> float:
+    """How far one run's letters fall below the point that run is hung from."""
+    angle = radians(piece.angle)
+
+    return _written_width(piece.text, _TICK_PT) * sin(angle) - height / 2.0 * cos(angle)
+
+
+def _word_shift(
+    figure: Figure, stacked: bool, entry: Written, drop: float
+) -> ScaledTranslation:
+    """Move a word clear of its picture: beside it on one line, or under it.
+
+    Under it, the word gives up half the room its own turn will take, so that what
+    is centred on the category is the whole name rather than the part of it that
+    happened to stay flat.
+    """
+    if stacked:
+        return ScaledTranslation(
+            -_turn_band(entry) / 2.0 / 72.0, -drop / 72.0, figure.dpi_scale_trans
+        )
+
     return ScaledTranslation(
         (_ICON_PT + _ICON_GAP_PT) / 2.0 / 72.0, 0.0, figure.dpi_scale_trans
     )
+
+
+def _turn_band(entry: Written) -> float:
+    """How much of a column a name's turn claims across it, none when it stays flat."""
+    return _line_height() if entry.turned else 0.0
+
+
+def _word_drop(pictured: bool) -> float:
+    """How far in points a stacked word sits under the row of pictures over it."""
+    return _icon_band() + _ICON_GAP_PT if pictured else 0.0
 
 
 def _any_icon(icons: list[Path | None]) -> bool:
@@ -1027,6 +1567,8 @@ def _annotate_above(
     """
     for entry, offset in zip(series, offsets, strict=True):
         for slot, text in enumerate(entry.labels):
+            if not text:
+                continue
             axes.annotate(
                 text,
                 (slot + offset, entry.values[slot]),
@@ -1045,6 +1587,8 @@ def _annotate_beside(axes: Axes, series: list[Series], offsets: list[float]) -> 
     """Write every bar's value past its end, on the line the bar runs along."""
     for entry, offset in zip(series, offsets, strict=True):
         for slot, text in enumerate(entry.labels):
+            if not text:
+                continue
             axes.annotate(
                 text,
                 (entry.values[slot], slot + offset),
@@ -1057,12 +1601,16 @@ def _annotate_beside(axes: Axes, series: list[Series], offsets: list[float]) -> 
             )
 
 
-def _legend(axes: Axes, series: list[Series]) -> None:
+def _legend(
+    figure: Figure, axes: Axes, series: list[Series], above: float = 0.0
+) -> None:
     """Key the series by swatch, so identity never rests on color alone."""
     axes.legend(
-        handles=[Patch(facecolor=entry.color, label=entry.label) for entry in series],
+        handles=_swatches(series),
         loc="lower right",
         bbox_to_anchor=(1.0, 1.01),
+        bbox_transform=axes.transAxes
+        + ScaledTranslation(0.0, above / 72.0, figure.dpi_scale_trans),
         borderaxespad=0.0,
         ncols=len(series),
         frameon=False,
@@ -1070,6 +1618,18 @@ def _legend(axes: Axes, series: list[Series]) -> None:
         handleheight=1.1,
         fontsize=_LEGEND_PT,
     )
+
+
+def _keyed(order: list[str], drawn: list[Series]) -> list[Series]:
+    """One series per label a faceted figure draws, since its key names each once."""
+    found = {entry.label: entry for entry in drawn}
+
+    return [found[label] for label in order]
+
+
+def _swatches(series: list[Series]) -> list[Patch]:
+    """One labeled swatch per series, which is what a key is made of."""
+    return [Patch(facecolor=entry.color, label=entry.label) for entry in series]
 
 
 def _in_data_units(axes: Axes, pixels: float) -> tuple[float, float]:

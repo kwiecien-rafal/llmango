@@ -1,0 +1,98 @@
+{
+  "run_id": "001d__20260805T104706726Z",
+  "question_id": "001d",
+  "provider": "openai",
+  "model": "gpt-5.6-luna",
+  "temperature": 1.0,
+  "samples_total": 2692,
+  "samples_per_arm": 1346,
+  "samples_written": 2692,
+  "arms": [
+    {
+      "lang": "en",
+      "schema_name": "FruitChoice",
+      "response_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fruit": {
+            "title": "Fruit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fruit"
+        ],
+        "title": "FruitChoice",
+        "type": "object"
+      },
+      "template_sha256": "29e2d383abb38939e1e984f62e3ccb59d21c5f3bc018ed44eed6ea8ca4a71f86",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 121944,
+        "completion_tokens": 64226,
+        "total_tokens": 186170,
+        "cached_tokens": 0,
+        "reasoning_tokens": 39121,
+        "input_cost_usd": 0.0243888,
+        "output_cost_usd": 0.0770712,
+        "total_cost_usd": 0.10146
+      }
+    },
+    {
+      "lang": "en",
+      "schema_name": null,
+      "response_schema": null,
+      "template_sha256": "29e2d383abb38939e1e984f62e3ccb59d21c5f3bc018ed44eed6ea8ca4a71f86",
+      "usage": {
+        "errors": 0,
+        "provider_refusals": 0,
+        "prompt_tokens": 74834,
+        "completion_tokens": 6979,
+        "total_tokens": 81813,
+        "cached_tokens": 0,
+        "reasoning_tokens": 141,
+        "input_cost_usd": 0.0149668,
+        "output_cost_usd": 0.0083748,
+        "total_cost_usd": 0.0233416
+      }
+    }
+  ],
+  "inputs": {
+    "fruit_list": {
+      "order": "shuffle"
+    }
+  },
+  "input_sha256": {
+    "fruit_list": "ea4fb6c1c34d18310e1231e20cf7f343f67b8c79dc01a8e1d3f79c67337e6f1b"
+  },
+  "pricing": {
+    "input": 0.2,
+    "output": 1.2,
+    "cached_input": 0.02,
+    "last_updated": "2026-07-31"
+  },
+  "usage": {
+    "errors": 0,
+    "provider_refusals": 0,
+    "prompt_tokens": 196778,
+    "completion_tokens": 71205,
+    "total_tokens": 267983,
+    "cached_tokens": 0,
+    "reasoning_tokens": 39262,
+    "input_cost_usd": 0.0393556,
+    "output_cost_usd": 0.085446,
+    "total_cost_usd": 0.1248016
+  },
+  "package_versions": {
+    "openai": "2.46.0",
+    "pydantic": "2.13.4",
+    "polars": "1.42.1",
+    "pyarrow": "25.0.0",
+    "pyyaml": "6.0.3",
+    "typer": "0.27.0",
+    "python-dotenv": "1.2.2",
+    "huggingface-hub": "1.24.0"
+  },
+  "created_at": "2026-08-05T10:47:06.726973Z"
+}

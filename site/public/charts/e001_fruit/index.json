@@ -5,6 +5,7 @@
       "name": "language_drift",
       "number": "1.1",
       "file": "language_drift.svg",
+      "narrow_file": "language_drift--narrow.svg",
       "questions": [
         "001a"
       ],
@@ -151,16 +152,21 @@
       "name": "order_effect",
       "number": "1.2",
       "file": "order_effect.svg",
+      "narrow_file": "order_effect--narrow.svg",
       "questions": [
         "001a",
         "001b"
       ],
-      "title": "Chart 1.2: Answer distribution by option order in 001b vs 001a",
+      "title": "Chart 1.2: Answer distribution by option order in 001a vs 001b",
       "row_label": "category",
       "unit": "share",
       "columns": [
-        "001a order",
-        "001b order"
+        "en / 001a order",
+        "en / 001b order",
+        "ja / 001a order",
+        "ja / 001b order",
+        "pl / 001a order",
+        "pl / 001b order"
       ],
       "rows": [
         {
@@ -183,6 +189,42 @@
               "hi": 0.0964,
               "written": "8.3%",
               "written_interval": "7.2%–9.6%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.046,
+              "count": 92,
+              "n": 2000,
+              "lo": 0.0377,
+              "hi": 0.0561,
+              "written": "4.6%",
+              "written_interval": "3.8%–5.6%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 1.0,
+              "count": 2000,
+              "n": 2000,
+              "lo": 0.9981,
+              "hi": 1.0,
+              "written": "100.0%",
+              "written_interval": "99.8%–100.0%"
             }
           ]
         },
@@ -197,6 +239,42 @@
               "hi": 0.0028,
               "written": "0.1%",
               "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0005,
+              "count": 1,
+              "n": 2000,
+              "lo": 0.0001,
+              "hi": 0.0028,
+              "written": "0.1%",
+              "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
             },
             {
               "value": 0.0,
@@ -229,6 +307,42 @@
               "hi": 0.0019,
               "written": "0.0%",
               "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.056,
+              "count": 112,
+              "n": 2000,
+              "lo": 0.0467,
+              "hi": 0.067,
+              "written": "5.6%",
+              "written_interval": "4.7%–6.7%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
             }
           ]
         },
@@ -252,6 +366,42 @@
               "hi": 0.9274,
               "written": "91.6%",
               "written_interval": "90.3%–92.7%"
+            },
+            {
+              "value": 0.0155,
+              "count": 31,
+              "n": 2000,
+              "lo": 0.0109,
+              "hi": 0.0219,
+              "written": "1.6%",
+              "written_interval": "1.1%–2.2%"
+            },
+            {
+              "value": 0.8285,
+              "count": 1657,
+              "n": 2000,
+              "lo": 0.8114,
+              "hi": 0.8444,
+              "written": "82.8%",
+              "written_interval": "81.1%–84.4%"
+            },
+            {
+              "value": 0.3255,
+              "count": 651,
+              "n": 2000,
+              "lo": 0.3053,
+              "hi": 0.3464,
+              "written": "32.6%",
+              "written_interval": "30.5%–34.6%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
             }
           ]
         },
@@ -275,6 +425,42 @@
               "hi": 0.0028,
               "written": "0.1%",
               "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.984,
+              "count": 1968,
+              "n": 2000,
+              "lo": 0.9775,
+              "hi": 0.9886,
+              "written": "98.4%",
+              "written_interval": "97.8%–98.9%"
+            },
+            {
+              "value": 0.1255,
+              "count": 251,
+              "n": 2000,
+              "lo": 0.1117,
+              "hi": 0.1407,
+              "written": "12.6%",
+              "written_interval": "11.2%–14.1%"
+            },
+            {
+              "value": 0.6185,
+              "count": 1237,
+              "n": 2000,
+              "lo": 0.597,
+              "hi": 0.6395,
+              "written": "61.9%",
+              "written_interval": "59.7%–63.9%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
             }
           ]
         }
@@ -284,6 +470,7 @@
       "name": "shuffled_choice",
       "number": "1.3",
       "file": "shuffled_choice.svg",
+      "narrow_file": "shuffled_choice--narrow.svg",
       "questions": [
         "001c"
       ],
@@ -430,6 +617,7 @@
       "name": "position_bias",
       "number": "1.4",
       "file": "position_bias.svg",
+      "narrow_file": "position_bias--narrow.svg",
       "questions": [
         "001c"
       ],
@@ -765,22 +953,55 @@
       ]
     },
     {
-      "name": "shuffle_effect",
+      "name": "movement",
       "number": "1.5",
-      "file": "shuffle_effect.svg",
+      "file": "movement.svg",
+      "narrow_file": "movement--narrow.svg",
       "questions": [
         "001a",
+        "001b",
         "001c"
       ],
-      "title": "Chart 1.5: How much of the fixed order was position in 001a vs 001c",
-      "row_label": "language",
+      "title": "Chart 1.5: How far each language moved when 001a's order was swapped or shuffled",
+      "row_label": "manipulation",
       "unit": "share",
       "columns": [
-        "share of answers that moved"
+        "en",
+        "ja",
+        "pl"
       ],
       "rows": [
         {
-          "label": "en",
+          "label": "001a vs 001b",
+          "cells": [
+            {
+              "value": 0.0835,
+              "n": 4000,
+              "lo": 0.072,
+              "hi": 0.0955,
+              "written": "8.3%",
+              "written_interval": "7.2%–9.6%"
+            },
+            {
+              "value": 0.859,
+              "n": 4000,
+              "lo": 0.844,
+              "hi": 0.8745,
+              "written": "85.9%",
+              "written_interval": "84.4%–87.5%"
+            },
+            {
+              "value": 1.0,
+              "n": 4000,
+              "lo": 1.0,
+              "hi": 1.0,
+              "written": "100.0%",
+              "written_interval": "100.0%–100.0%"
+            }
+          ]
+        },
+        {
+          "label": "001a vs 001c",
           "cells": [
             {
               "value": 0.208,
@@ -789,12 +1010,7 @@
               "hi": 0.2275,
               "written": "20.8%",
               "written_interval": "18.9%–22.8%"
-            }
-          ]
-        },
-        {
-          "label": "ja",
-          "cells": [
+            },
             {
               "value": 0.721,
               "n": 4000,
@@ -802,12 +1018,7 @@
               "hi": 0.741,
               "written": "72.1%",
               "written_interval": "70.0%–74.1%"
-            }
-          ]
-        },
-        {
-          "label": "pl",
-          "cells": [
+            },
             {
               "value": 0.741,
               "n": 4000,
@@ -824,6 +1035,7 @@
       "name": "schema_effect",
       "number": "1.6",
       "file": "schema_effect.svg",
+      "narrow_file": "schema_effect--narrow.svg",
       "questions": [
         "001d"
       ],
@@ -831,14 +1043,218 @@
       "row_label": "category",
       "unit": "share",
       "columns": [
-        "en schema",
-        "pl schema",
-        "no schema"
+        "en / en schema",
+        "en / no schema",
+        "ja / en schema",
+        "ja / native schema",
+        "ja / no schema",
+        "pl / en schema",
+        "pl / native schema",
+        "pl / no schema"
       ],
       "rows": [
         {
+          "label": "apple",
+          "cells": [
+            {
+              "value": 0.0005,
+              "count": 1,
+              "n": 2000,
+              "lo": 0.0001,
+              "hi": 0.0028,
+              "written": "0.1%",
+              "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0005,
+              "count": 1,
+              "n": 2000,
+              "lo": 0.0001,
+              "hi": 0.0028,
+              "written": "0.1%",
+              "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            }
+          ]
+        },
+        {
+          "label": "banana",
+          "cells": [
+            {
+              "value": 0.0005,
+              "count": 1,
+              "n": 2000,
+              "lo": 0.0001,
+              "hi": 0.0028,
+              "written": "0.1%",
+              "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            }
+          ]
+        },
+        {
           "label": "mango",
           "cells": [
+            {
+              "value": 0.1885,
+              "count": 377,
+              "n": 2000,
+              "lo": 0.172,
+              "hi": 0.2062,
+              "written": "18.9%",
+              "written_interval": "17.2%–20.6%"
+            },
+            {
+              "value": 0.0395,
+              "count": 79,
+              "n": 2000,
+              "lo": 0.0318,
+              "hi": 0.049,
+              "written": "4.0%",
+              "written_interval": "3.2%–4.9%"
+            },
+            {
+              "value": 0.1235,
+              "count": 247,
+              "n": 2000,
+              "lo": 0.1098,
+              "hi": 0.1386,
+              "written": "12.3%",
+              "written_interval": "11.0%–13.9%"
+            },
+            {
+              "value": 0.196,
+              "count": 392,
+              "n": 2000,
+              "lo": 0.1792,
+              "hi": 0.214,
+              "written": "19.6%",
+              "written_interval": "17.9%–21.4%"
+            },
+            {
+              "value": 0.2085,
+              "count": 417,
+              "n": 2000,
+              "lo": 0.1913,
+              "hi": 0.2269,
+              "written": "20.8%",
+              "written_interval": "19.1%–22.7%"
+            },
             {
               "value": 0.767,
               "count": 1534,
@@ -869,8 +1285,207 @@
           ]
         },
         {
+          "label": "grape",
+          "cells": [
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0005,
+              "count": 1,
+              "n": 2000,
+              "lo": 0.0001,
+              "hi": 0.0028,
+              "written": "0.1%",
+              "written_interval": "0.01%–0.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            }
+          ]
+        },
+        {
+          "label": "strawberry",
+          "cells": [
+            {
+              "value": 0.001,
+              "count": 2,
+              "n": 2000,
+              "lo": 0.0003,
+              "hi": 0.0036,
+              "written": "0.1%",
+              "written_interval": "0.03%–0.4%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            }
+          ]
+        },
+        {
           "label": "watermelon",
           "cells": [
+            {
+              "value": 0.001,
+              "count": 2,
+              "n": 2000,
+              "lo": 0.0003,
+              "hi": 0.0036,
+              "written": "0.1%",
+              "written_interval": "0.03%–0.4%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
             {
               "value": 0.0005,
               "count": 1,
@@ -904,6 +1519,51 @@
           "label": "pineapple",
           "cells": [
             {
+              "value": 0.001,
+              "count": 2,
+              "n": 2000,
+              "lo": 0.0003,
+              "hi": 0.0036,
+              "written": "0.1%",
+              "written_interval": "0.03%–0.4%"
+            },
+            {
+              "value": 0.0165,
+              "count": 33,
+              "n": 2000,
+              "lo": 0.0118,
+              "hi": 0.0231,
+              "written": "1.7%",
+              "written_interval": "1.2%–2.3%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 2000,
+              "lo": 0.0,
+              "hi": 0.0019,
+              "written": "0.0%",
+              "written_interval": "0.0%–0.2%"
+            },
+            {
+              "value": 0.017,
+              "count": 34,
+              "n": 2000,
+              "lo": 0.0122,
+              "hi": 0.0237,
+              "written": "1.7%",
+              "written_interval": "1.2%–2.4%"
+            },
+            {
               "value": 0.012,
               "count": 24,
               "n": 2000,
@@ -936,6 +1596,51 @@
           "label": "lychee",
           "cells": [
             {
+              "value": 0.797,
+              "count": 1594,
+              "n": 2000,
+              "lo": 0.7788,
+              "hi": 0.8141,
+              "written": "79.7%",
+              "written_interval": "77.9%–81.4%"
+            },
+            {
+              "value": 0.7695,
+              "count": 1539,
+              "n": 2000,
+              "lo": 0.7505,
+              "hi": 0.7874,
+              "written": "77.0%",
+              "written_interval": "75.0%–78.7%"
+            },
+            {
+              "value": 0.773,
+              "count": 1546,
+              "n": 2000,
+              "lo": 0.7541,
+              "hi": 0.7908,
+              "written": "77.3%",
+              "written_interval": "75.4%–79.1%"
+            },
+            {
+              "value": 0.713,
+              "count": 1426,
+              "n": 2000,
+              "lo": 0.6928,
+              "hi": 0.7324,
+              "written": "71.3%",
+              "written_interval": "69.3%–73.2%"
+            },
+            {
+              "value": 0.5085,
+              "count": 1017,
+              "n": 2000,
+              "lo": 0.4866,
+              "hi": 0.5304,
+              "written": "50.8%",
+              "written_interval": "48.7%–53.0%"
+            },
+            {
               "value": 0.198,
               "count": 396,
               "n": 2000,
@@ -967,6 +1672,51 @@
         {
           "label": "pomegranate",
           "cells": [
+            {
+              "value": 0.0105,
+              "count": 21,
+              "n": 2000,
+              "lo": 0.0069,
+              "hi": 0.016,
+              "written": "1.1%",
+              "written_interval": "0.7%–1.6%"
+            },
+            {
+              "value": 0.1745,
+              "count": 349,
+              "n": 2000,
+              "lo": 0.1585,
+              "hi": 0.1918,
+              "written": "17.4%",
+              "written_interval": "15.8%–19.2%"
+            },
+            {
+              "value": 0.1035,
+              "count": 207,
+              "n": 2000,
+              "lo": 0.0909,
+              "hi": 0.1176,
+              "written": "10.3%",
+              "written_interval": "9.1%–11.8%"
+            },
+            {
+              "value": 0.091,
+              "count": 182,
+              "n": 2000,
+              "lo": 0.0792,
+              "hi": 0.1044,
+              "written": "9.1%",
+              "written_interval": "7.9%–10.4%"
+            },
+            {
+              "value": 0.265,
+              "count": 530,
+              "n": 2000,
+              "lo": 0.2461,
+              "hi": 0.2848,
+              "written": "26.5%",
+              "written_interval": "24.6%–28.5%"
+            },
             {
               "value": 0.0225,
               "count": 45,
@@ -1002,6 +1752,7 @@
       "name": "randomness",
       "number": "1.7",
       "file": "randomness.svg",
+      "narrow_file": "randomness--narrow.svg",
       "questions": [
         "001a",
         "001b",
@@ -1012,7 +1763,7 @@
       "row_label": "arm",
       "unit": "count",
       "columns": [
-        "effective choices (1 = one fruit always, of 10 offered)"
+        "number of effective fruit choices"
       ],
       "rows": [
         {
@@ -1068,6 +1819,32 @@
           ]
         },
         {
+          "label": "001b ja",
+          "cells": [
+            {
+              "value": 1.748,
+              "n": 2000,
+              "lo": 1.6828,
+              "hi": 1.8149,
+              "written": "1.75",
+              "written_interval": "1.68–1.81"
+            }
+          ]
+        },
+        {
+          "label": "001b pl",
+          "cells": [
+            {
+              "value": 1.0,
+              "n": 2000,
+              "lo": 1.0,
+              "hi": 1.0,
+              "written": "1",
+              "written_interval": "1–1"
+            }
+          ]
+        },
+        {
           "label": "001c en",
           "cells": [
             {
@@ -1107,7 +1884,33 @@
           ]
         },
         {
-          "label": "001d en schema",
+          "label": "001d en / en schema",
+          "cells": [
+            {
+              "value": 1.7741,
+              "n": 2000,
+              "lo": 1.7084,
+              "hi": 1.8359,
+              "written": "1.77",
+              "written_interval": "1.71–1.84"
+            }
+          ]
+        },
+        {
+          "label": "001d ja / en schema",
+          "cells": [
+            {
+              "value": 1.9989,
+              "n": 2000,
+              "lo": 1.9261,
+              "hi": 2.0708,
+              "written": "2",
+              "written_interval": "1.93–2.07"
+            }
+          ]
+        },
+        {
+          "label": "001d pl / en schema",
           "cells": [
             {
               "value": 1.9491,
@@ -1120,7 +1923,20 @@
           ]
         },
         {
-          "label": "001d pl schema",
+          "label": "001d ja / ja schema",
+          "cells": [
+            {
+              "value": 2.1798,
+              "n": 2000,
+              "lo": 2.105,
+              "hi": 2.2471,
+              "written": "2.18",
+              "written_interval": "2.1–2.25"
+            }
+          ]
+        },
+        {
+          "label": "001d pl / pl schema",
           "cells": [
             {
               "value": 1.8865,
@@ -1133,7 +1949,33 @@
           ]
         },
         {
-          "label": "001d no schema",
+          "label": "001d en / no schema",
+          "cells": [
+            {
+              "value": 2.0186,
+              "n": 2000,
+              "lo": 1.9383,
+              "hi": 2.0935,
+              "written": "2.02",
+              "written_interval": "1.94–2.09"
+            }
+          ]
+        },
+        {
+          "label": "001d ja / no schema",
+          "cells": [
+            {
+              "value": 3.0067,
+              "n": 2000,
+              "lo": 2.9263,
+              "hi": 3.0806,
+              "written": "3.01",
+              "written_interval": "2.93–3.08"
+            }
+          ]
+        },
+        {
+          "label": "001d pl / no schema",
           "cells": [
             {
               "value": 2.6453,

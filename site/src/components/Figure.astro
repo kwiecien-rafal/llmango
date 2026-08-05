@@ -11,6 +11,12 @@
  * reader nothing about the chart. A page whose content is the figure plus its
  * table passes alt="", which says the image adds nothing, instead of announcing
  * something uninformative that cannot be skipped.
+ *
+ * The two renditions are the same chart drawn for the two widths the page reads
+ * it at. Point sizes are declared, not scaled, so a phone shown the wide drawing
+ * would read it at half the type it was drawn in; the narrow drawing lays the
+ * same numbers out for the width it will actually get. The breakpoint matches
+ * the one global.css takes the figure edge to edge at.
  */
 import { asides, chart as findChart, chartSrc } from "../data/charts";
 
@@ -25,7 +31,13 @@ const entry = findChart(experiment, chart);
 ---
 
 <figure class="chart">
-  <img src={chartSrc(experiment, entry.file)} alt={alt} loading="lazy" />
+  <picture>
+    <source
+      media="(max-width: 30rem)"
+      srcset={chartSrc(experiment, entry.narrow_file)}
+    />
+    <img src={chartSrc(experiment, entry.file)} alt={alt} loading="lazy" />
+  </picture>
   <figcaption>Datasets: {entry.questions.join(", ")}</figcaption>
   <details>
     <summary>Numbers behind this chart</summary>

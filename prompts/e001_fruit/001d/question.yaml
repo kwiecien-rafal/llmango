@@ -1,7 +1,11 @@
 model: gpt-5.6-luna
 ask:
+  - language: en
+    schemas: [FruitChoice, null]
   - language: pl
     schemas: [FruitChoice, WyborOwocu, null]
+  - language: ja
+    schemas: [FruitChoice, KudamonoSentaku, null]
 inputs:
   fruit_list:
     order: shuffle

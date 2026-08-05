@@ -35,15 +35,24 @@ def _cell(counts: dict[str, int]) -> Distribution:
 
 
 def _schemas() -> dict[str, Aggregate]:
-    """001d as three schema arms of one Polish prompt, which is all it varies."""
+    """001d as eight arms: each language under the English schema, its own, none."""
     return {
         "001d": {
             "question_id": "001d",
             "support": SUPPORT,
             "distributions": {
-                "FruitChoice": {"pl": _cell({"apple": 2})},
+                "FruitChoice": {
+                    "en": _cell({"apple": 2}),
+                    "ja": _cell({"apple": 1, "lychee": 1}),
+                    "pl": _cell({"apple": 2}),
+                },
+                "KudamonoSentaku": {"ja": _cell({"lychee": 2})},
                 "WyborOwocu": {"pl": _cell({"apple": 1, "banana": 1})},
-                "none": {"pl": _cell({"banana": 2})},
+                "none": {
+                    "en": _cell({"banana": 2}),
+                    "ja": _cell({"banana": 1, "lychee": 1}),
+                    "pl": _cell({"banana": 2}),
+                },
             },
             "positions": {},
         }
@@ -59,7 +68,7 @@ def test_every_chart_is_named_once_and_declares_what_it_reads() -> None:
         ("order_effect", "1.2", ("001a", "001b")),
         ("shuffled_choice", "1.3", ("001c",)),
         ("position_bias", "1.4", ("001c",)),
-        ("shuffle_effect", "1.5", ("001a", "001c")),
+        ("movement", "1.5", ("001a", "001b", "001c")),
         ("schema_effect", "1.6", ("001d",)),
         ("randomness", "1.7", ("001a", "001b", "001c", "001d")),
     ]
@@ -74,7 +83,7 @@ def test_a_chart_opens_its_title_with_the_number_a_page_cites_it_by() -> None:
 
     assert numbered[:2] == [
         "Chart 1.1: Answer distribution by language in 001a",
-        "Chart 1.2: Answer distribution by option order in 001b vs 001a",
+        "Chart 1.2: Answer distribution by option order in 001a vs 001b",
     ]
 
 
@@ -108,18 +117,37 @@ def test_a_fruit_chart_keeps_the_canonical_order_the_axis_shares() -> None:
     assert [row["label"] for row in drawn.rows] == ["apple", "lychee"]
 
 
-def test_the_order_comparison_reads_one_language_from_two_questions() -> None:
-    """001b exists only to be read against 001a, so the chart labels by question."""
+def test_the_order_comparison_panels_the_orders_and_colors_the_languages() -> None:
+    """001b exists only to be read against 001a, and both ask all three languages,
+    so the order is what a panel holds and the language is what color carries."""
     with styled():
         drawn = order_effect(
             {
-                "001a": _aggregate("001a", {"en": _cell({"apple": 3, "banana": 1})}),
-                "001b": _aggregate("001b", {"en": _cell({"apple": 1, "banana": 3})}),
+                "001a": _aggregate(
+                    "001a",
+                    {
+                        "en": _cell({"apple": 3, "banana": 1}),
+                        "pl": _cell({"apple": 2, "banana": 2}),
+                    },
+                ),
+                "001b": _aggregate(
+                    "001b",
+                    {
+                        "en": _cell({"apple": 1, "banana": 3}),
+                        "pl": _cell({"banana": 4}),
+                    },
+                ),
             },
             _TITLE,
         )
 
-    assert drawn.columns == ["001a order", "001b order"]
+    assert drawn.columns == [
+        "en / 001a order",
+        "en / 001b order",
+        "pl / 001a order",
+        "pl / 001b order",
+    ]
+    assert len(drawn.figure.axes) == 2
 
 
 def test_the_randomness_chart_counts_options_rather_than_shares_of_entropy() -> None:
@@ -131,7 +159,7 @@ def test_the_randomness_chart_counts_options_rather_than_shares_of_entropy() -> 
         )
 
     assert drawn.unit == "count"
-    assert drawn.columns == ["effective choices (1 = one fruit always, of 10 offered)"]
+    assert drawn.columns == ["number of effective fruit choices"]
     assert drawn.rows[0]["cells"][0]["value"] > 2.0
 
 
@@ -149,8 +177,9 @@ def test_the_randomness_chart_starts_where_its_statistic_does() -> None:
 
 
 def test_the_randomness_chart_names_each_arm_by_what_its_question_varies() -> None:
-    """001d asks one language under three schemas, so its rows read by schema and
-    the language they share is noise. Every other question is the other way round."""
+    """001d asks three languages under three schemas, so neither dimension alone
+    names an arm: three of its arms share one schema and three share one language.
+    Every other question varies the language only, and reads by that."""
     with styled():
         drawn = randomness(
             {"001a": _aggregate("001a", {"en": _cell({"apple": 2})})} | _schemas(),
@@ -159,19 +188,51 @@ def test_the_randomness_chart_names_each_arm_by_what_its_question_varies() -> No
 
     assert [row["label"] for row in drawn.rows] == [
         "001a en",
-        "001d en schema",
-        "001d pl schema",
-        "001d no schema",
+        "001d en / en schema",
+        "001d ja / en schema",
+        "001d pl / en schema",
+        "001d ja / ja schema",
+        "001d pl / pl schema",
+        "001d en / no schema",
+        "001d ja / no schema",
+        "001d pl / no schema",
     ]
 
 
+def test_the_randomness_chart_colors_every_arm_by_the_language_it_was_asked_in() -> (
+    None
+):
+    """Seventeen labelled rows read as seventeen labels; grouped by hue they read
+    as three clusters, so the dot carries the language the label already names."""
+    with styled():
+        drawn = randomness(_schemas(), _TITLE)
+
+    dots = [line for line in drawn.figure.axes[0].get_lines() if line.get_marker()]
+    assert len({dot.get_color() for dot in dots}) == 3
+
+
 def test_a_schema_arm_reads_by_the_language_its_schema_is_written_in() -> None:
-    """FruitChoice and WyborOwocu are what the code calls 001d's two schemas, and
-    a reader comparing them is comparing the language each one is written in."""
+    """FruitChoice, WyborOwocu and KudamonoSentaku are what the code calls 001d's
+    three schemas, and a reader comparing them compares each one's language. The
+    native panel holds two, since English's own schema is the English one."""
     with styled():
         drawn = schema_effect(_schemas(), _TITLE)
 
-    assert drawn.columns == ["en schema", "pl schema", "no schema"]
+    assert drawn.columns == [
+        "en / en schema",
+        "en / no schema",
+        "ja / en schema",
+        "ja / native schema",
+        "ja / no schema",
+        "pl / en schema",
+        "pl / native schema",
+        "pl / no schema",
+    ]
+    assert [axes.get_title(loc="left") for axes in drawn.figure.axes] == [
+        "en schema",
+        "native schema",
+        "no schema",
+    ]
 
 
 def test_the_experiment_package_does_not_pull_in_matplotlib() -> None:

@@ -70,15 +70,16 @@ def test_dry_run_reports_the_plan_and_writes_nothing(data_dirs: Path) -> None:
 
 
 def test_dry_run_reports_every_arm_of_one_plan(data_dirs: Path) -> None:
-    """001d asks Polish three ways, which is three arms of a single run."""
+    """001d asks three languages several ways each, which is eight arms of one run."""
     result = runner.invoke(app, ["run", "001d", "--dry-run"])
 
     assert result.exit_code == 0
     assert result.output.count("Plan for 001d") == 1
-    assert "arms:        3" in result.output
-    assert "FruitChoice  pl" in result.output
+    assert "arms:        8" in result.output
+    assert "FruitChoice  en" in result.output
     assert "WyborOwocu  pl" in result.output
-    assert f"{FREE_TEXT}  pl" in result.output
+    assert "KudamonoSentaku  ja" in result.output
+    assert f"{FREE_TEXT}  ja" in result.output
 
 
 @pytest.mark.parametrize("command", ["normalize", "aggregate"])

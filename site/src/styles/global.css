@@ -26,10 +26,22 @@ body {
   line-height: 1.65;
 }
 
+/*
+ * Two measures, not one. The shell is the widest a figure may be; prose sits at
+ * its own reading measure inside it, so a chart breaks out of the column the
+ * text is read in rather than being held to it.
+ */
+
 .shell {
-  max-width: 42rem;
+  max-width: 52rem;
   margin: 0 auto;
   padding: 2.5rem 1.25rem 5rem;
+}
+
+header.site,
+main > :not(figure.chart) {
+  max-width: 42rem;
+  margin-inline: auto;
 }
 
 header.site {
@@ -137,6 +149,10 @@ figure.chart {
   overflow: hidden;
 }
 
+figure.chart picture {
+  display: block;
+}
+
 figure.chart img {
   display: block;
   box-sizing: border-box;
@@ -159,7 +175,7 @@ figure.chart details {
 figure.chart summary {
   color: var(--ink-secondary);
   cursor: pointer;
-  padding: 0.55rem 1rem;
+  padding: 0.8rem 1rem;
   user-select: none;
 }
 
@@ -177,8 +193,27 @@ figure.chart details[open] summary {
   border-bottom: 1px solid var(--frame-soft);
 }
 
+/*
+ * Once the shell is narrower than the track it wants, the margin beside a chart
+ * is worth less than the chart is. The figure spans the viewport and keeps only
+ * the borders that still separate it from the text above and below it.
+ */
+
+@media (max-width: 54.5rem) {
+  figure.chart {
+    margin-inline: -1.25rem;
+    border-inline-width: 0;
+    border-radius: 0;
+  }
+
+  figure.chart img {
+    padding-inline: 0;
+  }
+}
+
 .scroll {
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding: 0.75rem 1rem 1rem;
 }
 
@@ -226,9 +261,11 @@ a.card {
     box-shadow 120ms ease;
 }
 
-a.card:hover {
-  transform: scale(1.02);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 14%, transparent);
+@media (hover: hover) {
+  a.card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 14%, transparent);
+  }
 }
 
 a.card h3 {

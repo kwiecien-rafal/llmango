@@ -371,37 +371,54 @@ def test_every_row_carries_the_schema_it_was_asked_under(
 
 
 def test_one_run_covers_every_arm_a_question_declares() -> None:
-    """001d asks one language three ways, so one run writes all three arms."""
+    """001d asks three languages several ways each, so one run writes all eight."""
     planned = _plan(question=_ARMS_QUESTION, samples_per_arm=2)
 
-    assert [arm.label for arm in planned.question.arms] == [
-        "FruitChoice",
-        "WyborOwocu",
-        FREE_TEXT,
+    assert [(arm.label, arm.lang) for arm in planned.question.arms] == [
+        ("FruitChoice", "en"),
+        (FREE_TEXT, "en"),
+        ("FruitChoice", "pl"),
+        ("WyborOwocu", "pl"),
+        (FREE_TEXT, "pl"),
+        ("FruitChoice", "ja"),
+        ("KudamonoSentaku", "ja"),
+        (FREE_TEXT, "ja"),
     ]
-    assert planned.samples_total == 6
+    assert planned.samples_total == 16
 
     outcome = run(planned, PolishBackend())
 
-    assert outcome.manifest.samples_total == 6
+    assert outcome.manifest.samples_total == 16
     assert [arm.schema_name for arm in outcome.manifest.arms] == [
+        "FruitChoice",
+        None,
         "FruitChoice",
         "WyborOwocu",
         None,
+        "FruitChoice",
+        "KudamonoSentaku",
+        None,
     ]
-    assert outcome.manifest.arms[1].response_schema == WyborOwocu.model_json_schema()
+    assert outcome.manifest.arms[3].response_schema == WyborOwocu.model_json_schema()
 
     frame = _raw(_ARMS_QUESTION)
-    assert outcome.rows_written == 6
-    assert frame["lang"].to_list() == ["pl"] * 6
-    assert frame["answer"].to_list() == ["jabłko"] * 6
+    assert outcome.rows_written == 16
+    assert frame["lang"].to_list() == ["en"] * 4 + ["pl"] * 6 + ["ja"] * 6
+    assert frame["answer"].to_list() == ["jabłko"] * 16
     assert frame["response_schema"].str.json_path_match("$.title").to_list() == (
-        ["FruitChoice"] * 2 + ["WyborOwocu"] * 2 + [None] * 2
+        ["FruitChoice"] * 2
+        + [None] * 2
+        + ["FruitChoice"] * 2
+        + ["WyborOwocu"] * 2
+        + [None] * 2
+        + ["FruitChoice"] * 2
+        + ["KudamonoSentaku"] * 2
+        + [None] * 2
     )
 
     free_text = frame.filter(pl.col("response_schema").is_null())
-    assert free_text.height == 2
-    assert free_text["raw_json"].to_list() == ["jabłko"] * 2
+    assert free_text.height == 6
+    assert free_text["raw_json"].to_list() == ["jabłko"] * 6
 
 
 def test_run_records_usage_for_the_whole_run(fake_backend: FakeBackend) -> None:
@@ -428,14 +445,16 @@ def test_usage_is_recorded_for_each_arm_as_well_as_the_run(
 
 
 def test_arm_usage_separates_arms_that_share_a_language() -> None:
-    """001d asks one language three ways, so an arm is its schema as much as it."""
+    """001d asks Polish three ways, so an arm is its schema as much as its language."""
     outcome = run(_plan(question="001d", samples_per_arm=2), PolishBackend())
 
-    arms = outcome.manifest.arms
-    assert [arm.schema_name for arm in arms] == ["FruitChoice", "WyborOwocu", None]
-    assert all(arm.usage is not None and arm.usage.prompt_tokens == 24 for arm in arms)
+    polish = [arm for arm in outcome.manifest.arms if arm.lang == "pl"]
+    assert [arm.schema_name for arm in polish] == ["FruitChoice", "WyborOwocu", None]
+    assert all(
+        arm.usage is not None and arm.usage.prompt_tokens == 24 for arm in polish
+    )
     assert outcome.manifest.usage is not None
-    assert outcome.manifest.usage.prompt_tokens == 72
+    assert outcome.manifest.usage.prompt_tokens == 192
 
 
 def test_usage_counts_provider_refusals_and_keeps_their_cost_null() -> None:

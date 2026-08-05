@@ -1,5 +1,6 @@
-"""Tests for the drawing itself: arm labels, shares, ordering, legend and palette."""
+"""Tests for the drawing itself: arm labels, shares, ordering, legend and panels."""
 
+from collections.abc import Callable
 from itertools import combinations
 from pathlib import Path
 from typing import Any, cast
@@ -10,37 +11,55 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 from matplotlib.image import imsave
+from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnnotationBbox
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, PathPatch, Rectangle
+from matplotlib.text import Text
 
-from colorimetry import contrast, delta_e, lightness_and_chroma
 from conftest import SUPPORT, build_distribution
 from llmango.aggregate import Aggregate, Distribution
 from llmango.plot import (
-    _ARTICLE_WIDTH_IN,
     _ICON_GAP_PT,
     _MIN_MARK_PX,
     _ZERO_MARK_PT,
-    ARM_COLORS,
     COUNT,
-    DARK_SURFACE,
-    INK,
-    LIGHT_SURFACE,
+    FRAME,
+    NARROW,
+    WIDE,
     Drawn,
     _dots_across,
     distribution,
     estimates,
+    panels,
     question_distribution,
+    styled,
     summary,
 )
 
 _TITLE = "Chart 1.1: answer distribution by language"
-_DUAL_BAND = (0.48, 0.67)
-_CHROMA_FLOOR = 0.10
-_CVD_TARGET = 8.0
-_NORMAL_FLOOR = 15.0
-_CONTRAST_MIN = 3.0
 _INLINE_SLACK_PX = 3.0
+_TURNED_DEGREES = (315.0, 270.0)
+_WHEEL = ("#0072B2", "#D55E00", "#009E73", "#000000")
+
+
+def _turned(axes: Any) -> list[Text]:
+    """The runs of category names that ran out of column and turned downward."""
+    return [text for text in axes.texts if text.get_rotation() in _TURNED_DEGREES]
+
+
+def _values(axes: Any) -> list[Text]:
+    """The numbers written over the columns, which is every text that is not a name."""
+    return [text for text in axes.texts if text.get_rotation() not in _TURNED_DEGREES]
+
+
+def _palette() -> Callable[[str], str]:
+    """A declared palette, the way an experiment owns one: a series name to a hex."""
+    given: dict[str, str] = {}
+
+    def color(series: str) -> str:
+        return given.setdefault(series, _WHEEL[len(given) % len(_WHEEL)])
+
+    return color
 
 
 def _cell(counts: dict[str, int]) -> Distribution:
@@ -80,7 +99,7 @@ def languages() -> Aggregate:
 def test_arms_that_differ_by_language_are_labeled_by_language(
     languages: Aggregate,
 ) -> None:
-    drawn = question_distribution(languages, _TITLE)
+    drawn = question_distribution(languages, _TITLE, _palette())
 
     assert drawn.columns == ["en", "pl"]
 
@@ -96,6 +115,7 @@ def test_arms_that_differ_by_schema_are_labeled_by_schema() -> None:
             },
         ),
         _TITLE,
+        _palette(),
     )
 
     assert drawn.columns == ["en schema", "no schema", "pl schema"]
@@ -113,6 +133,7 @@ def test_a_chart_may_name_a_schema_the_way_its_experiment_writes_it() -> None:
             },
         ),
         _TITLE,
+        _palette(),
         schema_label=lambda schema: "no schema" if schema == "none" else "en schema",
     )
 
@@ -129,13 +150,16 @@ def test_both_dimensions_varying_are_named_together() -> None:
             },
         ),
         _TITLE,
+        _palette(),
     )
 
     assert drawn.columns == ["en / en schema", "pl / en schema", "pl / pl schema"]
 
 
 def test_shares_and_counts_come_from_the_aggregate(languages: Aggregate) -> None:
-    english, polish = _cells(drawn := question_distribution(languages, _TITLE), "apple")
+    english, polish = _cells(
+        drawn := question_distribution(languages, _TITLE, _palette()), "apple"
+    )
 
     assert (english["value"], english["count"], english["n"]) == (0.75, 3, 4)
     assert (polish["value"], polish["count"], polish["n"]) == (0.25, 1, 4)
@@ -146,14 +170,14 @@ def test_every_plotted_share_carries_its_interval_into_the_table(
     languages: Aggregate,
 ) -> None:
     """The columns draw no caps, so the table is where the uncertainty is read."""
-    english = _cells(question_distribution(languages, _TITLE), "apple")[0]
+    english = _cells(question_distribution(languages, _TITLE, _palette()), "apple")[0]
 
     assert english["lo"] < english["value"] < english["hi"]
 
 
 def test_no_column_is_drawn_with_a_cap_over_it(languages: Aggregate) -> None:
     """A grouped chart of ten fruits spends more ink on caps than on columns."""
-    axes = question_distribution(languages, _TITLE).figure.axes[0]
+    axes = question_distribution(languages, _TITLE, _palette()).figure.axes[0]
 
     assert axes.get_lines() == []
 
@@ -161,7 +185,7 @@ def test_no_column_is_drawn_with_a_cap_over_it(languages: Aggregate) -> None:
 def test_unpicked_categories_are_dropped_and_other_sorts_last(
     languages: Aggregate,
 ) -> None:
-    drawn = question_distribution(languages, _TITLE)
+    drawn = question_distribution(languages, _TITLE, _palette())
 
     labels = [row["label"] for row in drawn.rows]
     assert "lychee" not in labels
@@ -171,7 +195,7 @@ def test_unpicked_categories_are_dropped_and_other_sorts_last(
 def test_rows_are_written_in_the_order_they_are_drawn(languages: Aggregate) -> None:
     """Columns run left to right along x and the table runs down in the same order,
     so a reader moving between the two never has to reverse anything."""
-    drawn = question_distribution(languages, _TITLE)
+    drawn = question_distribution(languages, _TITLE, _palette())
 
     axes = drawn.figure.axes[0]
     labels = [text.get_text() for text in axes.get_xticklabels()]
@@ -179,13 +203,103 @@ def test_rows_are_written_in_the_order_they_are_drawn(languages: Aggregate) -> N
     assert axes.get_ylim()[0] < axes.get_ylim()[1]
 
 
-def test_bare_categories_are_written_along_x_at_an_angle(languages: Aggregate) -> None:
-    """A word long enough to collide with its neighbour is turned rather than
-    shrunk, since a name that has to be read is the one thing a chart cannot cut."""
-    labels = question_distribution(languages, _TITLE).figure.axes[0].get_xticklabels()
+def test_a_name_too_long_for_its_column_turns_down_at_the_edge_of_it() -> None:
+    """A word long enough to collide with its neighbour is neither tilted whole
+    nor shrunk: what fits is written flat and the rest turns the corner and reads
+    down the side of the column, so the axis is still read left to right."""
+    drawn = distribution(
+        cells={"en": _cell({f"category number {slot}": 1 for slot in range(8)})},
+        title=_TITLE,
+        series_color=_palette(),
+    )
 
-    assert {label.get_rotation() for label in labels} == {45.0}
-    assert {label.get_horizontalalignment() for label in labels} == {"right"}
+    axes = drawn.figure.axes[0]
+    assert {label.get_rotation() for label in axes.get_xticklabels()} == {0.0}
+    assert _read_along(axes) == [row["label"] for row in drawn.rows]
+
+
+def test_a_broken_name_bends_by_degrees_rather_than_snapping() -> None:
+    """A name that snapped through a right angle read as two names set at right
+    angles to each other. The letter it broke at takes half the turn instead, so
+    the word bends around the edge of its column: flat, half way round, then
+    straight down."""
+    axes = distribution(
+        cells={"en": _cell({f"category number {slot}": 1 for slot in range(8)})},
+        title=_TITLE,
+        series_color=_palette(),
+    ).figure.axes[0]
+
+    flat = axes.get_xticklabels()[0].get_text()
+    half, down = _turned_at(axes, 0)
+    assert (half.get_rotation(), down.get_rotation()) == (315.0, 270.0)
+    assert len(half.get_text()) == 1
+    assert flat + half.get_text() + down.get_text() == "category number 0"
+
+
+def test_a_bending_name_carries_on_around_its_corner_without_a_gap() -> None:
+    """The runs are one word, so each is laid against the one before it: the flat
+    part, the letter half way round and the run straight down all touch, and the
+    letters carry on rather than restarting somewhere past the bend."""
+    figure = distribution(
+        cells={"en": _cell({f"category number {slot}": 1 for slot in range(8)})},
+        title=_TITLE,
+        series_color=_palette(),
+    ).figure
+    FigureCanvasAgg(figure)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+
+    axes = figure.axes[0]
+    for slot, label in enumerate(axes.get_xticklabels()):
+        boxes = [label.get_window_extent(renderer)] + [
+            text.get_window_extent(renderer) for text in _turned_at(axes, slot)
+        ]
+        for earlier, later in zip(boxes, boxes[1:], strict=False):
+            assert earlier.overlaps(later)
+
+
+def _turned_at(axes: Any, slot: int) -> list[Text]:
+    """The runs one category's name turned into, in the order they are read."""
+    return [text for text in _turned(axes) if int(text.xy[0]) == slot]
+
+
+def _read_along(axes: Any) -> list[str]:
+    """Read every category name back off the axis, run by run, the way a reader does."""
+    return [
+        label.get_text() + "".join(text.get_text() for text in _turned_at(axes, slot))
+        for slot, label in enumerate(axes.get_xticklabels())
+    ]
+
+
+def test_a_name_that_fits_its_column_keeps_the_whole_of_it() -> None:
+    """Only a name that has to turn owes the turn the width it will take, so a
+    name that fits is never broken to reserve room it was never going to use."""
+    drawn = distribution(
+        cells={"en": _cell({"pomegranate": 3, "grape": 1, "watermelon": 1})},
+        title=_TITLE,
+        series_color=_palette(),
+    )
+
+    axes = drawn.figure.axes[0]
+    assert [label.get_text() for label in axes.get_xticklabels()] == [
+        row["label"] for row in drawn.rows
+    ]
+    assert _turned(axes) == []
+
+
+def test_bare_categories_that_fit_beside_each_other_are_left_flat(
+    languages: Aggregate,
+) -> None:
+    """Whether a name fits is measured, not assumed from its length: three short
+    words over an article-wide figure sit side by side, and turning them would
+    spend height on hanging words that had room to stand up."""
+    labels = (
+        question_distribution(languages, _TITLE, _palette())
+        .figure.axes[0]
+        .get_xticklabels()
+    )
+
+    assert {label.get_rotation() for label in labels} == {0.0}
 
 
 def test_a_chart_may_write_its_categories_however_its_experiment_names_them(
@@ -194,7 +308,7 @@ def test_a_chart_may_write_its_categories_however_its_experiment_names_them(
     """The emoji beside a fruit is experiment knowledge, so the toolkit takes it
     as a hook rather than knowing that a category is ever a fruit."""
     drawn = question_distribution(
-        languages, _TITLE, category_label=lambda name: f"{name} X"
+        languages, _TITLE, _palette(), category_label=lambda name: f"{name} X"
     )
 
     labels = [text.get_text() for text in drawn.figure.axes[0].get_xticklabels()]
@@ -210,7 +324,10 @@ def test_a_chart_may_picture_a_category_the_way_its_experiment_illustrates_it(
     imsave(icon, np.zeros((8, 8, 4)))
 
     drawn = question_distribution(
-        languages, _TITLE, category_icon=lambda name: icon if name == "apple" else None
+        languages,
+        _TITLE,
+        _palette(),
+        category_icon=lambda name: icon if name == "apple" else None,
     )
 
     pictured = [
@@ -230,7 +347,9 @@ def test_a_pictured_category_is_written_flat_with_its_picture_ahead_of_the_word(
     icon = tmp_path / "fruit.png"
     imsave(icon, np.zeros((8, 8, 4)))
 
-    drawn = question_distribution(languages, _TITLE, category_icon=lambda _: icon)
+    drawn = question_distribution(
+        languages, _TITLE, _palette(), category_icon=lambda _: icon
+    )
     figure = drawn.figure
     FigureCanvasAgg(figure)
     figure.canvas.draw()
@@ -257,12 +376,13 @@ def _pictures(figure: Figure) -> list[AnnotationBbox]:
 def test_a_chart_writes_its_numbers_in_the_unit_it_plots() -> None:
     """A share and a count cannot share a formatter: 2.64 choices is not 264%."""
     drawn = summary(
-        cells={"001a en": 1.0594, "001d pl/none": 2.6413},
+        cells={"en": {"001a": 1.0594, "001d": 2.6413}},
         title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
         value_label="effective choices (of 10)",
         row_label="arm",
-        counts={"001a en": 300, "001d pl/none": 300},
-        intervals={"001a en": (1.02, 1.12), "001d pl/none": (2.41, 2.88)},
+        counts={"en": {"001a": 300, "001d": 300}},
+        intervals={"en": {"001a": (1.02, 1.12), "001d": (2.41, 2.88)}},
         unit=COUNT,
     )
 
@@ -275,18 +395,59 @@ def test_a_summary_writes_its_columns_the_way_every_other_chart_does() -> None:
     """One number per named thing is still a column carrying a number, so it is
     written whole unless a decimal is what tells it from the column beside it."""
     drawn = summary(
-        cells={"en": 0.208, "ja": 0.721, "pl": 0.741},
+        cells={
+            "en": {"shuffle": 0.208},
+            "ja": {"shuffle": 0.721},
+            "pl": {"shuffle": 0.741},
+        },
         title="how much of the fixed order was position",
+        series_color=_palette(),
         value_label="share of answers that moved",
-        row_label="language",
-        counts={"en": 300, "ja": 300, "pl": 300},
-        intervals={"en": (0.18, 0.24), "ja": (0.69, 0.75), "pl": (0.71, 0.77)},
+        row_label="manipulation",
+        counts={"en": {"shuffle": 300}, "ja": {"shuffle": 300}, "pl": {"shuffle": 300}},
+        intervals={
+            "en": {"shuffle": (0.18, 0.24)},
+            "ja": {"shuffle": (0.69, 0.75)},
+            "pl": {"shuffle": (0.71, 0.77)},
+        },
     )
 
     written = drawn.figure.axes[0].texts
     tabled = [cell["written"] for row in drawn.rows for cell in row["cells"]]
     assert [text.get_text() for text in written] == ["21%", "72%", "74%"]
     assert tabled == ["20.8%", "72.1%", "74.1%"]
+    assert drawn.columns == ["en", "ja", "pl"]
+    assert [row["label"] for row in drawn.rows] == ["shuffle"]
+
+
+def test_a_summary_carries_one_statistic_per_series_per_comparison() -> None:
+    """One number per named thing could not put two manipulations against each
+    other, which is the comparison a conclusion wants."""
+    drawn = summary(
+        cells={
+            "en": {"swap": 0.08, "shuffle": 0.21},
+            "pl": {"swap": 1.0, "shuffle": 0.74},
+        },
+        title="how far each language moved",
+        series_color=_palette(),
+        value_label="share of answers that moved",
+        row_label="manipulation",
+        counts={
+            "en": {"swap": 400, "shuffle": 400},
+            "pl": {"swap": 400, "shuffle": 400},
+        },
+        intervals={
+            "en": {"swap": (0.06, 0.1), "shuffle": (0.19, 0.23)},
+            "pl": {"swap": (1.0, 1.0), "shuffle": (0.72, 0.76)},
+        },
+    )
+
+    swap, shuffle = drawn.rows
+    assert drawn.columns == ["en", "pl"]
+    assert [row["label"] for row in drawn.rows] == ["swap", "shuffle"]
+    assert [cell["value"] for cell in swap["cells"]] == [0.08, 1.0]
+    assert [cell["n"] for cell in shuffle["cells"]] == [400, 400]
+    assert shuffle["cells"][1]["written_interval"] == "72.0%–76.0%"
 
 
 def test_an_estimate_is_drawn_as_a_dot_on_the_interval_it_carries() -> None:
@@ -296,6 +457,7 @@ def test_an_estimate_is_drawn_as_a_dot_on_the_interval_it_carries() -> None:
     drawn = estimates(
         cells={"001a en": 1.0594, "001d no schema": 2.6413},
         title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
         value_label="effective choices",
         row_label="arm",
         counts={"001a en": 300, "001d no schema": 300},
@@ -320,6 +482,7 @@ def test_an_estimate_chart_may_start_at_the_floor_its_statistic_has() -> None:
     drawn = estimates(
         cells={"001a en": 1.0594},
         title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
         value_label="effective choices",
         row_label="arm",
         counts={"001a en": 300},
@@ -338,6 +501,7 @@ def test_every_plotted_estimate_carries_its_interval_into_the_table() -> None:
     drawn = estimates(
         cells={"001a en": 1.0594},
         title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
         value_label="effective choices",
         row_label="arm",
         counts={"001a en": 300},
@@ -357,11 +521,13 @@ def test_every_plotted_estimate_carries_its_interval_into_the_table() -> None:
 
 
 def test_a_distribution_is_always_written_as_a_share(languages: Aggregate) -> None:
-    assert question_distribution(languages, _TITLE).unit == "share"
+    assert question_distribution(languages, _TITLE, _palette()).unit == "share"
 
 
 def test_several_arms_are_keyed_by_a_legend(languages: Aggregate) -> None:
-    legend = question_distribution(languages, _TITLE).figure.axes[0].get_legend()
+    legend = (
+        question_distribution(languages, _TITLE, _palette()).figure.axes[0].get_legend()
+    )
 
     assert legend is not None
     assert [text.get_text() for text in legend.get_texts()] == ["en", "pl"]
@@ -372,7 +538,7 @@ def test_a_title_is_centred_and_its_legend_keyed_off_to_the_right(
 ) -> None:
     """The two sit on their own rows above the plot, so a long title never has to
     negotiate width with the key that names its series."""
-    figure = question_distribution(languages, _TITLE).figure
+    figure = question_distribution(languages, _TITLE, _palette()).figure
     FigureCanvasAgg(figure)
     figure.canvas.draw()
     renderer = figure.canvas.get_renderer()
@@ -388,28 +554,245 @@ def test_a_title_is_centred_and_its_legend_keyed_off_to_the_right(
 
 def test_a_single_arm_needs_no_legend() -> None:
     drawn = question_distribution(
-        _aggregate("001b", {"en": {"en": _cell({"apple": 2, "banana": 1})}}), _TITLE
+        _aggregate("001b", {"en": {"en": _cell({"apple": 2, "banana": 1})}}),
+        _TITLE,
+        _palette(),
     )
 
     assert drawn.figure.axes[0].get_legend() is None
 
 
-def test_more_arms_than_the_palette_is_refused() -> None:
-    """Wrapping the palette would draw two arms in one color under a legend
-    that claims they differ, so outgrowing it has to be a decision, not a wrap."""
-    with pytest.raises(ValueError, match="palette"):
+def test_a_series_with_no_color_declared_is_refused_by_name() -> None:
+    """The palette is an experiment's to declare, so the toolkit holds no hex of
+    its own to fall back on: a series nobody gave a color is an authoring mistake,
+    and what says so names the series rather than a cap it outgrew."""
+    with pytest.raises(KeyError, match="ja"):
         question_distribution(
             _aggregate(
                 "001f",
                 {
-                    "en": {"en": _cell({"apple": 1})},
-                    "ja": {"en": _cell({"apple": 1})},
-                    "none": {"en": _cell({"banana": 1})},
-                    "pl": {"en": _cell({"apple": 1})},
+                    "en": {
+                        "en": _cell({"apple": 1}),
+                        "ja": _cell({"apple": 1}),
+                        "pl": _cell({"banana": 1}),
+                    }
                 },
             ),
             _TITLE,
+            {"en": _WHEEL[0], "pl": _WHEEL[1]}.__getitem__,
         )
+
+
+def _faceted() -> Drawn:
+    """Three languages over two panels, one of them asked in two languages only."""
+    return panels(
+        cells={
+            "en schema": {
+                "en": _cell({"apple": 3, "banana": 1}),
+                "pl": _cell({"apple": 1, "banana": 3}),
+                "ja": _cell({"apple": 2, "banana": 2}),
+            },
+            "native schema": {
+                "pl": _cell({"apple": 2, "banana": 2}),
+                "ja": _cell({"banana": 4}),
+            },
+        },
+        title="answer distribution by schema",
+        series_color=_palette(),
+    )
+
+
+def test_a_panel_folds_into_the_column_name_the_table_is_keyed_by() -> None:
+    """The table contract is unchanged by faceting: one row per category still,
+    and a series that a panel never asked contributes no column to it."""
+    drawn = _faceted()
+
+    assert drawn.columns == [
+        "en / en schema",
+        "pl / en schema",
+        "pl / native schema",
+        "ja / en schema",
+        "ja / native schema",
+    ]
+    assert [row["label"] for row in drawn.rows] == ["banana", "apple"]
+    assert [cell["value"] for cell in _cells(drawn, "apple")] == [
+        0.75,
+        0.25,
+        0.5,
+        0.5,
+        0.0,
+    ]
+
+
+def test_every_panel_is_read_against_one_shared_scale() -> None:
+    """Panels sit over one category axis to be read down, so a value axis that
+    differed between them would make every cross-panel comparison a lie."""
+    figure = _faceted().figure
+
+    assert len(figure.axes) == 2
+    assert len({axes.get_ylim() for axes in figure.axes}) == 1
+
+
+def test_every_panel_is_pictured_and_only_the_bottom_one_is_worded(
+    tmp_path: Path,
+) -> None:
+    """A picture is what a category is found by, and a panel a reader has to trace
+    down to the bottom of the stack to identify is a panel drawn without an axis.
+    The word is what only needs saying once, so it is the word the panels above
+    spend on their columns instead."""
+    icon = tmp_path / "fruit.png"
+    imsave(icon, np.zeros((8, 8, 4)))
+
+    figure = panels(
+        cells={
+            "001a order": {"en": _cell({"apple": 3, "banana": 1})},
+            "001b order": {"en": _cell({"apple": 1, "banana": 3})},
+        },
+        title="answer distribution by option order",
+        series_color=_palette(),
+        category_icon=lambda _: icon,
+    ).figure
+
+    top, bottom = figure.axes
+    assert [label.get_text() for label in bottom.get_xticklabels()] == [
+        "apple",
+        "banana",
+    ]
+    assert not any(label.get_visible() for label in top.get_xticklabels())
+    assert _pictured_count(bottom) == 2
+    assert _pictured_count(top) == 2
+
+
+def test_a_faceted_figure_is_keyed_once_for_every_panel_it_stacks() -> None:
+    """One series means the same thing in every panel, so a key per panel would
+    be the same key drawn n times, and its own title names each panel instead."""
+    figure = _faceted().figure
+
+    keyed = [axes for axes in figure.axes if axes.get_legend() is not None]
+    assert len(keyed) == 1
+    assert figure.legends == []
+    legend = keyed[0].get_legend()
+    assert legend is not None
+    assert [text.get_text() for text in legend.get_texts()] == ["en", "pl", "ja"]
+    assert [axes.get_title(loc="left") for axes in figure.axes] == [
+        "en schema",
+        "native schema",
+    ]
+
+
+def test_a_series_a_panel_never_asked_leaves_its_slot_empty() -> None:
+    """A language keeps one place in every panel, which is what lets a category
+    be read down the stack. The panel that never asked it draws nothing there
+    rather than closing up, so the ragged design shows rather than misleads."""
+    figure = _faceted().figure
+
+    top, bottom = figure.axes
+    apple = sorted({round(float(_middle(patch)), 6) for patch in _plotted(top)})
+    below = sorted({round(float(_middle(patch)), 6) for patch in _plotted(bottom)})
+    assert len(apple) == 6
+    assert len(below) == 4
+    assert set(below) < set(apple)
+
+
+def test_every_other_category_is_banded_down_the_panels_it_is_read_over(
+    tmp_path: Path,
+) -> None:
+    """A column of fruits several panels tall is read by holding one fruit and
+    looking down it, so the shading belongs to the category rather than to any
+    panel: one band behind the whole stack rather than one drawn inside each and
+    broken between them. It runs from the top panel's ceiling to the foot of the
+    figure, which is where the page's own caption picks the column back up."""
+    icon = tmp_path / "fruit.png"
+    imsave(icon, np.zeros((8, 8, 4)))
+
+    figure = panels(
+        cells={
+            "001a order": {"en": _cell({"apple": 3, "banana": 1})},
+            "001b order": {"en": _cell({"apple": 1, "banana": 3})},
+        },
+        title="answer distribution by option order",
+        series_color=_palette(),
+        category_icon=lambda _: icon,
+    ).figure
+    top, _ = figure.axes
+
+    banded = [artist for artist in figure.artists if isinstance(artist, Rectangle)]
+    assert len(banded) == 1
+    assert to_hex(banded[0].get_facecolor()) == FRAME
+    assert banded[0].get_x() == -0.5
+    assert banded[0].get_width() == 1.0
+    assert banded[0].get_y() == 0.0
+    assert banded[0].get_y() + banded[0].get_height() == pytest.approx(
+        top.get_position().y1
+    )
+    assert not any(
+        isinstance(patch, Rectangle) for axes in figure.axes for patch in axes.patches
+    )
+
+
+def test_the_first_panel_is_named_on_the_same_line_as_its_key() -> None:
+    """A panel's name and the key that reads its colors are one row of chrome and
+    not two, since a key hung under the name spends a second row of height saying
+    nothing the first row does not."""
+    figure = _faceted().figure
+    FigureCanvasAgg(figure)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+
+    keyed = figure.axes[0]
+    legend = keyed.get_legend()
+    assert legend is not None
+    name = _named(keyed, "en schema")
+    assert name.get_window_extent(renderer).y0 == pytest.approx(
+        legend.get_texts()[0].get_window_extent(renderer).y0, abs=1.0
+    )
+
+
+def _named(axes: Any, name: str) -> Text:
+    """The text one panel is named by, which is a title written off to its left."""
+    return next(
+        child
+        for child in axes.get_children()
+        if isinstance(child, Text) and child.get_text() == name
+    )
+
+
+def test_a_panel_is_named_in_a_weight_that_tells_it_from_the_axis_around_it() -> None:
+    """A panel's name is the heading of a row of the stack, and it sits in the same
+    size as the axis label beside it. Weight is what separates the two, so a reader
+    scanning down the figure finds the headings without reading anything else."""
+    figure = _faceted().figure
+
+    named = [_named(axes, axes.get_title(loc="left")) for axes in figure.axes]
+    assert [name.get_fontweight() for name in named] == ["semibold", "semibold"]
+
+
+def test_every_panel_but_the_first_is_ruled_off_from_the_one_above_it() -> None:
+    """The rule belongs to the panel under it, naming where one row of the stack
+    ends and the next begins. The first needs none: the figure's own title and its
+    key already open the stack."""
+    figure = _faceted().figure
+
+    top, bottom = figure.axes
+    assert _rules(top) == []
+    assert [line.get_color() for line in _rules(bottom)] == [FRAME]
+
+
+def _middle(patch: Patch) -> float:
+    vertices = patch.get_path().vertices
+    return float((vertices[:, 0].max() + vertices[:, 0].min()) / 2)
+
+
+def _plotted(axes: Any) -> list[PathPatch]:
+    return [patch for patch in axes.patches if isinstance(patch, PathPatch)]
+
+
+def _rules(axes: Any) -> list[Line2D]:
+    return [child for child in axes.get_children() if isinstance(child, Line2D)]
+
+
+def _pictured_count(axes: Any) -> int:
+    return sum(1 for child in axes.get_children() if isinstance(child, AnnotationBbox))
 
 
 def test_a_chart_may_label_its_own_arms_across_questions() -> None:
@@ -421,6 +804,7 @@ def test_a_chart_may_label_its_own_arms_across_questions() -> None:
             "001b order": _cell({"apple": 1, "banana": 3}),
         },
         title="answer distribution by option order (en)",
+        series_color=_palette(),
     )
 
     first, second = _cells(drawn, "apple")
@@ -436,6 +820,7 @@ def test_a_chart_may_fix_the_order_its_categories_are_drawn_in() -> None:
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         row_label="position",
     )
@@ -451,6 +836,7 @@ def test_a_chart_with_too_many_categories_for_x_lays_its_bars_on_their_side() ->
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1}), "pl": _cell({"1": 1, "3": 4})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         horizontal=True,
     )
@@ -468,6 +854,7 @@ def test_a_horizontal_chart_reads_its_categories_down_from_the_top() -> None:
     axes = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         horizontal=True,
     ).figure.axes[0]
@@ -480,12 +867,13 @@ def test_a_horizontal_chart_writes_its_values_past_the_end_of_each_bar() -> None
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         horizontal=True,
     )
 
     written = drawn.figure.axes[0].texts
-    assert sorted(text.get_text() for text in written) == ["0%", "20%", "80%"]
+    assert sorted(text.get_text() for text in written) == ["20%", "80%"]
     assert {text.get_rotation() for text in written} == {0.0}
     assert {text.get_horizontalalignment() for text in written} == {"left"}
 
@@ -494,6 +882,7 @@ def test_a_horizontal_chart_stands_its_reference_across_the_bars() -> None:
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         reference=0.1,
         horizontal=True,
@@ -507,6 +896,7 @@ def test_a_chart_may_draw_the_line_it_is_read_against() -> None:
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
         reference=0.1,
     )
@@ -522,20 +912,56 @@ def test_a_category_an_arm_never_picked_keeps_the_footprint_of_its_bar() -> None
     drawn = distribution(
         cells={"en": _cell({"1": 4, "3": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2", "3"],
     )
 
     axes = drawn.figure.axes[0]
     flat = [patch for patch in axes.patches if _tall(patch) == 0.0]
-    assert sorted(text.get_text() for text in axes.texts) == ["0%", "20%", "80%"]
     assert len(flat) == 1
 
     mark = flat[0]
     column = next(patch for patch in axes.patches if _tall(patch) > 0.0)
-    assert to_hex(mark.get_edgecolor()) == ARM_COLORS[0].lower()
+    assert to_hex(mark.get_edgecolor()) == _WHEEL[0].lower()
     assert mark.get_facecolor()[3] == 0.0
     assert mark.get_linestyle() != "solid"
     assert _wide(mark) == pytest.approx(_wide(column))
+
+
+def test_a_category_an_arm_never_picked_is_left_to_its_mark_to_say_so() -> None:
+    """The dotted footprint already says this arm picked none, in the arm's own
+    color, so writing 0% over it says the same thing twice at the width of a
+    number. The zero is still in the table the figure carries."""
+    drawn = distribution(
+        cells={"en": _cell({"1": 4, "3": 1})},
+        title="answer distribution by position",
+        series_color=_palette(),
+        categories=["1", "2", "3"],
+    )
+
+    assert sorted(text.get_text() for text in drawn.figure.axes[0].texts) == [
+        "20%",
+        "80%",
+    ]
+    assert [cell["written"] for cell in _cells(drawn, "2")] == ["0.0%"]
+
+
+def test_a_chart_may_write_out_the_zero_its_mark_stands_for() -> None:
+    """One chart has to show a reader what the mark means before the rest can
+    lean on it, so writing the zero out is the chart's own call to make."""
+    drawn = distribution(
+        cells={"en": _cell({"1": 4, "3": 1})},
+        title="answer distribution by position",
+        series_color=_palette(),
+        categories=["1", "2", "3"],
+        zeros_written=True,
+    )
+
+    assert sorted(text.get_text() for text in drawn.figure.axes[0].texts) == [
+        "0%",
+        "20%",
+        "80%",
+    ]
 
 
 def test_a_zero_mark_ends_on_a_whole_dot() -> None:
@@ -565,6 +991,7 @@ def test_a_share_too_small_to_draw_is_still_given_a_visible_mark() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 997, "banana": 3})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     axes = drawn.figure.axes[0]
@@ -582,6 +1009,7 @@ def test_a_column_is_written_whole_where_a_decimal_would_say_nothing() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 762, "banana": 191, "grape": 47})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     written = drawn.figure.axes[0].texts
@@ -595,6 +1023,7 @@ def test_a_share_is_written_to_the_decimal_its_reading_turns_on() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 995, "banana": 5})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     written = drawn.figure.axes[0].texts
@@ -606,6 +1035,7 @@ def test_a_share_too_fine_for_one_decimal_keeps_a_second() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 1999, "banana": 1})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     written = drawn.figure.axes[0].texts
@@ -623,6 +1053,7 @@ def test_columns_too_close_to_tell_apart_whole_keep_their_decimals() -> None:
             "ja": _cell({"apple": 750, "banana": 22, "grape": 228}),
         },
         title="answer distribution by language",
+        series_color=_palette(),
     )
 
     written = [text.get_text() for text in drawn.figure.axes[0].texts]
@@ -638,6 +1069,7 @@ def test_the_table_keeps_the_precision_the_chart_rounds_away() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 984, "banana": 16})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     drawn_labels = sorted(text.get_text() for text in drawn.figure.axes[0].texts)
@@ -651,6 +1083,7 @@ def test_a_picked_category_is_never_tabled_as_the_zero_it_is_not() -> None:
     drawn = distribution(
         cells={"en": _cell({"apple": 4999, "banana": 1})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     banana = _cells(drawn, "banana")[0]
@@ -663,6 +1096,7 @@ def test_a_tabled_estimate_is_written_in_the_unit_its_chart_plots() -> None:
     drawn = estimates(
         cells={"001a en": 1.0594},
         title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
         value_label="effective choices",
         row_label="arm",
         counts={"001a en": 300},
@@ -673,56 +1107,6 @@ def test_a_tabled_estimate_is_written_in_the_unit_its_chart_plots() -> None:
     cell = drawn.rows[0]["cells"][0]
     assert cell["written"] == "1.06"
     assert cell["written_interval"] == "1–1.12"
-
-
-def test_every_arm_color_stays_inside_the_dual_surface_lightness_band() -> None:
-    """A transparent export is read on both pages, so the usable band is the
-    intersection of the two: too light vanishes on bone, too dark on ink."""
-    for color in ARM_COLORS:
-        lightness, _ = lightness_and_chroma(color)
-        assert _DUAL_BAND[0] <= lightness <= _DUAL_BAND[1], color
-
-
-def test_every_arm_color_carries_enough_chroma_to_do_identity_work() -> None:
-    for color in ARM_COLORS:
-        _, chroma = lightness_and_chroma(color)
-        assert chroma >= _CHROMA_FLOOR, color
-
-
-def test_every_arm_color_pair_separates_under_red_green_colorblindness() -> None:
-    """All pairs, not adjacent ones: a grouped column chart puts any two series
-    side by side, so a collapse anywhere in the palette is a collapse on screen."""
-    for first, second in combinations(ARM_COLORS, 2):
-        for deficiency in ("protan", "deutan"):
-            assert delta_e(first, second, deficiency) >= _CVD_TARGET, (
-                first,
-                second,
-                deficiency,
-            )
-
-
-def test_every_arm_color_pair_separates_under_ordinary_vision_too() -> None:
-    for first, second in combinations(ARM_COLORS, 2):
-        assert delta_e(first, second) >= _NORMAL_FLOOR, (first, second)
-
-
-def test_every_arm_color_reads_against_both_page_surfaces() -> None:
-    for color in ARM_COLORS:
-        for surface in (LIGHT_SURFACE, DARK_SURFACE):
-            assert contrast(color, surface) >= _CONTRAST_MIN, (color, surface)
-
-
-def test_the_ink_reads_against_both_page_surfaces() -> None:
-    """No neutral reaches 4.5:1 on both, so chart text is held to the large-text
-    threshold and the index.json table is the accessible twin that carries it."""
-    for surface in (LIGHT_SURFACE, DARK_SURFACE):
-        assert contrast(INK, surface) >= _CONTRAST_MIN
-
-
-def test_the_palette_has_no_room_for_a_fourth_arm() -> None:
-    """The three-series cap is a measured property of a transparent export, not
-    a stylistic choice, so the refusal is the honest behaviour rather than a wrap."""
-    assert len(ARM_COLORS) == 3
 
 
 def _packed() -> Drawn:
@@ -738,6 +1122,7 @@ def _packed() -> Drawn:
             for index, arm in enumerate(("en", "pl", "ja"))
         },
         title="answer distribution by language",
+        series_color=_palette(),
     )
 
 
@@ -751,6 +1136,7 @@ def test_every_column_carries_its_own_value() -> None:
             "ja": _cell({"lychee": 4, "apple": 4, "grape": 1, "banana": 1}),
         },
         title="answer distribution by language",
+        series_color=_palette(),
     )
 
     written = drawn.figure.axes[0].texts
@@ -766,7 +1152,7 @@ def test_values_are_turned_when_flat_ones_would_not_fit_their_columns() -> None:
     figure.canvas.draw()
     renderer = figure.canvas.get_renderer()
 
-    written = figure.axes[0].texts
+    written = _values(figure.axes[0])
     assert {text.get_rotation() for text in written} == {90.0}
     boxes = [text.get_window_extent(renderer) for text in written]
     for first, second in combinations(boxes, 2):
@@ -784,7 +1170,7 @@ def test_a_turned_value_stands_over_the_middle_of_its_own_column() -> None:
     axes = figure.axes[0]
     column = _wide(next(iter(axes.patches)))
     origin, edge = axes.transData.transform([(0.0, 0.0), (column, 0.0)])
-    for text in axes.texts:
+    for text in _values(axes):
         anchor = axes.transData.transform((float(text.xy[0]), 0.0))[0]
         box = text.get_window_extent(renderer)
         assert abs((box.x0 + box.x1) / 2 - anchor) < _INLINE_SLACK_PX
@@ -797,10 +1183,11 @@ def test_a_turned_value_is_given_room_above_the_tallest_column() -> None:
     flat = distribution(
         cells={"en": _cell({"lychee": 6, "apple": 2, "grape": 1, "banana": 1})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
-    assert {text.get_rotation() for text in turned.figure.axes[0].texts} == {90.0}
-    assert {text.get_rotation() for text in flat.figure.axes[0].texts} == {0.0}
+    assert {text.get_rotation() for text in _values(turned.figure.axes[0])} == {90.0}
+    assert {text.get_rotation() for text in _values(flat.figure.axes[0])} == {0.0}
     assert _headroom(turned) > _headroom(flat)
 
 
@@ -813,7 +1200,7 @@ def _headroom(drawn: Drawn) -> float:
 def test_values_written_over_one_group_never_collide(languages: Aggregate) -> None:
     """Three arms picking the same fruit is the finding, not an edge case, so a
     value that cannot clear the one beside it turns rather than overlapping it."""
-    figure = question_distribution(languages, _TITLE).figure
+    figure = question_distribution(languages, _TITLE, _palette()).figure
     FigureCanvasAgg(figure)
     figure.canvas.draw()
     renderer = figure.canvas.get_renderer()
@@ -829,6 +1216,7 @@ def test_a_lone_series_writes_its_value_flat() -> None:
     drawn = distribution(
         cells={"en": _cell({"lychee": 3, "apple": 1})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     written = drawn.figure.axes[0].texts
@@ -836,25 +1224,25 @@ def test_a_lone_series_writes_its_value_flat() -> None:
     assert {text.get_rotation() for text in written} == {0.0}
 
 
-def test_every_chart_is_drawn_at_the_width_the_page_gives_it() -> None:
-    """The site renders a chart at the width of its column whatever the SVG says,
-    so a figure drawn wider is a figure whose type the browser shrinks. One width
-    for every form is what makes a declared point size the size read on the page,
-    and what keeps two charts on one article the same size as each other."""
-    drawn = [
+def _every_form() -> list[Drawn]:
+    """One figure of every form a chart takes, since a width has to hold for all."""
+    return [
         distribution(
             cells={"en": _cell({"apple": 3, "banana": 1})},
             title="answer distribution (en)",
+            series_color=_palette(),
         ),
         distribution(
             cells={"en": _cell({"1": 4, "3": 1})},
             title="answer distribution by position",
+            series_color=_palette(),
             categories=["1", "2", "3"],
             horizontal=True,
         ),
         estimates(
             cells={"001a en": 1.0594},
             title="how many of the 10 fruits each arm was choosing between",
+            series_color=_palette(),
             value_label="effective choices",
             row_label="arm",
             counts={"001a en": 300},
@@ -863,16 +1251,71 @@ def test_every_chart_is_drawn_at_the_width_the_page_gives_it() -> None:
         ),
     ]
 
-    widths = {figure.get_size_inches()[0] for figure in (one.figure for one in drawn)}
-    assert widths == {_ARTICLE_WIDTH_IN}
+
+def test_every_chart_is_drawn_at_the_width_the_page_gives_it() -> None:
+    """The site renders a chart at the width of its column whatever the SVG says,
+    so a figure drawn wider is a figure whose type the browser shrinks. One width
+    per canvas is what makes a declared point size the size read on the page,
+    and what keeps two charts on one article the same size as each other."""
+    for canvas in (WIDE, NARROW):
+        with styled(canvas):
+            drawn = _every_form()
+
+        widths = {one.figure.get_size_inches()[0] for one in drawn}
+        assert widths == {canvas.width_in}
+
+
+def test_the_narrow_canvas_lays_a_chart_out_again_rather_than_shrinking_it(
+    tmp_path: Path,
+) -> None:
+    """A phone is served its own drawing, not the wide one scaled down, so the
+    narrow canvas reaches its own layout decisions. A name that sits beside its
+    picture at the width a laptop gives it has no room to at half of it, and drops
+    under the picture there; the point sizes stay where they were declared."""
+    icon = tmp_path / "fruit.png"
+    imsave(icon, np.zeros((8, 8, 4)))
+    cells = {"en": _cell({"pomegranate": 3, "strawberry": 1, "watermelon": 1})}
+
+    def draw() -> Drawn:
+        return distribution(
+            cells=cells,
+            title="answer distribution",
+            series_color=_palette(),
+            category_icon=lambda _: icon,
+        )
+
+    with styled(WIDE):
+        wide = draw().figure
+    with styled(NARROW):
+        narrow = draw().figure
+
+    assert _beside_its_picture(wide)
+    assert not _beside_its_picture(narrow)
+    assert {label.get_fontsize() for label in narrow.axes[0].get_xticklabels()} == {
+        label.get_fontsize() for label in wide.axes[0].get_xticklabels()
+    }
+
+
+def _beside_its_picture(figure: Figure) -> bool:
+    """Whether the first category's word shares a line with the picture naming it."""
+    FigureCanvasAgg(figure)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+
+    word = figure.axes[0].get_xticklabels()[0].get_window_extent(renderer)
+    shown = _pictures(figure)[0].get_window_extent(renderer)
+
+    return abs((shown.y0 + shown.y1) - (word.y0 + word.y1)) < _INLINE_SLACK_PX
 
 
 def test_a_title_too_long_for_the_figure_is_broken_over_lines() -> None:
     """A figure used to widen until its title fit, which is the same knob that
-    made a chart small on the page. At one width a long title has to wrap."""
+    made a chart small on the page. At a fixed width a long title has to wrap."""
+    written = "Chart 1.7: how many of the 10 fruits each arm was choosing between"
     drawn = estimates(
         cells={"001a en": 1.0594},
-        title="how many of the 10 fruits each arm was choosing between",
+        title=written,
+        series_color=_palette(),
         value_label="effective choices",
         row_label="arm",
         counts={"001a en": 300},
@@ -885,7 +1328,7 @@ def test_a_title_too_long_for_the_figure_is_broken_over_lines() -> None:
 
     title = figure.axes[0].title
     assert "\n" in title.get_text()
-    assert drawn.title == "how many of the 10 fruits each arm was choosing between"
+    assert drawn.title == written
     assert (
         title.get_window_extent(figure.canvas.get_renderer()).x1
         <= figure.get_size_inches()[0] * figure.dpi
@@ -897,6 +1340,7 @@ def test_a_value_axis_ends_just_above_the_data_rather_than_at_full_scale() -> No
     drawn = distribution(
         cells={"en": _cell({"apple": 2, "banana": 3, "grape": 5})},
         title="answer distribution (en)",
+        series_color=_palette(),
     )
 
     assert drawn.figure.axes[0].get_ylim()[1] < 1.0
@@ -906,6 +1350,7 @@ def test_short_categories_are_not_turned_when_they_already_fit() -> None:
     drawn = distribution(
         cells={"en": _cell({"1": 4, "2": 1})},
         title="answer distribution by position",
+        series_color=_palette(),
         categories=["1", "2"],
     )
 
@@ -921,6 +1366,7 @@ def test_a_category_an_arm_never_picked_still_carries_its_uncertainty() -> None:
             "pl": _cell({"apple": 5}),
         },
         title="answer distribution by language",
+        series_color=_palette(),
     )
 
     unpicked = _cells(drawn, "apple")[0]

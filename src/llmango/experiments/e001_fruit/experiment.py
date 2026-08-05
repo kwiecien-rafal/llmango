@@ -35,6 +35,11 @@ class WyborOwocu(LLMResponse):
     owoc: str
 
 
+# 001d's JA schema, romaji because OpenAI constrains json_schema.name to ASCII.
+class KudamonoSentaku(LLMResponse):
+    kudamono: str
+
+
 def _table(data: Any) -> dict[str, dict[str, str]]:
     """Read the fruit list file into canonical ids with their labels, in file order."""
     if not isinstance(data, list):
@@ -229,7 +234,7 @@ def _position(order: list[str] | None, canonical: str | None) -> int | None:
 FRUIT = ExperimentSpec(
     folder=FOLDER,
     questions=QUESTIONS,
-    schemas=(FruitChoice, WyborOwocu),
+    schemas=(FruitChoice, WyborOwocu, KudamonoSentaku),
     normalization_schema=FruitNormalization,
     preprocess=preprocess,
     build_input=build_input,

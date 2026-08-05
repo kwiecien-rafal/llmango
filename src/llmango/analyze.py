@@ -9,7 +9,7 @@ from typing import cast
 from llmango.aggregate import Aggregate
 from llmango.config import get_aggregate_path, get_charts_dir
 from llmango.experiments import EXPERIMENTS
-from llmango.plot import ChartDef, Row, save, styled
+from llmango.plot import NARROW, WIDE, Canvas, ChartDef, Drawn, Row, save, styled
 from llmango.spec import ExperimentSpec
 
 _INDEX = "index.json"
@@ -22,6 +22,7 @@ class Chart:
     name: str
     number: str
     file: str
+    narrow_file: str
     questions: list[str]
     title: str
     row_label: str
@@ -42,8 +43,7 @@ class AnalyzeOutcome:
 
 def analyze_all() -> list[AnalyzeOutcome]:
     """Draw every experiment's charts from whatever aggregates each one has."""
-    with styled():
-        outcomes = [_analyze(experiment) for experiment in EXPERIMENTS]
+    outcomes = [_analyze(experiment) for experiment in EXPERIMENTS]
 
     if not any(outcome.charts for outcome in outcomes):
         raise FileNotFoundError(
@@ -106,18 +106,21 @@ def _load(folder: str, question_ids: tuple[str, ...]) -> dict[str, Aggregate]:
 def _draw(
     definition: ChartDef, aggregates: dict[str, Aggregate], directory: Path
 ) -> Chart:
-    """Draw one declared chart, save it, and describe it for the index."""
-    drawn = definition.draw(
-        {question: aggregates[question] for question in definition.questions},
-        definition.numbered_title(),
-    )
+    """Draw one declared chart at both widths the page reads it at, and describe it."""
+    read = {question: aggregates[question] for question in definition.questions}
+    title = definition.numbered_title()
     file = f"{definition.name}.svg"
+    narrow_file = f"{definition.name}--narrow.svg"
+
+    drawn = _render(definition, read, title, WIDE)
     save(drawn.figure, directory / file)
+    save(_render(definition, read, title, NARROW).figure, directory / narrow_file)
 
     return Chart(
         name=definition.name,
         number=definition.number,
         file=file,
+        narrow_file=narrow_file,
         questions=list(definition.questions),
         title=drawn.title,
         row_label=drawn.row_label,
@@ -125,6 +128,14 @@ def _draw(
         columns=drawn.columns,
         rows=drawn.rows,
     )
+
+
+def _render(
+    definition: ChartDef, aggregates: dict[str, Aggregate], title: str, canvas: Canvas
+) -> Drawn:
+    """Draw one chart at one width, under the style every chart is drawn in."""
+    with styled(canvas):
+        return definition.draw(aggregates, title)
 
 
 def _write_index(folder: str, charts: list[Chart], directory: Path) -> Path:

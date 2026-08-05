@@ -83,16 +83,24 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
     (analyze_outcome,) = analyze_all()
 
     assert [chart.file for chart in analyze_outcome.charts] == ["language_drift.svg"]
+    assert [chart.narrow_file for chart in analyze_outcome.charts] == [
+        "language_drift--narrow.svg"
+    ]
     assert analyze_outcome.skipped == [
         "order_effect",
         "shuffled_choice",
         "position_bias",
-        "shuffle_effect",
+        "movement",
         "schema_effect",
         "randomness",
     ]
     charts = get_charts_dir(_FOLDER)
     assert (charts / "language_drift.svg").read_text(encoding="utf-8").count("<svg")
+    assert (
+        (charts / "language_drift--narrow.svg")
+        .read_text(encoding="utf-8")
+        .count("<svg")
+    )
     index = json.loads((charts / "index.json").read_text(encoding="utf-8"))
     drift = index["charts"][0]
     assert drift["questions"] == [_QUESTION]
