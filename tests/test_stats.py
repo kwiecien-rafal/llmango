@@ -13,8 +13,6 @@ from llmango.stats import (
     homogeneity_pvalue,
     jensen_shannon,
     normalized_entropy,
-    total_variation,
-    total_variation_interval,
     wilson_interval,
 )
 
@@ -71,21 +69,13 @@ def test_distance_from_uniform_counts_the_categories_never_picked() -> None:
     assert distance_from_uniform([25] * 4, _SUPPORT) == pytest.approx(0.6)
 
 
-def test_total_variation_is_symmetric_and_bounded() -> None:
-    left, right = [3, 1, 0], [0, 1, 3]
-
-    assert total_variation(left, right) == total_variation(right, left)
-    assert total_variation(left, left) == 0.0
-    assert total_variation([4, 0], [0, 4]) == 1.0
-
-
 def test_jensen_shannon_spans_identical_to_disjoint_arms() -> None:
     assert jensen_shannon([3, 1], [3, 1]) == 0.0
     assert jensen_shannon([4, 0], [0, 4]) == 1.0
 
 
 def test_an_arm_that_answered_nothing_has_no_shape_to_compare() -> None:
-    assert total_variation([0, 0], [3, 1]) == pytest.approx(0.5)
+    assert jensen_shannon([0, 0], [3, 1]) == pytest.approx(0.5)
     assert normalized_entropy([], _SUPPORT) == 0.0
 
 
@@ -173,30 +163,12 @@ def test_an_effective_choices_interval_never_offers_more_than_the_options() -> N
     assert effective_choices_interval([], _SUPPORT) == (0.0, 0.0)
 
 
-def test_two_samples_of_one_distribution_keep_a_distance_above_zero() -> None:
-    """Total variation is built from absolute differences, so noise can only push
-    it up: identical arms still measure apart, and the floor is what a reader has
-    to clear before a bar on that chart means anything at all."""
-    counts = [150, 90, 45, 15]
-    low, high = total_variation_interval(counts, counts)
-
-    assert total_variation(counts, counts) == 0.0
-    assert 0.0 < low < high
-
-
-def test_a_distance_interval_brackets_the_distance_it_is_drawn_over() -> None:
-    left, right = [200, 60, 40], [60, 200, 40]
-    low, high = total_variation_interval(left, right)
-
-    assert low < total_variation(left, right) < high
-
-
 def test_a_bootstrap_interval_is_the_same_on_every_redraw() -> None:
     """Redrawing an unchanged aggregate has to rewrite a byte-identical SVG, so a
     resampled cap cannot move between two runs over the same counts."""
     assert entropy_interval([40, 30, 20], _SUPPORT) == entropy_interval(
         [40, 30, 20], _SUPPORT
     )
-    assert total_variation_interval([9, 1], [1, 9]) == total_variation_interval(
-        [9, 1], [1, 9]
+    assert effective_choices_interval([9, 1], _SUPPORT) == effective_choices_interval(
+        [9, 1], _SUPPORT
     )

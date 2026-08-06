@@ -90,9 +90,9 @@ def test_pipeline_generates_normalizes_aggregates_and_charts(
         "order_effect",
         "shuffled_choice",
         "position_bias",
-        "movement",
         "schema_effect",
         "randomness",
+        "fruit_totals",
     ]
     charts = get_charts_dir(_FOLDER)
     assert (charts / "language_drift.svg").read_text(encoding="utf-8").count("<svg")

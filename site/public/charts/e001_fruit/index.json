@@ -953,93 +953,14 @@
       ]
     },
     {
-      "name": "movement",
-      "number": "1.5",
-      "file": "movement.svg",
-      "narrow_file": "movement--narrow.svg",
-      "questions": [
-        "001a",
-        "001b",
-        "001c"
-      ],
-      "title": "Chart 1.5: How far each language moved when 001a's order was swapped or shuffled",
-      "row_label": "manipulation",
-      "unit": "share",
-      "columns": [
-        "en",
-        "ja",
-        "pl"
-      ],
-      "rows": [
-        {
-          "label": "001a vs 001b",
-          "cells": [
-            {
-              "value": 0.0835,
-              "n": 4000,
-              "lo": 0.072,
-              "hi": 0.0955,
-              "written": "8.3%",
-              "written_interval": "7.2%–9.6%"
-            },
-            {
-              "value": 0.859,
-              "n": 4000,
-              "lo": 0.844,
-              "hi": 0.8745,
-              "written": "85.9%",
-              "written_interval": "84.4%–87.5%"
-            },
-            {
-              "value": 1.0,
-              "n": 4000,
-              "lo": 1.0,
-              "hi": 1.0,
-              "written": "100.0%",
-              "written_interval": "100.0%–100.0%"
-            }
-          ]
-        },
-        {
-          "label": "001a vs 001c",
-          "cells": [
-            {
-              "value": 0.208,
-              "n": 4000,
-              "lo": 0.1895,
-              "hi": 0.2275,
-              "written": "20.8%",
-              "written_interval": "18.9%–22.8%"
-            },
-            {
-              "value": 0.721,
-              "n": 4000,
-              "lo": 0.7005,
-              "hi": 0.741,
-              "written": "72.1%",
-              "written_interval": "70.0%–74.1%"
-            },
-            {
-              "value": 0.741,
-              "n": 4000,
-              "lo": 0.721,
-              "hi": 0.7595,
-              "written": "74.1%",
-              "written_interval": "72.1%–75.9%"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "schema_effect",
-      "number": "1.6",
+      "number": "1.5",
       "file": "schema_effect.svg",
       "narrow_file": "schema_effect--narrow.svg",
       "questions": [
         "001d"
       ],
-      "title": "Chart 1.6: Answer distribution by schema in 001d",
+      "title": "Chart 1.5: Answer distribution by schema in 001d",
       "row_label": "category",
       "unit": "share",
       "columns": [
@@ -1750,7 +1671,7 @@
     },
     {
       "name": "randomness",
-      "number": "1.7",
+      "number": "1.6",
       "file": "randomness.svg",
       "narrow_file": "randomness--narrow.svg",
       "questions": [
@@ -1759,7 +1680,7 @@
         "001c",
         "001d"
       ],
-      "title": "Chart 1.7: How many of the 10 fruits each arm was choosing between",
+      "title": "Chart 1.6: How many of the 10 fruits each arm was choosing between",
       "row_label": "arm",
       "unit": "count",
       "columns": [
@@ -1986,6 +1907,207 @@
               "written_interval": "2.58–2.71"
             }
           ]
+        }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "name": "fruit_totals",
+      "number": "1.1",
+      "questions": [
+        "001a",
+        "001b",
+        "001c",
+        "001d"
+      ],
+      "title": "Table 1.1: How many times was each fruit picked",
+      "row_label": "fruit",
+      "unit": "count",
+      "columns": [
+        "times picked",
+        "share of all answers"
+      ],
+      "rows": [
+        {
+          "label": "lychee",
+          "cells": [
+            {
+              "value": 18160,
+              "count": 18160,
+              "n": 34000,
+              "written": "18160"
+            },
+            {
+              "value": 0.534118,
+              "count": 18160,
+              "n": 34000,
+              "written": "53.4%"
+            }
+          ],
+          "icon": "icons/emoji_u1f330.png"
+        },
+        {
+          "label": "mango",
+          "cells": [
+            {
+              "value": 9611,
+              "count": 9611,
+              "n": 34000,
+              "written": "9611"
+            },
+            {
+              "value": 0.282676,
+              "count": 9611,
+              "n": 34000,
+              "written": "28.3%"
+            }
+          ],
+          "icon": "icons/emoji_u1f96d.png"
+        },
+        {
+          "label": "pomegranate",
+          "cells": [
+            {
+              "value": 5947,
+              "count": 5947,
+              "n": 34000,
+              "written": "5947"
+            },
+            {
+              "value": 0.174912,
+              "count": 5947,
+              "n": 34000,
+              "written": "17.5%"
+            }
+          ],
+          "icon": "icons/emoji_u1f534.png"
+        },
+        {
+          "label": "pineapple",
+          "cells": [
+            {
+              "value": 271,
+              "count": 271,
+              "n": 34000,
+              "written": "271"
+            },
+            {
+              "value": 0.007971,
+              "count": 271,
+              "n": 34000,
+              "written": "0.8%"
+            }
+          ],
+          "icon": "icons/emoji_u1f34d.png"
+        },
+        {
+          "label": "grape",
+          "cells": [
+            {
+              "value": 3,
+              "count": 3,
+              "n": 34000,
+              "written": "3"
+            },
+            {
+              "value": 8.8e-05,
+              "count": 3,
+              "n": 34000,
+              "written": "0.01%"
+            }
+          ],
+          "icon": "icons/emoji_u1f347.png"
+        },
+        {
+          "label": "watermelon",
+          "cells": [
+            {
+              "value": 3,
+              "count": 3,
+              "n": 34000,
+              "written": "3"
+            },
+            {
+              "value": 8.8e-05,
+              "count": 3,
+              "n": 34000,
+              "written": "0.01%"
+            }
+          ],
+          "icon": "icons/emoji_u1f349.png"
+        },
+        {
+          "label": "apple",
+          "cells": [
+            {
+              "value": 2,
+              "count": 2,
+              "n": 34000,
+              "written": "2"
+            },
+            {
+              "value": 5.9e-05,
+              "count": 2,
+              "n": 34000,
+              "written": "0.01%"
+            }
+          ],
+          "icon": "icons/emoji_u1f34e.png"
+        },
+        {
+          "label": "strawberry",
+          "cells": [
+            {
+              "value": 2,
+              "count": 2,
+              "n": 34000,
+              "written": "2"
+            },
+            {
+              "value": 5.9e-05,
+              "count": 2,
+              "n": 34000,
+              "written": "0.01%"
+            }
+          ],
+          "icon": "icons/emoji_u1f353.png"
+        },
+        {
+          "label": "banana",
+          "cells": [
+            {
+              "value": 1,
+              "count": 1,
+              "n": 34000,
+              "written": "1"
+            },
+            {
+              "value": 2.9e-05,
+              "count": 1,
+              "n": 34000,
+              "written": "0.003%"
+            }
+          ],
+          "icon": "icons/emoji_u1f34c.png"
+        },
+        {
+          "label": "orange",
+          "cells": [
+            {
+              "value": 0,
+              "count": 0,
+              "n": 34000,
+              "written": "0"
+            },
+            {
+              "value": 0.0,
+              "count": 0,
+              "n": 34000,
+              "written": "0.0%"
+            }
+          ],
+          "icon": "icons/emoji_u1f34a.png"
         }
       ]
     }

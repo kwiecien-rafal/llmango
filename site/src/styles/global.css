@@ -153,7 +153,7 @@ figure.chart picture {
   display: block;
 }
 
-figure.chart img {
+figure.chart picture img {
   display: block;
   box-sizing: border-box;
   width: 100%;
@@ -170,6 +170,39 @@ figure.chart figcaption {
 figure.chart details {
   font-size: 0.92rem;
   border-top: 1px solid var(--frame-soft);
+}
+
+/*
+ * A table nothing was drawn from is read as the figure itself: it is titled over
+ * its own columns rather than beneath a picture, and it is only as wide as the
+ * numbers in it, since a table stretched across the text column reads as spacing
+ * rather than as rows.
+ */
+
+figure.chart.numbers {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+figure.chart.numbers table {
+  width: auto;
+}
+
+figure.chart.numbers caption {
+  padding: 0.4rem 0 0.9rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+figure.chart.numbers td,
+figure.chart.numbers thead th:not(:first-child) {
+  padding-left: 1.5rem;
+  text-align: right;
+}
+
+figure.chart.numbers figcaption {
+  padding-top: 0;
 }
 
 figure.chart summary {
@@ -200,13 +233,13 @@ figure.chart details[open] summary {
  */
 
 @media (max-width: 54.5rem) {
-  figure.chart {
+  figure.chart:not(.numbers) {
     margin-inline: -1.25rem;
     border-inline-width: 0;
     border-radius: 0;
   }
 
-  figure.chart img {
+  figure.chart picture img {
     padding-inline: 0;
   }
 }
@@ -244,6 +277,13 @@ td .count {
   color: var(--ink-muted);
   margin-left: 0.4rem;
   font-size: 0.88em;
+}
+
+tbody th .icon {
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.5rem;
+  vertical-align: -0.22em;
 }
 
 /* Cards ------------------------------------------------------------------ */

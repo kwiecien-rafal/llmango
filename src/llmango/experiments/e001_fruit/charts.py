@@ -1,5 +1,6 @@
 """Experiment 001's charts: what each one compares, and which questions it reads."""
 
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -9,26 +10,23 @@ from llmango.plot import (
     COUNT,
     ChartDef,
     Drawn,
+    Tabled,
+    TableDef,
     distribution,
     estimates,
     panels,
     question_distribution,
-    summary,
+    table,
 )
 from llmango.spec import FREE_TEXT, OTHER_CATEGORY
-from llmango.stats import (
-    effective_choices_interval,
-    total_variation,
-    total_variation_interval,
-)
+from llmango.stats import effective_choices_interval
 
 _SCHEMA = "FruitChoice"
 _SCHEMA_LANGUAGES = {_SCHEMA: "en", "WyborOwocu": "pl", "KudamonoSentaku": "ja"}
 _ENGLISH = "en"
 _NATIVE_SCHEMA = "native schema"
-_ORDER_SWAP = "001a vs 001b"
-_SHUFFLE = "001a vs 001c"
 _ONE_FRUIT_ALWAYS = 1.0
+_WHOLE_SHARE = 1.0
 _EMOJI_DIR = Path(__file__).parent / "emoji"
 
 FRUIT_EMOJI = {
@@ -81,7 +79,7 @@ def order_effect(aggregates: dict[str, Aggregate], title: str) -> Drawn:
 
 def shuffled_choice(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     """001c's shuffled arms read by which fruit was picked, not by where it sat."""
-    return _fruit_distribution(aggregates["001c"], title)
+    return _fruit_distribution(aggregates["001c"], title, ceiling=_WHOLE_SHARE)
 
 
 def position_bias(aggregates: dict[str, Aggregate], title: str) -> Drawn:
@@ -102,43 +100,6 @@ def position_bias(aggregates: dict[str, Aggregate], title: str) -> Drawn:
         categories=[str(place) for place in range(1, support + 1)],
         reference=1.0 / support if support else None,
         horizontal=True,
-    )
-
-
-def movement(aggregates: dict[str, Aggregate], title: str) -> Drawn:
-    """How far each language moved when 001a's order was swapped, and when shuffled."""
-    fixed = _by_language(aggregates["001a"])
-    moved = {
-        _ORDER_SWAP: _by_language(aggregates["001b"]),
-        _SHUFFLE: _by_language(aggregates["001c"]),
-    }
-    langs = sorted(set(fixed).intersection(*(set(arms) for arms in moved.values())))
-    pairs = {
-        lang: {name: _pair(fixed[lang], arms[lang]) for name, arms in moved.items()}
-        for lang in langs
-    }
-
-    return summary(
-        cells={
-            lang: {name: total_variation(*pair) for name, pair in against.items()}
-            for lang, against in pairs.items()
-        },
-        title=title,
-        value_label="share of answers that moved",
-        row_label="manipulation",
-        counts={
-            lang: {
-                name: fixed[lang]["n"] + arms[lang]["n"] for name, arms in moved.items()
-            }
-            for lang in langs
-        },
-        intervals={
-            lang: {
-                name: total_variation_interval(*pair) for name, pair in against.items()
-            }
-            for lang, against in pairs.items()
-        },
-        series_color=language_color,
     )
 
 
@@ -167,8 +128,40 @@ def randomness(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     )
 
 
+def fruit_totals(aggregates: dict[str, Aggregate], title: str) -> Tabled:
+    """Every arm of every question pooled: what each fruit was picked in total."""
+    counted: Counter[str] = Counter()
+    answered = 0
+    for aggregate in aggregates.values():
+        for cell in _cells(aggregate):
+            counted.update(cell["counts"])
+            answered += cell["n"]
+
+    return table(
+        cells={name: counted[name] for name in _every_fruit(counted)},
+        total=answered,
+        title=title,
+        row_label="fruit",
+        count_column="times picked",
+        share_column="share of all answers",
+        row_icon=fruit_icon,
+    )
+
+
+def _every_fruit(counted: Counter[str]) -> list[str]:
+    """Every fruit offered, most picked first, so one never picked is still read."""
+    ranked = sorted(FRUIT_EMOJI, key=lambda fruit: (-counted[fruit], fruit))
+    if counted[OTHER_CATEGORY]:
+        ranked.append(OTHER_CATEGORY)
+
+    return ranked
+
+
 def _fruit_distribution(
-    aggregate: Aggregate, title: str, zeros_written: bool = False
+    aggregate: Aggregate,
+    title: str,
+    zeros_written: bool = False,
+    ceiling: float | None = None,
 ) -> Drawn:
     """Draw one question's arms over the fruits any of them picked."""
     return question_distribution(
@@ -179,6 +172,7 @@ def _fruit_distribution(
         category_icon=fruit_icon,
         categories=_fruit_categories(_cells(aggregate)),
         zeros_written=zeros_written,
+        ceiling=ceiling,
     )
 
 
@@ -242,18 +236,6 @@ def _picked(cell: Distribution) -> list[int]:
     return [count for name, count in cell["counts"].items() if name != OTHER_CATEGORY]
 
 
-def _pair(left: Distribution, right: Distribution) -> tuple[list[int], list[int]]:
-    """Two arms' counts over one shared category order, so they can be compared."""
-    categories = sorted(left["counts"] | right["counts"])
-
-    return _aligned(left, categories), _aligned(right, categories)
-
-
-def _aligned(cell: Distribution, categories: list[str]) -> list[int]:
-    """One arm's counts over a shared category order, so two arms can be compared."""
-    return [cell["counts"].get(category, 0) for category in categories]
-
-
 def _named_arms(
     aggregates: dict[str, Aggregate],
 ) -> dict[str, tuple[str, int, Distribution]]:
@@ -308,24 +290,27 @@ CHARTS = (
         draw=position_bias,
     ),
     ChartDef(
-        "movement",
-        number="1.5",
-        title="How far each language moved when 001a's order was swapped or shuffled",
-        questions=("001a", "001b", "001c"),
-        draw=movement,
-    ),
-    ChartDef(
         "schema_effect",
-        number="1.6",
+        number="1.5",
         title="Answer distribution by schema in 001d",
         questions=("001d",),
         draw=schema_effect,
     ),
     ChartDef(
         "randomness",
-        number="1.7",
+        number="1.6",
         title=f"How many of the {_FRUITS_OFFERED} fruits each arm was choosing between",
         questions=("001a", "001b", "001c", "001d"),
         draw=randomness,
+    ),
+)
+
+TABLES = (
+    TableDef(
+        "fruit_totals",
+        number="1.1",
+        title="How many times was each fruit picked",
+        questions=("001a", "001b", "001c", "001d"),
+        build=fruit_totals,
     ),
 )

@@ -1,0 +1,33 @@
+---
+/**
+ * One table of numbers the pipeline wrote with no figure drawn from them.
+ *
+ * Some numbers are worth reading and not worth plotting. A total per category
+ * over every arm is one of them: it is ten numbers with no comparison in it, and
+ * a chart of it would draw one bar too tall to read the other nine against. It
+ * still comes from the aggregates through analyze, so it cannot drift from the
+ * charts around it the way a hand-written table on the page would.
+ */
+import { table as findTable } from "../data/charts";
+import Numbers from "./Numbers.astro";
+
+interface Props {
+  experiment: string;
+  table: string;
+}
+
+const { experiment, table } = Astro.props;
+const entry = findTable(experiment, table);
+---
+
+<figure class="chart numbers">
+  <Numbers
+    experiment={experiment}
+    title={entry.title}
+    row_label={entry.row_label}
+    columns={entry.columns}
+    rows={entry.rows}
+    annotated={false}
+  />
+  <figcaption>Datasets: {entry.questions.join(", ")}</figcaption>
+</figure>

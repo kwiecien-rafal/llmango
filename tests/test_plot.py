@@ -33,7 +33,7 @@ from llmango.plot import (
     panels,
     question_distribution,
     styled,
-    summary,
+    table,
 )
 
 _TITLE = "Chart 1.1: answer distribution by language"
@@ -373,87 +373,12 @@ def _pictures(figure: Figure) -> list[AnnotationBbox]:
     ]
 
 
-def test_a_chart_writes_its_numbers_in_the_unit_it_plots() -> None:
-    """A share and a count cannot share a formatter: 2.64 choices is not 264%."""
-    drawn = summary(
-        cells={"en": {"001a": 1.0594, "001d": 2.6413}},
-        title="how many of the 10 fruits each arm was choosing between",
-        series_color=_palette(),
-        value_label="effective choices (of 10)",
-        row_label="arm",
-        counts={"en": {"001a": 300, "001d": 300}},
-        intervals={"en": {"001a": (1.02, 1.12), "001d": (2.41, 2.88)}},
-        unit=COUNT,
-    )
-
-    written = drawn.figure.axes[0].texts
-    assert drawn.unit == "count"
-    assert sorted(text.get_text() for text in written) == ["1.06", "2.64"]
-
-
-def test_a_summary_writes_its_columns_the_way_every_other_chart_does() -> None:
-    """One number per named thing is still a column carrying a number, so it is
-    written whole unless a decimal is what tells it from the column beside it."""
-    drawn = summary(
-        cells={
-            "en": {"shuffle": 0.208},
-            "ja": {"shuffle": 0.721},
-            "pl": {"shuffle": 0.741},
-        },
-        title="how much of the fixed order was position",
-        series_color=_palette(),
-        value_label="share of answers that moved",
-        row_label="manipulation",
-        counts={"en": {"shuffle": 300}, "ja": {"shuffle": 300}, "pl": {"shuffle": 300}},
-        intervals={
-            "en": {"shuffle": (0.18, 0.24)},
-            "ja": {"shuffle": (0.69, 0.75)},
-            "pl": {"shuffle": (0.71, 0.77)},
-        },
-    )
-
-    written = drawn.figure.axes[0].texts
-    tabled = [cell["written"] for row in drawn.rows for cell in row["cells"]]
-    assert [text.get_text() for text in written] == ["21%", "72%", "74%"]
-    assert tabled == ["20.8%", "72.1%", "74.1%"]
-    assert drawn.columns == ["en", "ja", "pl"]
-    assert [row["label"] for row in drawn.rows] == ["shuffle"]
-
-
-def test_a_summary_carries_one_statistic_per_series_per_comparison() -> None:
-    """One number per named thing could not put two manipulations against each
-    other, which is the comparison a conclusion wants."""
-    drawn = summary(
-        cells={
-            "en": {"swap": 0.08, "shuffle": 0.21},
-            "pl": {"swap": 1.0, "shuffle": 0.74},
-        },
-        title="how far each language moved",
-        series_color=_palette(),
-        value_label="share of answers that moved",
-        row_label="manipulation",
-        counts={
-            "en": {"swap": 400, "shuffle": 400},
-            "pl": {"swap": 400, "shuffle": 400},
-        },
-        intervals={
-            "en": {"swap": (0.06, 0.1), "shuffle": (0.19, 0.23)},
-            "pl": {"swap": (1.0, 1.0), "shuffle": (0.72, 0.76)},
-        },
-    )
-
-    swap, shuffle = drawn.rows
-    assert drawn.columns == ["en", "pl"]
-    assert [row["label"] for row in drawn.rows] == ["swap", "shuffle"]
-    assert [cell["value"] for cell in swap["cells"]] == [0.08, 1.0]
-    assert [cell["n"] for cell in shuffle["cells"]] == [400, 400]
-    assert shuffle["cells"][1]["written_interval"] == "72.0%–76.0%"
-
-
 def test_an_estimate_is_drawn_as_a_dot_on_the_interval_it_carries() -> None:
     """Ten single numbers is the one chart whose finding is which differences
     survive their intervals, so here the interval is the mark rather than a cap
-    on one. Each row is a line from low to high with the estimate sitting on it."""
+    on one. Each row is a line from low to high with the estimate sitting on it.
+
+    A share and a count cannot share a formatter: 2.64 choices is not 264%."""
     drawn = estimates(
         cells={"001a en": 1.0594, "001d no schema": 2.6413},
         title="how many of the 10 fruits each arm was choosing between",
@@ -1107,6 +1032,64 @@ def test_a_tabled_estimate_is_written_in_the_unit_its_chart_plots() -> None:
     cell = drawn.rows[0]["cells"][0]
     assert cell["written"] == "1.06"
     assert cell["written_interval"] == "1–1.12"
+
+
+def _pooled(cells: dict[str, int], total: int = 34000) -> Any:
+    """A pooled table the way an experiment asks for one, over counts it hands in."""
+    return table(
+        cells=cells,
+        total=total,
+        title="Table 1.1: how many times was each fruit picked",
+        row_label="fruit",
+        count_column="times picked",
+        share_column="share of all answers",
+    )
+
+
+def test_a_pooled_count_is_tabled_beside_the_share_it_works_out_to() -> None:
+    """A count answers how many and a share answers how much of the whole, and
+    reading one against the other is what the two columns are for."""
+    tabled = _pooled({"lychee": 18160, "orange": 0})
+
+    assert tabled.unit == "count"
+    assert tabled.columns == ["times picked", "share of all answers"]
+    assert [row["label"] for row in tabled.rows] == ["lychee", "orange"]
+    assert tabled.rows[0]["cells"] == [
+        {"value": 18160, "count": 18160, "n": 34000, "written": "18160"},
+        {"value": 0.534118, "count": 18160, "n": 34000, "written": "53.4%"},
+    ]
+
+
+def test_one_answer_in_a_pool_this_size_is_still_not_written_as_a_zero() -> None:
+    """A share widens as far as it has to, so 1 in 34 000 never reads as none."""
+    tabled = _pooled({"banana": 1, "orange": 0})
+
+    assert [row["cells"][1]["written"] for row in tabled.rows] == ["0.003%", "0.0%"]
+
+
+def test_a_pooled_share_is_tabled_without_an_interval_around_it() -> None:
+    """Arms built to answer differently are not draws from one distribution."""
+    tabled = _pooled({"lychee": 18160})
+
+    assert not [cell for cell in tabled.rows[0]["cells"] if "written_interval" in cell]
+
+
+def test_a_table_may_picture_a_row_the_way_its_experiment_illustrates_it() -> None:
+    """A row points at the same file a chart draws that category with, and the
+    stage that writes artifacts out is the one that puts it where the site reads."""
+    lychee = Path("emoji_u1f330.png")
+    tabled = table(
+        cells={"lychee": 4, "other": 1},
+        total=5,
+        title="Table 1.1: how many times was each fruit picked",
+        row_label="fruit",
+        count_column="times picked",
+        share_column="share of all answers",
+        row_icon={"lychee": lychee}.get,
+    )
+
+    assert tabled.rows[0]["icon"] == lychee
+    assert "icon" not in tabled.rows[1]
 
 
 def _packed() -> Drawn:

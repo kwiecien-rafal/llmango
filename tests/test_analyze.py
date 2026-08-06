@@ -60,6 +60,18 @@ def both_orders(data_dirs: Path) -> Path:
     return data_dirs
 
 
+@pytest.fixture
+def every_question(data_dirs: Path) -> Path:
+    """All four questions aggregated, which is what the pooled table reads."""
+    arm = {"en": _cell({"lychee": 3, "mango": 1})}
+    for question_id in ("001a", "001b", "001c"):
+        _aggregate(question_id, arm)
+    _write_aggregate(
+        _EXPERIMENT, "001d", SUPPORT, {"FruitChoice": arm, "none": arm}, {}
+    )
+    return data_dirs
+
+
 def test_the_index_is_keyed_by_experiment_and_chart_name(baseline: Path) -> None:
     outcome = _analyze()
 
@@ -103,9 +115,9 @@ def test_a_chart_whose_questions_lack_aggregates_is_skipped(baseline: Path) -> N
         "order_effect",
         "shuffled_choice",
         "position_bias",
-        "movement",
         "schema_effect",
         "randomness",
+        "fruit_totals",
     ]
     assert not (_charts(baseline) / "order_effect.svg").exists()
 
@@ -123,15 +135,65 @@ def test_a_chart_over_two_questions_is_drawn_once_both_are_there(
     assert outcome.skipped == [
         "shuffled_choice",
         "position_bias",
-        "movement",
         "schema_effect",
         "randomness",
+        "fruit_totals",
     ]
     assert (_charts(both_orders) / "order_effect.svg").is_file()
 
     order = next(chart for chart in outcome.charts if chart.name == "order_effect")
     assert order.questions == ["001a", "001b"]
     assert order.columns == ["en / 001a order", "en / 001b order"]
+
+
+def test_a_table_reaches_the_index_with_no_drawing_beside_it(
+    every_question: Path,
+) -> None:
+    """A table the site prints on its own is an index entry with no file to embed."""
+    outcome = _analyze()
+
+    assert [table.name for table in outcome.tables] == ["fruit_totals"]
+    tables = _index(every_question)["tables"]
+    assert [table["name"] for table in tables] == ["fruit_totals"]
+    assert tables[0]["questions"] == ["001a", "001b", "001c", "001d"]
+    assert not list(_charts(every_question).glob("fruit_totals*"))
+
+
+def test_a_pictured_row_has_its_picture_written_out_beside_the_charts(
+    every_question: Path,
+) -> None:
+    """The site fetches the picture, so the file has to be somewhere it serves."""
+    _analyze()
+
+    rows = _index(every_question)["tables"][0]["rows"]
+    lychee = next(row for row in rows if row["label"] == "lychee")
+    assert lychee["icon"] == "icons/emoji_u1f330.png"
+    assert (_charts(every_question) / "icons" / "emoji_u1f330.png").is_file()
+
+
+def test_a_table_carries_the_number_it_is_cited_by_into_its_title(
+    every_question: Path,
+) -> None:
+    """A table is cited from the page the way a chart is, and numbered apart."""
+    _analyze()
+
+    tabled = _index(every_question)["tables"][0]
+    assert tabled["number"] == "1.1"
+    assert tabled["title"] == "Table 1.1: How many times was each fruit picked"
+
+
+def test_a_table_pools_every_arm_of_every_question_it_reads(
+    every_question: Path,
+) -> None:
+    """Five arms over four questions, and no interval around what they add up to."""
+    _analyze()
+
+    rows = _index(every_question)["tables"][0]["rows"]
+    lychee = next(row for row in rows if row["label"] == "lychee")
+    assert lychee["cells"] == [
+        {"value": 15, "count": 15, "n": 20, "written": "15"},
+        {"value": 0.75, "count": 15, "n": 20, "written": "75.0%"},
+    ]
 
 
 def test_every_experiment_is_analyzed_in_one_pass(both_orders: Path) -> None:

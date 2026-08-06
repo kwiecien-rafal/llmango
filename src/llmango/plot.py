@@ -1,4 +1,4 @@
-"""Everything an experiment needs to draw a chart, and how a figure is written."""
+"""How a chart is drawn, how its numbers are tabled, and how a figure is written."""
 
 import re
 from collections import Counter
@@ -69,6 +69,7 @@ _PLOT_BAND_IN = 1.7
 _TURN = (-45.0, -90.0)
 _PANEL_TITLE_WEIGHT = "semibold"
 _FINE_SHARE = 0.1
+_FINEST_PLACES = 6
 _WHOLE_SHARE = 1.0
 _APART_POINTS = 1.0
 _VALUE_PT = 9.0
@@ -139,9 +140,13 @@ _SHARE_LABEL = "share of valid answers"
 
 def _write_share(value: float) -> str:
     """Write a share to one decimal, never as the zero a picked category is not."""
-    written = f"{value * 100:.1f}%"
+    percent = value * 100
+    places = next(
+        (place for place in range(1, _FINEST_PLACES + 1) if round(percent, place) > 0),
+        1,
+    )
 
-    return f"{value * 100:.2f}%" if value > 0 and written == "0.0%" else written
+    return f"{percent:.{places}f}%"
 
 
 def _write_column(value: float, group: list[float]) -> str:
@@ -186,11 +191,6 @@ def _write_count(value: float) -> str:
     return f"{round(value, 2):g}"
 
 
-def _write_count_column(value: float, _: list[float]) -> str:
-    """Write a count over its column, which is a count written the one way there is."""
-    return _write_count(value)
-
-
 @dataclass(frozen=True)
 class Unit:
     """What a chart's numbers are, since not every chart plots a share."""
@@ -198,11 +198,10 @@ class Unit:
     name: str
     write: Callable[[float], str]
     write_tick: Callable[[float], str]
-    write_column: Callable[[float, list[float]], str]
 
 
-SHARE = Unit("share", _write_share, _write_share_tick, _write_column)
-COUNT = Unit("count", _write_count, _write_count, _write_count_column)
+SHARE = Unit("share", _write_share, _write_share_tick)
+COUNT = Unit("count", _write_count, _write_count)
 
 
 @dataclass(frozen=True, order=True)
@@ -243,7 +242,7 @@ class Series:
 
 @dataclass(frozen=True)
 class Estimate:
-    """One named number and the interval around it, which is what a summary plots."""
+    """One named number and the interval around it, which is what a dot plots."""
 
     label: str
     value: float
@@ -252,15 +251,21 @@ class Estimate:
 
 
 @dataclass(frozen=True)
-class Drawn:
-    """One finished figure, and the numbers behind it the site puts in a table."""
+class Tabled:
+    """The numbers the site prints, whether or not a figure was drawn from them."""
 
-    figure: Figure
     title: str
     row_label: str
     unit: str
     columns: list[str]
     rows: list[Row]
+
+
+@dataclass(frozen=True)
+class Drawn(Tabled):
+    """One finished figure, and the numbers behind it the site puts in a table."""
+
+    figure: Figure
 
 
 @dataclass(frozen=True)
@@ -278,6 +283,21 @@ class ChartDef:
         return f"Chart {self.number}: {self.title}"
 
 
+@dataclass(frozen=True)
+class TableDef:
+    """One table an experiment declares: how it is cited, what it reads and writes."""
+
+    name: str
+    number: str
+    title: str
+    questions: tuple[str, ...]
+    build: Callable[[dict[str, Aggregate], str], "Tabled"]
+
+    def numbered_title(self) -> str:
+        """The title the table carries, opening with the number a page cites it by."""
+        return f"Table {self.number}: {self.title}"
+
+
 def distribution(
     cells: dict[str, Distribution],
     title: str,
@@ -289,6 +309,7 @@ def distribution(
     reference: float | None = None,
     horizontal: bool = False,
     zeros_written: bool = False,
+    ceiling: float | None = None,
 ) -> Drawn:
     """Draw labeled arms' category shares, and return the numbers behind them."""
     shown_categories = categories or _categories(cells.values())
@@ -306,6 +327,7 @@ def distribution(
             unit=SHARE,
             legend=legend,
             reference=reference,
+            ceiling=ceiling,
         )
         if horizontal
         else columns(
@@ -317,6 +339,7 @@ def distribution(
             legend=legend,
             category_icons=_pictured(shown_categories, category_icon),
             reference=reference,
+            ceiling=ceiling,
         )
     )
 
@@ -339,6 +362,7 @@ def question_distribution(
     category_icon: CategoryIcon | None = None,
     categories: list[str] | None = None,
     zeros_written: bool = False,
+    ceiling: float | None = None,
 ) -> Drawn:
     """Draw one question's arms, labeled by whichever of its dimensions varies."""
     arms = _arms(aggregate["distributions"])
@@ -352,6 +376,7 @@ def question_distribution(
         category_icon=category_icon,
         categories=categories,
         zeros_written=zeros_written,
+        ceiling=ceiling,
     )
 
 
@@ -404,48 +429,6 @@ def panels(
     )
 
 
-def summary(
-    cells: dict[str, dict[str, float]],
-    title: str,
-    value_label: str,
-    row_label: str,
-    counts: dict[str, dict[str, int]],
-    intervals: dict[str, dict[str, tuple[float, float]]],
-    series_color: SeriesColor,
-    unit: Unit = SHARE,
-) -> Drawn:
-    """Draw one number per named thing per series, which a cross-question chart has."""
-    shown_categories = list(
-        dict.fromkeys(name for series in cells.values() for name in series)
-    )
-    values = [
-        [series[category] for category in shown_categories] for series in cells.values()
-    ]
-    series = [
-        Series(label=label, color=series_color(label), values=row, labels=written)
-        for label, row, written in zip(
-            cells, values, _written_columns(values, unit), strict=True
-        )
-    ]
-    figure = columns(
-        category_labels=shown_categories,
-        series=series,
-        title=title,
-        value_label=value_label,
-        unit=unit,
-        legend=len(cells) > 1,
-    )
-
-    return Drawn(
-        figure=figure,
-        title=title,
-        row_label=row_label,
-        unit=unit.name,
-        columns=list(cells),
-        rows=_summary_rows(shown_categories, cells, counts, intervals, unit),
-    )
-
-
 def estimates(
     cells: dict[str, float],
     title: str,
@@ -482,6 +465,65 @@ def estimates(
         columns=[value_label],
         rows=_estimate_rows(plotted, counts, unit),
     )
+
+
+def table(
+    cells: dict[str, int],
+    total: int,
+    title: str,
+    row_label: str,
+    count_column: str,
+    share_column: str,
+    row_icon: CategoryIcon | None = None,
+) -> Tabled:
+    """Write what each name was counted and its share, with no figure drawn from it."""
+    return Tabled(
+        title=title,
+        row_label=row_label,
+        unit=COUNT.name,
+        columns=[count_column, share_column],
+        rows=[
+            _pooled_row(label, count, total, row_icon) for label, count in cells.items()
+        ],
+    )
+
+
+def _pooled_row(
+    label: str, count: int, total: int, row_icon: CategoryIcon | None
+) -> Row:
+    """One name's row: what it was counted, what share that is, and where its
+    picture is, which analyze writes out the way it writes out a figure."""
+    icon = row_icon(label) if row_icon is not None else None
+    row: Row = {
+        "label": label,
+        "cells": [_counted_cell(count, total), _pooled_cell(count, total)],
+    }
+    if icon is not None:
+        row["icon"] = icon
+
+    return row
+
+
+def _counted_cell(count: int, total: int) -> dict[str, Any]:
+    """One pooled count, written as the plain number of answers behind it."""
+    return {
+        "value": count,
+        "count": count,
+        "n": total,
+        "written": COUNT.write(count),
+    }
+
+
+def _pooled_cell(count: int, total: int) -> dict[str, Any]:
+    """One pooled number's share of the whole, and the counts it was taken from."""
+    value = round(count / total, _FINEST_PLACES) if total else 0.0
+
+    return {
+        "value": value,
+        "count": count,
+        "n": total,
+        "written": SHARE.write(value),
+    }
 
 
 def _series(
@@ -542,32 +584,6 @@ def _estimate_rows(
     ]
 
 
-def _summary_rows(
-    categories: list[str],
-    cells: dict[str, dict[str, float]],
-    counts: dict[str, dict[str, int]],
-    intervals: dict[str, dict[str, tuple[float, float]]],
-    unit: Unit,
-) -> list[Row]:
-    """Describe every plotted number, one row per named thing, for the table view."""
-    return [
-        {
-            "label": category,
-            "cells": [
-                {
-                    "value": series[category],
-                    "n": counts[label][category],
-                    "lo": intervals[label][category][0],
-                    "hi": intervals[label][category][1],
-                    **_written(unit, series[category], *intervals[label][category]),
-                }
-                for label, series in cells.items()
-            ],
-        }
-        for category in categories
-    ]
-
-
 def _written(unit: Unit, value: float, low: float, high: float) -> dict[str, str]:
     """Write a cell's number and its interval, so the site prints and never formats."""
     return {
@@ -622,6 +638,7 @@ def columns(
     legend: bool,
     category_icons: list[Path | None] | None = None,
     reference: float | None = None,
+    ceiling: float | None = None,
 ) -> Figure:
     """Draw one vertical bar chart, grouped when it carries several series."""
     icons: list[Path | None] = category_icons or [None] * len(category_labels)
@@ -646,7 +663,7 @@ def columns(
         value_label,
         unit,
         legend,
-        _top(series, reference, _headroom(series, turned_values)),
+        ceiling or _top(series, reference, _headroom(series, turned_values)),
     )
     if reference is not None:
         _reference(axes, reference, horizontal=False)
@@ -768,6 +785,7 @@ def bars(
     unit: Unit,
     legend: bool,
     reference: float | None = None,
+    ceiling: float | None = None,
 ) -> Figure:
     """Draw one horizontal bar chart, for categories too many to stand along x."""
     count = len(series)
@@ -787,7 +805,7 @@ def bars(
         value_label,
         unit,
         0.0,
-        _top(series, reference, _BAR_HEADROOM),
+        ceiling or _top(series, reference, _BAR_HEADROOM),
         legend,
     )
     if reference is not None:
@@ -1113,12 +1131,12 @@ def _share(cell: Distribution, category: str) -> float:
     return round(cell["counts"].get(category, 0) / total, 4)
 
 
-def _written_columns(plotted: list[list[float]], unit: Unit = SHARE) -> list[list[str]]:
+def _written_columns(plotted: list[list[float]]) -> list[list[str]]:
     """Write every column's number at the precision its own group turns out to need."""
     groups = [list(group) for group in zip(*plotted, strict=True)]
 
     return [
-        [unit.write_column(value, groups[slot]) for slot, value in enumerate(values)]
+        [_write_column(value, groups[slot]) for slot, value in enumerate(values)]
         for values in plotted
     ]
 

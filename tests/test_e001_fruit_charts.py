@@ -9,7 +9,9 @@ from llmango.aggregate import Aggregate, Distribution
 from llmango.experiments.e001_fruit.charts import (
     CHARTS,
     FRUIT_EMOJI,
+    TABLES,
     fruit_icon,
+    fruit_totals,
     language_drift,
     order_effect,
     randomness,
@@ -19,6 +21,7 @@ from llmango.experiments.e001_fruit.experiment import FruitEnum
 from llmango.plot import styled
 
 _TITLE = "Chart 1.1: a title the chart is drawn under"
+_TABLE_TITLE = "a title the table is written under"
 
 
 def _aggregate(question_id: str, langs: dict[str, Distribution]) -> Aggregate:
@@ -68,9 +71,8 @@ def test_every_chart_is_named_once_and_declares_what_it_reads() -> None:
         ("order_effect", "1.2", ("001a", "001b")),
         ("shuffled_choice", "1.3", ("001c",)),
         ("position_bias", "1.4", ("001c",)),
-        ("movement", "1.5", ("001a", "001b", "001c")),
-        ("schema_effect", "1.6", ("001d",)),
-        ("randomness", "1.7", ("001a", "001b", "001c", "001d")),
+        ("schema_effect", "1.5", ("001d",)),
+        ("randomness", "1.6", ("001a", "001b", "001c", "001d")),
     ]
     assert len({name for name, _, _ in declared}) == len(CHARTS)
     assert len({number for _, number, _ in declared}) == len(CHARTS)
@@ -233,6 +235,90 @@ def test_a_schema_arm_reads_by_the_language_its_schema_is_written_in() -> None:
         "native schema",
         "no schema",
     ]
+
+
+def test_every_table_is_named_once_and_declares_what_it_reads() -> None:
+    declared = [(entry.name, entry.number, entry.questions) for entry in TABLES]
+
+    assert declared == [("fruit_totals", "1.1", ("001a", "001b", "001c", "001d"))]
+    assert len({name for name, _, _ in declared}) == len(TABLES)
+    assert TABLES[0].numbered_title() == (
+        "Table 1.1: How many times was each fruit picked"
+    )
+
+
+def test_the_totals_table_pools_every_arm_of_every_question_it_reads() -> None:
+    """The table exists for the number no single arm holds: the whole run at once."""
+    built = fruit_totals(
+        {"001a": _aggregate("001a", {"en": _cell({"lychee": 3, "mango": 1})})}
+        | _schemas(),
+        _TABLE_TITLE,
+    )
+
+    cells = [row["cells"][0] for row in built.rows]
+    assert sum(cell["count"] for cell in cells) == 20
+    assert {cell["n"] for cell in cells} == {20}
+    assert built.row_label == "fruit"
+    assert built.columns == ["times picked", "share of all answers"]
+
+
+def test_the_totals_table_reads_most_picked_first_over_every_fruit_offered() -> None:
+    """Ranked, the table is the summary; a fruit on nothing is the loser it names."""
+    built = fruit_totals(
+        {"001a": _aggregate("001a", {"en": _cell({"lychee": 3, "mango": 1})})}
+        | _schemas(),
+        _TABLE_TITLE,
+    )
+
+    assert [row["label"] for row in built.rows] == [
+        "lychee",
+        "apple",
+        "banana",
+        "mango",
+        "grape",
+        "orange",
+        "pineapple",
+        "pomegranate",
+        "strawberry",
+        "watermelon",
+    ]
+
+
+def test_the_totals_table_writes_out_a_fruit_that_was_never_picked() -> None:
+    """A chart drops an empty slot; here the zero is the whole point of the row."""
+    built = fruit_totals(
+        {"001a": _aggregate("001a", {"en": _cell({"lychee": 4})})}, _TABLE_TITLE
+    )
+
+    never = next(row for row in built.rows if row["label"] == "orange")
+    assert never["cells"] == [
+        {"value": 0, "count": 0, "n": 4, "written": "0"},
+        {"value": 0.0, "count": 0, "n": 4, "written": "0.0%"},
+    ]
+    assert len(built.rows) == len(FRUIT_EMOJI)
+
+
+def test_every_fruit_in_the_totals_table_is_pictured_beside_its_name() -> None:
+    """The row points at the same vendored picture the charts draw that fruit with."""
+    built = fruit_totals(
+        {"001a": _aggregate("001a", {"en": _cell({"lychee": 3, "other": 1})})},
+        _TABLE_TITLE,
+    )
+
+    pictured = {row["label"]: row.get("icon") for row in built.rows}
+    assert pictured["other"] is None
+    assert all(pictured[fruit] == fruit_icon(fruit) for fruit in FRUIT_EMOJI)
+
+
+def test_an_answer_outside_the_fruit_list_is_tabled_last_when_there_is_one() -> None:
+    """A free-text arm may answer something else, and it sorts under the ten."""
+    built = fruit_totals(
+        {"001a": _aggregate("001a", {"en": _cell({"lychee": 3, "other": 1})})},
+        _TABLE_TITLE,
+    )
+
+    assert built.rows[-1]["label"] == "other"
+    assert built.rows[-1]["cells"][0]["count"] == 1
 
 
 def test_the_experiment_package_does_not_pull_in_matplotlib() -> None:

@@ -2603,7 +2603,7 @@ z
    </g>
   </g>
   <g id="text_80">
-   <!-- Chart 1.6: Answer distribution by -->
+   <!-- Chart 1.5: Answer distribution by -->
    <g style="fill: #767676" transform="translate(49.894531 14.179478) scale(0.13 -0.13)">
     <defs>
      <path id="DejaVuSans-26" d="M 4122 4306 
@@ -2714,7 +2714,7 @@ z
     <use xlink:href="#DejaVuSans-3" transform="translate(274.796875 0)"/>
     <use xlink:href="#DejaVuSans-14" transform="translate(306.578125 0)"/>
     <use xlink:href="#DejaVuSans-11" transform="translate(370.203125 0)"/>
-    <use xlink:href="#DejaVuSans-19" transform="translate(401.984375 0)"/>
+    <use xlink:href="#DejaVuSans-18" transform="translate(401.984375 0)"/>
     <use xlink:href="#DejaVuSans-1d" transform="translate(465.609375 0)"/>
     <use xlink:href="#DejaVuSans-3" transform="translate(499.296875 0)"/>
     <use xlink:href="#DejaVuSans-24" transform="translate(531.078125 0)"/>

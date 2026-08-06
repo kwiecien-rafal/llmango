@@ -23,6 +23,7 @@ export type Cell = {
 export type Row = {
   label: string;
   cells: Cell[];
+  icon?: string;
 };
 
 export type Chart = {
@@ -38,9 +39,21 @@ export type Chart = {
   rows: Row[];
 };
 
+export type Table = {
+  name: string;
+  number: string;
+  questions: string[];
+  title: string;
+  row_label: string;
+  unit: string;
+  columns: string[];
+  rows: Row[];
+};
+
 export type ChartIndex = {
   experiment: string;
   charts: Chart[];
+  tables: Table[];
 };
 
 const modules = import.meta.glob<ChartIndex>("../../public/charts/*/index.json", {
@@ -50,17 +63,31 @@ const modules = import.meta.glob<ChartIndex>("../../public/charts/*/index.json",
 
 const indexes: ChartIndex[] = Object.values(modules);
 
-/** One declared chart, or a build failure naming what the page asked for. */
-export function chart(experiment: string, name: string): Chart {
-  const index = indexes.find((entry) => entry.experiment === experiment);
-  if (!index) {
+/** One analyzed experiment, or a build failure naming what the page asked for. */
+function index(experiment: string): ChartIndex {
+  const found = indexes.find((entry) => entry.experiment === experiment);
+  if (!found) {
     throw new Error(
       `No charts for experiment ${experiment}. Run 'llmango analyze' first.`,
     );
   }
-  const found = index.charts.find((entry) => entry.name === name);
+  return found;
+}
+
+/** One declared chart, or a build failure naming what the page asked for. */
+export function chart(experiment: string, name: string): Chart {
+  const found = index(experiment).charts.find((entry) => entry.name === name);
   if (!found) {
     throw new Error(`No chart ${name} in experiment ${experiment}.`);
+  }
+  return found;
+}
+
+/** One declared table, or a build failure naming what the page asked for. */
+export function table(experiment: string, name: string): Table {
+  const found = index(experiment).tables.find((entry) => entry.name === name);
+  if (!found) {
+    throw new Error(`No table ${name} in experiment ${experiment}.`);
   }
   return found;
 }

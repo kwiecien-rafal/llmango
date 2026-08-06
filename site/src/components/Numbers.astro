@@ -1,0 +1,78 @@
+---
+/**
+ * The numbers the pipeline wrote, as the table a reader can copy out of.
+ *
+ * A figure keeps this behind a disclosure, beside the drawing it belongs to. A
+ * table the pipeline drew nothing for is this alone, so the markup lives here
+ * rather than in either of them.
+ *
+ * Annotated, every number carries the counts and the interval it came from,
+ * which is what makes a chart's table the record of that chart. A table that is
+ * itself the thing being read has those columns already, so it prints the
+ * numbers alone rather than writing each one twice.
+ */
+import { asides, chartSrc, type Row } from "../data/charts";
+
+interface Props {
+  experiment: string;
+  row_label: string;
+  columns: string[];
+  rows: Row[];
+  title?: string;
+  annotated?: boolean;
+}
+
+const {
+  experiment,
+  row_label,
+  columns,
+  rows,
+  title,
+  annotated = true,
+} = Astro.props;
+---
+
+<div class="scroll">
+  <table>
+    {title && <caption>{title}</caption>}
+    <thead>
+      <tr>
+        <th scope="col">{row_label}</th>
+        {columns.map((column) => <th scope="col">{column}</th>)}
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <tr>
+            <th scope="row">
+              {row.icon && (
+                <img
+                  class="icon"
+                  src={chartSrc(experiment, row.icon)}
+                  alt=""
+                  loading="lazy"
+                />
+              )}
+              {row.label}
+            </th>
+            {row.cells.map((cell) => (
+              <td>
+                {cell.written}
+                {annotated && (
+                  <span class="count">
+                    {cell.count === undefined
+                      ? `n = ${cell.n}`
+                      : `${cell.count} of ${cell.n}`}
+                    {cell.written_interval && `, 95% CI ${cell.written_interval}`}
+                    {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
+                  </span>
+                )}
+              </td>
+            ))}
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

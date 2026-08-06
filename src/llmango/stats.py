@@ -40,14 +40,6 @@ def distance_from_uniform(counts: Sequence[int], support: int) -> float:
     return round(distance / 2.0, 4)
 
 
-def total_variation(left: Sequence[int], right: Sequence[int]) -> float:
-    """Total variation between two arms' answers over one shared category order."""
-    first, second = _shares(left), _shares(right)
-    paired = zip(first, second, strict=True)
-
-    return round(sum(abs(one - other) for one, other in paired) / 2.0, 4)
-
-
 def jensen_shannon(left: Sequence[int], right: Sequence[int]) -> float:
     """Jensen-Shannon divergence in bits between two arms over one category order."""
     first, second = _shares(left), _shares(right)
@@ -93,15 +85,6 @@ def effective_choices_interval(
 ) -> tuple[float, float]:
     """The 95% bootstrap interval around how many options an arm chose among."""
     return _bootstrap([counts], lambda arms: effective_choices(arms[0], support), draws)
-
-
-def total_variation_interval(
-    left: Sequence[int], right: Sequence[int], draws: int = BOOTSTRAP_DRAWS
-) -> tuple[float, float]:
-    """The 95% bootstrap interval around the distance between two arms."""
-    return _bootstrap(
-        [left, right], lambda arms: total_variation(arms[0], arms[1]), draws
-    )
 
 
 def homogeneity_pvalue(

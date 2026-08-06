@@ -18,7 +18,8 @@
  * same numbers out for the width it will actually get. The breakpoint matches
  * the one global.css takes the figure edge to edge at.
  */
-import { asides, chart as findChart, chartSrc } from "../data/charts";
+import { chart as findChart, chartSrc } from "../data/charts";
+import Numbers from "./Numbers.astro";
 
 interface Props {
   experiment: string;
@@ -41,36 +42,11 @@ const entry = findChart(experiment, chart);
   <figcaption>Datasets: {entry.questions.join(", ")}</figcaption>
   <details>
     <summary>Numbers behind this chart</summary>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">{entry.row_label}</th>
-            {entry.columns.map((column) => <th scope="col">{column}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {
-            entry.rows.map((row) => (
-              <tr>
-                <th scope="row">{row.label}</th>
-                {row.cells.map((cell) => (
-                  <td>
-                    {cell.written}
-                    <span class="count">
-                      {cell.count === undefined
-                        ? `n = ${cell.n}`
-                        : `${cell.count} of ${cell.n}`}
-                      {cell.written_interval && `, 95% CI ${cell.written_interval}`}
-                      {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
-                    </span>
-                  </td>
-                ))}
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <Numbers
+      experiment={experiment}
+      row_label={entry.row_label}
+      columns={entry.columns}
+      rows={entry.rows}
+    />
   </details>
 </figure>
