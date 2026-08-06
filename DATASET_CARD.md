@@ -21,16 +21,18 @@ Every question shares its experiment's columns, so splits within a config compar
 
 ### e001_fruit
 
-An LLM is prompted to pick one fruit out of ten, randomly. Different splits have different arms, which are combinations of the prompt (and the language they are in), response schemas, and whether the given fruit order is fixed or shuffled.
+An LLM is prompted to pick one fruit out of ten, randomly. Different splits have different arms, which are combinations of the prompt (and the language they are in), response schemas, and whether the given fruit order is fixed or shuffled. Seventeen arms in total, each sampled 2 000 times, for 34 000 rows.
 
 | Split | Languages | Response schema | List order |
 | --- | --- | --- | --- |
-| `001a` | en, pl, ja | `FruitChoice` | fixed |
-| `001b` | en | `FruitChoice` | a second fixed order |
-| `001c` | en, pl, ja | `FruitChoice` | shuffled per sample |
-| `001d` | pl | `FruitChoice`, `WyborOwocu`, none | shuffled per sample |
+| `001a` | en, pl, ja | English schema | fixed |
+| `001b` | en, pl, ja | English schema | a second fixed order |
+| `001c` | en, pl, ja | English schema | shuffled per sample |
+| `001d` | en, pl, ja | English schema, native schema, none | shuffled per sample |
 
-`001a` is the baseline distribution. `001b` re-asks it in English under a different fixed order, which separates a preference for a fruit from a preference for a position. `001c` reshuffles the list for every sample, which removes position as a confound within a language. `001d` asks the same Polish prompt under an English-named schema, a Polish-named schema, and no schema at all, leaving the response schema as the only variable; its prompt adds a "one fruit name only" instruction, because the schemaless arm has nothing else constraining it.
+`001a` is the baseline distribution. `001b` re-asks it in all three languages under a different fixed order, which separates a preference for a fruit from a preference for a position. `001c` reshuffles the list for every sample, which removes position as a confound within a language. `001d` asks each language under the English schema, under that language's own schema, and under no schema at all, leaving the response schema as the only variable. English contributes two arms rather than three, because its native schema is the English schema. Every `001d` prompt adds a "one fruit name only" instruction, because the schemaless arm has nothing else constraining it.
+
+A native schema's name is ASCII, because the provider constrains it: the Japanese one is written in romaji, and the Polish one drops its diacritic.
 
 A shuffle draws from a per-sample seed picked at random by the run. Every arm of a question shares that seed for a given sample, so the order shown is controlled rather than varying alongside the language. No seed is replayed across runs; the order each row actually saw is recorded in `prompt_inputs`.
 
