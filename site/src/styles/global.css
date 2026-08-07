@@ -14,6 +14,10 @@
   --frame: #8b6f4e;
   --frame-soft: color-mix(in srgb, var(--frame) 45%, transparent);
   --accent: #1b5fb0;
+  /* The prompt languages, in the colors an experiment's palette.py draws them. */
+  --lang-en: #0072b2;
+  --lang-pl: #d55e00;
+  --lang-ja: #009e73;
   color-scheme: light;
 }
 
@@ -217,17 +221,29 @@ figure.chart details {
 }
 
 /*
- * A table nothing was drawn from is read as the figure itself: it is titled over
- * its own columns rather than beneath a picture, and it is only as wide as the
- * numbers in it, since a table stretched across the text column reads as spacing
- * rather than as rows.
+ * A drawing is given the width it was drawn at. Everything else in a frame -
+ * a table of numbers, a prompt, a schema - is only as wide as the characters in
+ * it, since either one stretched across the text column reads as spacing rather
+ * than as rows.
  */
 
-figure.chart.numbers {
+figure.chart.fit {
   width: fit-content;
   max-width: 100%;
   margin-inline: auto;
 }
+
+/* Zero wide, then filled: a long caption wraps into the frame instead of setting it. */
+figure.chart.fit figcaption {
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
+}
+
+/*
+ * A table nothing was drawn from is read as the figure itself: it is titled over
+ * its own columns rather than beneath a picture.
+ */
 
 figure.chart.numbers table {
   width: auto;
@@ -271,13 +287,65 @@ figure.chart details[open] summary {
 }
 
 /*
+ * Panes: what was sent, one language per row, read across the rows rather than
+ * down one. The language's chart color is the rail rather than the label's ink,
+ * so no text on the page depends on a hue to be read.
+ */
+
+.panes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pane {
+  border-left: 4px solid var(--lang);
+  padding: 0.85rem 1rem;
+}
+
+.pane + .pane {
+  border-top: 1px solid var(--frame-soft);
+}
+
+.pane .tag {
+  margin: 0 0 0.45rem;
+  color: var(--ink-secondary);
+  font-size: 0.85rem;
+}
+
+.pane .tag b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pane pre {
+  margin: 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.pane pre.wrapped {
+  white-space: pre-wrap;
+}
+
+.pane mark {
+  background: color-mix(in srgb, var(--lang) 22%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0.1em 0.15em;
+  box-decoration-break: clone;
+}
+
+/*
  * Once the shell is narrower than the track it wants, the margin beside a chart
  * is worth less than the chart is. The figure spans the viewport and keeps only
  * the borders that still separate it from the text above and below it.
  */
 
 @media (max-width: 54.5rem) {
-  figure.chart:not(.numbers) {
+  figure.chart:not(.fit) {
     margin-inline: -1.25rem;
     border-inline-width: 0;
     border-radius: 0;

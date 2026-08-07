@@ -6,7 +6,22 @@ type: "article"
 ---
 
 import Figure from "../../components/Figure.astro";
+import Prompts from "../../components/Prompts.astro";
+import Schema from "../../components/Schema.astro";
+import Schemas from "../../components/Schemas.astro";
 import Table from "../../components/Table.astro";
+
+export const fruitList001a = {
+  en: "mango, apple, banana, pomegranate, strawberry, orange, watermelon, grape, pineapple, lychee",
+  pl: "mango, jabłko, banan, granat, truskawka, pomarańcza, arbuz, winogrono, ananas, liczi",
+  ja: "マンゴー, りんご, バナナ, ザクロ, いちご, オレンジ, スイカ, ぶどう, パイナップル, ライチ",
+};
+
+export const fruitList001d = {
+  en: "watermelon, lychee, pomegranate, pineapple, strawberry, mango, apple, grape, banana, orange",
+  pl: "arbuz, liczi, granat, ananas, truskawka, mango, jabłko, winogrono, banan, pomarańcza",
+  ja: "スイカ, ライチ, ザクロ, パイナップル, いちご, マンゴー, りんご, ぶどう, バナナ, オレンジ",
+};
 
 # 001: fruit
 
@@ -18,7 +33,9 @@ But can the answer meaningfully shift when you prompt in a different language, o
 
 <nav class="toc">
 
-- [scope and setup](#scope-and-setup)
+- [scope and experiment setup](#scope-and-experiment-setup)
+  - [prompts](#prompts)
+  - [structured response](#structured-response)
   - [questions](#questions)
 - [001a: same prompt in different languages](#001a-same-prompt-in-different-languages)
 - [001b: same fruits in a different fixed order](#001b-same-fruits-in-a-different-fixed-order)
@@ -36,13 +53,24 @@ The scope is three languages: **English**, **Polish** and **Japanese**. There wa
 
 Every prompt in this experiment asks the same thing: *here is a list of ten fruits, pick one at random*. The ten fruits never change - **apple**, **banana**, **orange**, **mango**, **grape**, **strawberry**, **watermelon**, **pineapple**, **lychee** and **pomegranate**. What changes between questions is the order the fruits are shown in, the language they are written in, and the structure the model has to answer in.
 
-[TODO: Structure(i) - explain and mention that 001a-001c use the same en schema, and we test different ones in 001, which is why we had to modify the prompt used a little.]
-
-[TODO: FILL MAIN PROMPT + 001d PROMPT]
-
 I prompted only one single model, **gpt-5.6-luna**, at [TODO: temperature(i)] **1.0**. Comparing models would be a perfectly good experiment, but I chose not to do it in this one. A second model is a second source of variance, and I wanted every difference to come from the setup alone.
 
 The unit compared throughout is an **arm**: one pairing of a language and a response schema, inside one question. 001a is asked in three languages under one schema, so it has three arms. 001d is asked in three languages as well, but not every language gets every schema there, so it has eight arms. That makes **seventeen** arms, and each one was invoked **2 000** times. In total it amounts to **34 000** responses behind everything you are about to read.
+
+### prompts
+
+<Prompts
+  experiment="e001_fruit"
+  question="001a"
+  inputs={{ fruit_list: fruitList001a }}
+  note="the fixed order 001a declares"
+/>
+
+### structured response
+
+<Schemas experiment="e001_fruit">
+  <Schema lang="en" name="FruitChoice" field="fruit" />
+</Schemas>
 
 ### questions
 
@@ -144,9 +172,19 @@ Turns out, *very* bad. It was only picked four times, and in Polish only! You ca
 
 The last variable left to move is the response format. This question has the most arms of any question: 8 arms. One for each language, and each language uses a base English schema, a schema in its native language, and a free-text response. Given English is already in its native language using the base schema, it has one arm less than the other two languages. Also, this question is ran with the fruit list order shuffled independently each time, just like 001c.
 
-[HERE, 3 NATIVE SCHEMAS NEXT TO EACHOTHER]
+<Prompts
+  experiment="e001_fruit"
+  question="001d"
+  base="001a"
+  inputs={{ fruit_list: fruitList001d }}
+  note="one of the 3 628 800 orders it drew from, redrawn for every request"
+/>
 
-Thing to note: the Japanese schema is written in romaji, not any of the Japanese alphabets. The schema's name is constrained to ASCII by the API. Polish name lost its ó to the same rule.
+<Schemas experiment="e001_fruit">
+  <Schema lang="en" name="FruitChoice" field="fruit" />
+  <Schema lang="pl" name="WyborOwocu" field="owoc" />
+  <Schema lang="ja" name="KudamonoSentaku" field="kudamono" />
+</Schemas>
 
 <Figure
   experiment="e001_fruit"

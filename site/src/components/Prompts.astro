@@ -1,0 +1,80 @@
+---
+/** One question's prompt file per language, as sent, with what `base` lacks marked. */
+import { type Language } from "../data/languages";
+import { prompt, prompts } from "../data/prompts";
+
+interface Props {
+  experiment: string;
+  question: string;
+  inputs: Record<string, Record<Language, string>>;
+  base?: string;
+  note?: string;
+}
+
+const { experiment, question, inputs, base, note } = Astro.props;
+
+type Segment = { text: string; added: boolean };
+
+/** One stretch of a prompt with every input the runner fills written into it. */
+function fill(text: string, lang: Language, added: boolean): Segment {
+  return {
+    added,
+    text: text.replace(/\{(\w+)\}/g, (slot, name: string) => {
+      const value = inputs[name]?.[lang];
+      if (value === undefined) {
+        throw new Error(
+          `Question ${question} was given no ${lang} ${name} to fill ${slot} with.`,
+        );
+      }
+      return value;
+    }),
+  };
+}
+
+/** One prompt, with the tail it holds over the base question marked as added. */
+function segments(text: string, lang: Language): Segment[] {
+  if (base === undefined) {
+    return [fill(text, lang, false)];
+  }
+
+  const kept = prompt(experiment, base, lang).text;
+  if (!text.startsWith(kept)) {
+    throw new Error(
+      `Question ${question}'s ${lang} prompt does not extend ${base}'s.`,
+    );
+  }
+
+  const added = text.slice(kept.length);
+  const blank = added.length - added.trimStart().length;
+
+  return [
+    fill(kept + added.slice(0, blank), lang, false),
+    fill(added.slice(blank), lang, true),
+  ];
+}
+
+const rows = prompts(experiment, question).map((entry) => ({
+  ...entry,
+  segments: segments(entry.text, entry.lang),
+}));
+---
+
+<figure class="chart fit">
+  <ol class="panes">
+    {
+      rows.map((row) => (
+        <li class="pane" style={`--lang: var(--lang-${row.lang})`}>
+          <p class="tag">
+            <b>{row.name}</b> prompt
+          </p>
+          <pre class="wrapped">{row.segments.map((segment) =>
+            segment.added ? <mark>{segment.text}</mark> : segment.text,
+          )}</pre>
+        </li>
+      ))
+    }
+  </ol>
+  <figcaption>
+    {`prompts/${experiment}/${question}/{en,pl,ja}.md`}{note && ` - ${note}`}
+  </figcaption>
+</figure>

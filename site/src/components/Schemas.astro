@@ -1,0 +1,13 @@
+---
+/** The schemas a section is about, framed as one card over the module declaring them. */
+interface Props {
+  experiment: string;
+}
+
+const { experiment } = Astro.props;
+---
+
+<figure class="chart fit">
+  <div class="panes"><slot /></div>
+  <figcaption>{`src/llmango/experiments/${experiment}/experiment.py`}</figcaption>
+</figure>

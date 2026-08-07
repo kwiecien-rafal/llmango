@@ -1,0 +1,32 @@
+---
+/** One schema as the JSON the provider is handed, guillemets marking its language. */
+import { LANGUAGE_NAMES, type Language } from "../data/languages";
+
+interface Props {
+  lang: Language;
+  name: string;
+  field: string;
+}
+
+const { lang, name, field } = Astro.props;
+const title = field[0].toUpperCase() + field.slice(1);
+const payload = `{
+  "name": "«${name}»",
+  "schema": {
+    "additionalProperties": false,
+    "properties": {
+      "«${field}»": { "title": "«${title}»", "type": "string" }
+    },
+    "required": ["«${field}»"],
+    "title": "«${name}»",
+    "type": "object"
+  },
+  "strict": true
+}`;
+const segments = payload.split(/«([^»]*)»/);
+---
+
+<article class="pane" style={`--lang: var(--lang-${lang})`}>
+  <p class="tag"><b>{LANGUAGE_NAMES[lang]}</b> schema</p>
+  <pre>{segments.map((segment, index) => (index % 2 === 0 ? segment : <mark>{segment}</mark>))}</pre>
+</article>
