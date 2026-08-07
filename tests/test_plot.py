@@ -445,6 +445,45 @@ def test_every_plotted_estimate_carries_its_interval_into_the_table() -> None:
     )
 
 
+def test_an_estimate_chart_is_keyed_by_what_its_colors_stand_for() -> None:
+    """A dot's row names the arm, not the language its color encodes, so the key
+    is handed in rather than read off the rows the way a series chart reads it."""
+    drawn = estimates(
+        cells={"001a en": 1.0594, "001a pl": 2.6413},
+        title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
+        value_label="effective choices",
+        row_label="arm",
+        counts={"001a en": 300, "001a pl": 300},
+        intervals={"001a en": (1.0, 1.119), "001a pl": (2.4628, 2.7936)},
+        key={"en": "#0072B2", "pl": "#D55E00"},
+        unit=COUNT,
+        floor=1.0,
+    )
+
+    legend = drawn.figure.axes[0].get_legend()
+    assert legend is not None
+    assert [text.get_text() for text in legend.get_texts()] == ["en", "pl"]
+    assert [
+        to_hex(cast(Patch, handle).get_facecolor()) for handle in legend.legend_handles
+    ] == ["#0072b2", "#d55e00"]
+
+
+def test_an_estimate_chart_given_no_key_is_drawn_without_one() -> None:
+    drawn = estimates(
+        cells={"001a en": 1.0594},
+        title="how many of the 10 fruits each arm was choosing between",
+        series_color=_palette(),
+        value_label="effective choices",
+        row_label="arm",
+        counts={"001a en": 300},
+        intervals={"001a en": (1.0, 1.119)},
+        unit=COUNT,
+    )
+
+    assert drawn.figure.axes[0].get_legend() is None
+
+
 def test_a_distribution_is_always_written_as_a_share(languages: Aggregate) -> None:
     assert question_distribution(languages, _TITLE, _palette()).unit == "share"
 

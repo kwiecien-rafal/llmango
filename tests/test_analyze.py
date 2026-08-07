@@ -1,7 +1,9 @@
 """Tests for the analyze stage: what it draws, what it skips, and what it writes."""
 
 import json
+import re
 import xml.etree.ElementTree as ElementTree
+from base64 import b64decode
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +13,21 @@ from conftest import SUPPORT, build_distribution
 from llmango.aggregate import Distribution, _write_aggregate
 from llmango.analyze import AnalyzeOutcome, analyze_all
 from llmango.experiments import EXPERIMENTS
+from llmango.experiments.e001_fruit.charts import fruit_icon
 
 _EXPERIMENT = "e001_fruit"
 _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
+_IMAGE = re.compile(r"<image[^>]*>")
+_CARRIED = re.compile(r'xlink:href="data:image/png;base64,([^"]+)"')
+_FETCHED = re.compile(r'(?:xlink:)?href="(?!data:|#)')
+
+
+def _emoji() -> list[Path]:
+    """Every picture the fruit experiment illustrates a category with."""
+    icon = fruit_icon("grape")
+    assert icon is not None
+
+    return sorted(icon.parent.glob("*.png"))
 
 
 def _analyze() -> AnalyzeOutcome:
@@ -211,6 +225,51 @@ def test_every_chart_is_written_as_a_transparent_svg(baseline: Path) -> None:
     path = _charts(baseline) / "language_drift.svg"
     assert ElementTree.parse(path).getroot().tag == _SVG_ROOT
     assert "dc:date" not in path.read_text(encoding="utf-8")
+
+
+def test_a_label_is_drawn_as_one_shape_however_it_is_turned(baseline: Path) -> None:
+    """A turned <text> is rasterised through the glyph rasteriser and reads ragged."""
+    _analyze()
+    document = (_charts(baseline) / "language_drift.svg").read_text(encoding="utf-8")
+
+    assert "<text" not in document
+
+
+def test_a_chart_carries_each_icon_as_the_file_it_came_from(
+    every_question: Path,
+) -> None:
+    """Matplotlib redraws an image per placement, so its copy is not the one kept."""
+    _analyze()
+    document = (_charts(every_question) / "schema_effect.svg").read_text(
+        encoding="utf-8"
+    )
+    drawn = {icon.read_bytes() for icon in _emoji()}
+
+    carried = [b64decode(found) for found in _CARRIED.findall(document)]
+    assert carried
+    assert all(found in drawn for found in carried)
+
+
+def test_a_carried_icon_is_placed_the_right_way_up(every_question: Path) -> None:
+    """Matplotlib stands its own upside-down raster back up; a file is not one."""
+    _analyze()
+    document = (_charts(every_question) / "schema_effect.svg").read_text(
+        encoding="utf-8"
+    )
+
+    for placed in _IMAGE.findall(document):
+        assert "scale(1 -1)" not in placed
+        assert 'y="-' not in placed
+
+
+def test_a_chart_reaches_the_page_as_one_file(every_question: Path) -> None:
+    """An SVG the page loads through <img> is not allowed to fetch anything."""
+    _analyze()
+    document = (_charts(every_question) / "schema_effect.svg").read_text(
+        encoding="utf-8"
+    )
+
+    assert not _FETCHED.search(document)
 
 
 def test_redrawing_unchanged_aggregates_rewrites_an_identical_file(

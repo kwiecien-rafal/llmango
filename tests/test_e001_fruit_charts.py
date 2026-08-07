@@ -213,6 +213,17 @@ def test_the_randomness_chart_colors_every_arm_by_the_language_it_was_asked_in()
     assert len({dot.get_color() for dot in dots}) == 3
 
 
+def test_the_randomness_chart_says_what_its_three_colors_stand_for() -> None:
+    """Its rows name arms rather than languages, so the key every other chart of
+    these languages carries is the only thing that says which hue is which."""
+    with styled():
+        drawn = randomness(_schemas(), _TITLE)
+
+    legend = drawn.figure.axes[0].get_legend()
+    assert legend is not None
+    assert [text.get_text() for text in legend.get_texts()] == ["en", "ja", "pl"]
+
+
 def test_a_schema_arm_reads_by_the_language_its_schema_is_written_in() -> None:
     """FruitChoice, WyborOwocu and KudamonoSentaku are what the code calls 001d's
     three schemas, and a reader comparing them compares each one's language. The

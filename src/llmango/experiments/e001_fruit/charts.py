@@ -123,6 +123,7 @@ def randomness(aggregates: dict[str, Aggregate], title: str) -> Drawn:
             for name, (_, support, cell) in arms.items()
         },
         series_color=lambda name: language_color(arms[name][0]),
+        key=_language_key(arms),
         unit=COUNT,
         floor=_ONE_FRUIT_ALWAYS,
     )
@@ -249,6 +250,14 @@ def _named_arms(
         for question_id, aggregate in sorted(aggregates.items())
         for schema, langs in sorted(aggregate["distributions"].items())
         for lang, cell in sorted(langs.items())
+    }
+
+
+def _language_key(arms: dict[str, tuple[str, int, Distribution]]) -> dict[str, str]:
+    """What a dot's color stands for, since the arm it names carries no swatch."""
+    return {
+        lang: language_color(lang)
+        for lang in sorted({lang for lang, _, _ in arms.values()})
     }
 
 

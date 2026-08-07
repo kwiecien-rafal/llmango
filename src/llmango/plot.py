@@ -1,6 +1,7 @@
 """How a chart is drawn, how its numbers are tabled, and how a figure is written."""
 
 import re
+from base64 import b64encode
 from collections import Counter
 from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
@@ -92,7 +93,14 @@ _ICON_GAP_PT = 2.75
 _ICON_DROP_PT = 10.5
 _ICON_SOURCE_PX = 128.0
 _EXPORT_DPI = _ICON_SOURCE_PX * 72.0 / _ICON_PT
+_ICON_GID = "icon-"
 _HASHED_ID = re.compile(r'id="([A-Za-z]+[0-9a-f]{10})"')
+_EMBEDDED_ICON = re.compile(
+    rf'(<g id="{_ICON_GID}(\w+?)-\d+">\s*)<image xlink:href="'
+    r'data:image/png;base64,[^"]*"(?: id="[^"]*")?'
+    r' transform="scale\(1 -1\) translate\(0 -([\d.]+)\)"'
+    r' x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="\3"/>'
+)
 
 _STYLE: dict[RcKeyType, Any] = {
     "svg.hashsalt": "llmango",
@@ -122,6 +130,7 @@ WIDE = Canvas(width_in=8.3125, title_width_in=6.19)
 NARROW = Canvas(width_in=4.375, title_width_in=3.26)
 
 _canvas: ContextVar[Canvas] = ContextVar("canvas", default=WIDE)
+_drawn_icons: ContextVar[list[Path] | None] = ContextVar("drawn_icons", default=None)
 
 
 def _width() -> float:
@@ -130,6 +139,7 @@ def _width() -> float:
 
 
 Row = dict[str, Any]
+Key = dict[str, str]
 CategoryLabel = Callable[[str], str]
 CategoryIcon = Callable[[str], Path | None]
 SchemaLabel = Callable[[str], str]
@@ -437,6 +447,7 @@ def estimates(
     counts: dict[str, int],
     intervals: dict[str, tuple[float, float]],
     series_color: SeriesColor,
+    key: Key | None = None,
     unit: Unit = SHARE,
     floor: float = 0.0,
 ) -> Drawn:
@@ -458,6 +469,7 @@ def estimates(
             value_label,
             unit,
             floor,
+            key,
         ),
         title=title,
         row_label=row_label,
@@ -594,25 +606,30 @@ def _written(unit: Unit, value: float, low: float, high: float) -> dict[str, str
 
 @contextmanager
 def styled(canvas: Canvas = WIDE) -> Generator[None]:
-    """Apply the style and the width every chart is drawn and saved under."""
-    token = _canvas.set(canvas)
+    """Scope one chart: the style and width it is drawn at, and the icons it drew.
+
+    A chart is saved inside this rather than after it, because what the icons of
+    the chart being written are is only known while that chart is the one drawn.
+    """
+    canvas_token = _canvas.set(canvas)
+    icons_token = _drawn_icons.set([])
     try:
         with matplotlib.rc_context(_STYLE):
             yield
     finally:
-        _canvas.reset(token)
+        _drawn_icons.reset(icons_token)
+        _canvas.reset(canvas_token)
 
 
 def save(figure: Figure, path: Path) -> Path:
     """Save one figure as the transparent, reproducible SVG the site embeds."""
+    icons = {icon.stem: icon for icon in _drawn_icons.get() or []}
     figure.savefig(
-        path,
-        format="svg",
-        dpi=_EXPORT_DPI,
-        transparent=True,
-        metadata={"Date": None},
+        path, format="svg", dpi=_EXPORT_DPI, transparent=True, metadata={"Date": None}
     )
-    path.write_text(_settled_ids(path.read_text(encoding="utf-8")), encoding="utf-8")
+
+    document = _sourced_icons(path.read_text(encoding="utf-8"), icons)
+    path.write_text(_settled_ids(document), encoding="utf-8")
 
     return path
 
@@ -627,6 +644,33 @@ def _settled_ids(document: str) -> str:
         document = document.replace(found, numbered)
 
     return document
+
+
+def _sourced_icons(document: str, icons: dict[str, Path]) -> str:
+    """Carry each icon's own file, rather than the copy matplotlib resampled.
+
+    Matplotlib redraws an image into the SVG at the size and subpixel offset that
+    placement landed on, so ten fruits reach the file as dozens of slightly soft,
+    slightly different rasters. The source file is what is carried instead, once
+    per placement and untouched. It stays carried rather than linked because an
+    SVG a page loads through <img> is not allowed to fetch anything.
+
+    Matplotlib's own raster runs bottom row first and is stood back up by a flip.
+    A file does not, so the flip is undone: mirroring the box about y = 0 is what
+    the flip amounted to. The id it hashed for the raster goes with it.
+    """
+
+    def sourced(found: re.Match[str]) -> str:
+        opening, stem, _, x, y, side = found.groups()
+        top = y[1:] if y.startswith("-") else f"-{y}"
+        encoded = b64encode(icons[stem].read_bytes()).decode("ascii")
+
+        return (
+            f'{opening}<image xlink:href="data:image/png;base64,{encoded}" '
+            f'x="{x}" y="{top}" width="{side}" height="{side}"/>'
+        )
+
+    return _EMBEDDED_ICON.sub(sourced, document)
 
 
 def columns(
@@ -669,7 +713,7 @@ def columns(
         _reference(axes, reference, horizontal=False)
     _named(figure, axes, written, icons, stacked, worded=True)
     if legend:
-        _legend(figure, axes, series)
+        _legend(figure, axes, _series_key(series))
 
     _settle(figure)
     _draw_columns(
@@ -812,7 +856,7 @@ def bars(
         _reference(axes, reference, horizontal=True)
     _annotate_beside(axes, series, offsets)
     if legend:
-        _legend(figure, axes, series)
+        _legend(figure, axes, _series_key(series))
 
     _settle(figure)
     thickness = _thickness(axes, figure, _BAR_IN / pitch, horizontal=True)
@@ -858,13 +902,15 @@ def dots(
     value_label: str,
     unit: Unit,
     floor: float,
+    key: Key | None = None,
 ) -> Figure:
     """Draw every estimate as a dot on its own row, its interval the line under it."""
     slots = max(len(plotted), 1)
     end = _end(plotted, floor)
     labels = [estimate.label for estimate in plotted]
+    legend = bool(key)
     figure = Figure(
-        figsize=(_width(), _bar_height(slots, _DOT_ROW_IN, legend=False)),
+        figsize=(_width(), _bar_height(slots, _DOT_ROW_IN, legend)),
         layout="constrained",
     )
     axes = figure.add_subplot()
@@ -877,9 +923,11 @@ def dots(
         unit,
         floor,
         end,
-        legend=False,
+        legend,
     )
     axes.tick_params(axis="y", pad=_DOT_PT / 2.0 + _TICK_PAD_PT)
+    if key:
+        _legend(figure, axes, key)
     for slot, (estimate, color) in enumerate(zip(plotted, colors, strict=True)):
         axes.plot(
             [estimate.low, estimate.high],
@@ -1439,6 +1487,19 @@ def _named(
         _hung(axes, written, pictured)
 
 
+def _recorded(icon: Path) -> str:
+    """Note one placement of an icon, under the name its link will carry.
+
+    A chart draws the same fruit once per panel, so the placement is numbered
+    across the whole figure rather than within the panel it sits in.
+    """
+    placements: list[Path] = _drawn_icons.get() or []
+    _drawn_icons.set(placements)
+    placements.append(icon)
+
+    return f"{icon.stem}-{len(placements) - 1}"
+
+
 def _pictured_row(
     axes: Axes, written: list[Written], icons: list[Path | None], stacked: bool
 ) -> None:
@@ -1453,19 +1514,19 @@ def _pictured_row(
             if stacked
             else -(_written_width(written[slot].flat, _TICK_PT) + _ICON_GAP_PT) / 2.0
         )
-        axes.add_artist(
-            AnnotationBbox(
-                OffsetImage(image, zoom=_ICON_PT / image.shape[0]),
-                (slot, 0.0),
-                xybox=(beside, -_ICON_DROP_PT),
-                xycoords=("data", "axes fraction"),
-                boxcoords="offset points",
-                box_alignment=(0.5, 0.5),
-                pad=0.0,
-                frameon=False,
-                annotation_clip=False,
-            )
+        drawn = AnnotationBbox(
+            OffsetImage(image, zoom=_ICON_PT / image.shape[0]),
+            (slot, 0.0),
+            xybox=(beside, -_ICON_DROP_PT),
+            xycoords=("data", "axes fraction"),
+            boxcoords="offset points",
+            box_alignment=(0.5, 0.5),
+            pad=0.0,
+            frameon=False,
+            annotation_clip=False,
         )
+        drawn.set_gid(f"{_ICON_GID}{_recorded(icon)}")
+        axes.add_artist(drawn)
 
 
 def _hung(axes: Axes, written: list[Written], pictured: bool) -> None:
@@ -1619,18 +1680,16 @@ def _annotate_beside(axes: Axes, series: list[Series], offsets: list[float]) -> 
             )
 
 
-def _legend(
-    figure: Figure, axes: Axes, series: list[Series], above: float = 0.0
-) -> None:
-    """Key the series by swatch, so identity never rests on color alone."""
+def _legend(figure: Figure, axes: Axes, key: Key, above: float = 0.0) -> None:
+    """Key the colors by swatch, so identity never rests on color alone."""
     axes.legend(
-        handles=_swatches(series),
+        handles=_swatches(key),
         loc="lower right",
         bbox_to_anchor=(1.0, 1.01),
         bbox_transform=axes.transAxes
         + ScaledTranslation(0.0, above / 72.0, figure.dpi_scale_trans),
         borderaxespad=0.0,
-        ncols=len(series),
+        ncols=len(key),
         frameon=False,
         handlelength=1.1,
         handleheight=1.1,
@@ -1638,16 +1697,21 @@ def _legend(
     )
 
 
-def _keyed(order: list[str], drawn: list[Series]) -> list[Series]:
-    """One series per label a faceted figure draws, since its key names each once."""
-    found = {entry.label: entry for entry in drawn}
-
-    return [found[label] for label in order]
+def _series_key(series: list[Series]) -> Key:
+    """What every color a chart of series draws stands for, which is the series."""
+    return {entry.label: entry.color for entry in series}
 
 
-def _swatches(series: list[Series]) -> list[Patch]:
-    """One labeled swatch per series, which is what a key is made of."""
-    return [Patch(facecolor=entry.color, label=entry.label) for entry in series]
+def _keyed(order: list[str], drawn: list[Series]) -> Key:
+    """One entry per label a faceted figure draws, since its key names each once."""
+    found = _series_key(drawn)
+
+    return {label: found[label] for label in order}
+
+
+def _swatches(key: Key) -> list[Patch]:
+    """One labeled swatch per name a key carries, which is what a key is made of."""
+    return [Patch(facecolor=color, label=label) for label, color in key.items()]
 
 
 def _in_data_units(axes: Axes, pixels: float) -> tuple[float, float]:

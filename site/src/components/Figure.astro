@@ -6,6 +6,14 @@
  * reachable by a screen reader. The table is not an extra, it is how those
  * numbers stay readable, copyable and searchable.
  *
+ * Text is outlined rather than written because a chart turns some of its labels,
+ * and a browser rasterises a turned <text> through the glyph rasteriser: hinted
+ * along the turned axis and fringed by subpixel antialiasing, which reads as
+ * ragged next to the upright labels beside it. Outlines are filled geometry, so
+ * every label in the drawing is rasterised the same way whichever way it faces.
+ * Placing the SVG in the page rather than pointing an <img> at it changes none of
+ * that - measured, the two rasterise identically.
+ *
  * alt is required rather than optional, and a generated fallback is deliberately
  * not offered: a sentence describing the table's dimensions tells a screen
  * reader nothing about the chart. A page whose content is the figure plus its

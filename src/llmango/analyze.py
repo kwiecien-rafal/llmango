@@ -161,9 +161,8 @@ def _draw(
     file = f"{definition.name}.svg"
     narrow_file = f"{definition.name}--narrow.svg"
 
-    drawn = _render(definition, read, title, WIDE)
-    save(drawn.figure, directory / file)
-    save(_render(definition, read, title, NARROW).figure, directory / narrow_file)
+    drawn = _render(definition, read, title, WIDE, directory / file)
+    _render(definition, read, title, NARROW, directory / narrow_file)
 
     return Chart(
         name=definition.name,
@@ -180,11 +179,18 @@ def _draw(
 
 
 def _render(
-    definition: ChartDef, aggregates: dict[str, Aggregate], title: str, canvas: Canvas
+    definition: ChartDef,
+    aggregates: dict[str, Aggregate],
+    title: str,
+    canvas: Canvas,
+    path: Path,
 ) -> Drawn:
-    """Draw one chart at one width, under the style every chart is drawn in."""
+    """Draw one chart at one width and write it, under the style it is drawn in."""
     with styled(canvas):
-        return definition.draw(aggregates, title)
+        drawn = definition.draw(aggregates, title)
+        save(drawn.figure, path)
+
+    return drawn
 
 
 def _build(

@@ -115,28 +115,72 @@ code {
 
 /* Table of contents ------------------------------------------------------ */
 
+nav.toc {
+  --toc-indent: 1.15rem;
+  --toc-tick: 0.7rem;
+  --toc-line: 2px;
+  --toc-gap: 0.3rem;
+  --toc-row: calc(var(--toc-gap) + 0.75em);
+  line-height: 1.5;
+}
+
 nav.toc ul {
   list-style: none;
   padding: 0;
   margin: 0;
-  border-left: 2px solid var(--rule);
 }
 
 nav.toc li {
-  padding: 0.15rem 0 0.15rem 1rem;
+  position: relative;
+  padding: var(--toc-gap) 0 var(--toc-gap) var(--toc-indent);
 }
 
-nav.toc ul ul {
-  border-left: none;
-  margin: 0.15rem 0 0;
+nav.toc li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--toc-line);
+  background: var(--rule);
 }
 
 nav.toc a {
   text-decoration: none;
 }
 
-nav.toc a:hover {
+nav.toc a::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--toc-tick);
+  height: var(--toc-row);
+  border-left: var(--toc-line) solid var(--rule);
+  border-bottom: var(--toc-line) solid var(--rule);
+  border-bottom-left-radius: 0.4rem;
+}
+
+nav.toc > ul > li:first-child::before,
+nav.toc > ul > li:first-child > a::before {
+  top: var(--toc-row);
+}
+
+nav.toc > ul > li:first-child > a::before {
+  height: 0;
+  border-left: 0;
+  border-bottom-left-radius: 0;
+}
+
+nav.toc a:hover,
+nav.toc a:focus-visible {
   text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+nav.toc a:hover::before,
+nav.toc a:focus-visible::before {
+  border-color: var(--accent);
 }
 
 /* Figures ---------------------------------------------------------------- */
