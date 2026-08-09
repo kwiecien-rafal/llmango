@@ -300,7 +300,6 @@ figure.chart details[open] summary {
 
 .pane {
   border-left: 4px solid var(--lang);
-  padding: 0.85rem 1rem;
 }
 
 .pane + .pane {
@@ -308,18 +307,17 @@ figure.chart details[open] summary {
 }
 
 .pane .tag {
-  margin: 0 0 0.45rem;
-  color: var(--ink-secondary);
-  font-size: 0.85rem;
-}
-
-.pane .tag b {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: color-mix(in srgb, var(--frame) 12%, transparent);
   color: var(--ink);
   font-weight: 600;
+  font-size: 0.85rem;
 }
 
 .pane pre {
   margin: 0;
+  padding: 0.85rem 1rem;
   overflow-x: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.86rem;
@@ -440,4 +438,60 @@ a.card p {
   a.card:hover {
     transform: none;
   }
+}
+
+/* Footnotes -------------------------------------------------------------- */
+
+/*
+ * Markdown writes this section itself, numbered in the order the markers appear
+ * and linked both ways. Everything here is presentation: the marker is widened
+ * into something a thumb can hit, and the note it lands on is lit until the
+ * reader looks away, so a jump to the bottom of a long page shows which of the
+ * notes was asked for.
+ */
+
+sup:has(a[data-footnote-ref]) {
+  line-height: 0;
+}
+
+a[data-footnote-ref] {
+  padding: 0 0.2em;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+a[data-footnote-ref]:hover,
+a[data-footnote-backref]:hover {
+  text-decoration: underline;
+}
+
+section.footnotes {
+  border-top: 1px solid var(--rule);
+  margin-top: 3rem;
+  color: var(--ink-secondary);
+  font-size: 0.95rem;
+}
+
+section.footnotes ol {
+  padding-left: 1.2rem;
+}
+
+section.footnotes li {
+  padding: 0.35rem 0.6rem;
+  margin-left: -0.6rem;
+  border-radius: 6px;
+  scroll-margin-top: 2rem;
+}
+
+section.footnotes li:target {
+  background: color-mix(in srgb, var(--frame) 14%, transparent);
+}
+
+section.footnotes li p {
+  margin: 0;
+}
+
+a[data-footnote-backref] {
+  margin-left: 0.4em;
+  text-decoration: none;
 }

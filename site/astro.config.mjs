@@ -5,5 +5,13 @@ import mdx from "@astrojs/mdx";
 // verbatim, so no build step ever touches them.
 export default defineConfig({
   site: "https://llmango.rafalkwiecien.com",
+  // GFM footnotes name their own section, so it is named the way every other
+  // heading on a page is.
+  markdown: {
+    remarkRehype: {
+      footnoteLabel: "footnotes",
+      footnoteBackLabel: (index) => `back to reference ${index + 1}`,
+    },
+  },
   integrations: [mdx()],
 });

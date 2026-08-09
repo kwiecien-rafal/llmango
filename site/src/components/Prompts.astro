@@ -8,10 +8,9 @@ interface Props {
   question: string;
   inputs: Record<string, Record<Language, string>>;
   base?: string;
-  note?: string;
 }
 
-const { experiment, question, inputs, base, note } = Astro.props;
+const { experiment, question, inputs, base } = Astro.props;
 
 type Segment = { text: string; added: boolean };
 
@@ -64,9 +63,7 @@ const rows = prompts(experiment, question).map((entry) => ({
     {
       rows.map((row) => (
         <li class="pane" style={`--lang: var(--lang-${row.lang})`}>
-          <p class="tag">
-            <b>{row.name}</b> prompt
-          </p>
+          <p class="tag">{row.name} prompt</p>
           <pre class="wrapped">{row.segments.map((segment) =>
             segment.added ? <mark>{segment.text}</mark> : segment.text,
           )}</pre>
@@ -74,7 +71,4 @@ const rows = prompts(experiment, question).map((entry) => ({
       ))
     }
   </ol>
-  <figcaption>
-    {`prompts/${experiment}/${question}/{en,pl,ja}.md`}{note && ` - ${note}`}
-  </figcaption>
 </figure>

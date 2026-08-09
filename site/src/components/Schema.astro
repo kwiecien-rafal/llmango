@@ -27,6 +27,6 @@ const segments = payload.split(/«([^»]*)»/);
 ---
 
 <article class="pane" style={`--lang: var(--lang-${lang})`}>
-  <p class="tag"><b>{LANGUAGE_NAMES[lang]}</b> schema</p>
+  <p class="tag">{LANGUAGE_NAMES[lang]} schema</p>
   <pre>{segments.map((segment, index) => (index % 2 === 0 ? segment : <mark>{segment}</mark>))}</pre>
 </article>
