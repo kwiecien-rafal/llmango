@@ -71,6 +71,7 @@ _TURN = (-45.0, -90.0)
 _PANEL_TITLE_WEIGHT = "semibold"
 _FINE_SHARE = 0.1
 _FINEST_PLACES = 6
+_CELL_PLACES = 2
 _WHOLE_SHARE = 1.0
 _APART_POINTS = 1.0
 _VALUE_PT = 9.0
@@ -196,9 +197,19 @@ def _write_share_tick(value: float) -> str:
     return f"{round(value * 100, 1):g}%"
 
 
+def _write_share_cell(value: float) -> str:
+    """Write a share down a table column, every number carrying the same decimals."""
+    return f"{value * 100:.{_CELL_PLACES}f}%"
+
+
 def _write_count(value: float) -> str:
     """Write a count, dropping the decimals a whole number has no use for."""
     return f"{round(value, 2):g}"
+
+
+def _write_count_cell(value: float) -> str:
+    """Write a count down a table column, every number carrying the same decimals."""
+    return f"{value:.{_CELL_PLACES}f}"
 
 
 @dataclass(frozen=True)
@@ -208,10 +219,11 @@ class Unit:
     name: str
     write: Callable[[float], str]
     write_tick: Callable[[float], str]
+    write_cell: Callable[[float], str]
 
 
-SHARE = Unit("share", _write_share, _write_share_tick)
-COUNT = Unit("count", _write_count, _write_count)
+SHARE = Unit("share", _write_share, _write_share_tick, _write_share_cell)
+COUNT = Unit("count", _write_count, _write_count, _write_count_cell)
 
 
 @dataclass(frozen=True, order=True)
@@ -599,8 +611,8 @@ def _estimate_rows(
 def _written(unit: Unit, value: float, low: float, high: float) -> dict[str, str]:
     """Write a cell's number and its interval, so the site prints and never formats."""
     return {
-        "written": unit.write(value),
-        "written_interval": f"{unit.write(low)}–{unit.write(high)}",
+        "written": unit.write_cell(value),
+        "written_interval": f"{unit.write_cell(low)}–{unit.write_cell(high)}",
     }
 
 

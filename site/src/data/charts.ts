@@ -95,12 +95,3 @@ export function table(experiment: string, name: string): Table {
 export function chartSrc(experiment: string, file: string): string {
   return `/charts/${experiment}/${file}`;
 }
-
-/** Everything in a cell beyond the plotted number and the interval around it. */
-export function asides(cell: Cell): [string, number][] {
-  const plotted = ["value", "count", "n", "lo", "hi", "written", "written_interval"];
-  return Object.entries(cell).filter(
-    (entry): entry is [string, number] =>
-      !plotted.includes(entry[0]) && typeof entry[1] === "number",
-  );
-}

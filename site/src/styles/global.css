@@ -7,6 +7,7 @@
   --page: #e3dac9;
   --card: #efe8dc;
   --chart-surface: #f3f0e9;
+  --table-head: #e6dfd5;
   --ink: #14120e;
   --ink-secondary: #5a5346;
   --ink-muted: #8a8271;
@@ -360,6 +361,38 @@ figure.chart details[open] summary {
   padding: 0.75rem 1rem 1rem;
 }
 
+/*
+ * Behind a disclosure the table is the body, so it is given all of it: the frame
+ * edge is the table's edge, and the room a name needs beside it is that cell's
+ * own padding rather than a margin drawn around the whole table.
+ */
+
+figure.chart details .scroll {
+  padding: 0 0 1rem;
+}
+
+table.grouped thead tr:first-child th:first-child,
+table.grouped tbody th {
+  padding-inline: 1rem;
+}
+
+/*
+ * The bar under a table is the only thing that says the table goes on past the
+ * frame, so it is drawn at twice the browser's own height: the same bar, at a
+ * width worth noticing and easy to catch.
+ */
+
+.scroll::-webkit-scrollbar {
+  height: 30px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  background-clip: padding-box;
+  border: 8px solid transparent;
+  border-radius: 15px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -374,8 +407,10 @@ td {
   white-space: nowrap;
 }
 
+/* Headings read as the band the numbers hang from, the way a card's tag does. */
 thead th {
-  color: var(--ink-secondary);
+  background: var(--table-head);
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -383,10 +418,41 @@ tbody th {
   font-weight: 400;
 }
 
-td .count {
-  color: var(--ink-muted);
-  margin-left: 0.4rem;
-  font-size: 0.88em;
+/*
+ * A drawn column is three columns of numbers, so it is read as one: a rule opens
+ * the group, and its name, its headings and its numbers are all centred on the
+ * column they belong to. The sample the tallies are out of belongs to the whole
+ * column, so it is stated under the column's name rather than beside each of its
+ * numbers.
+ */
+
+table.grouped th:not(:first-child),
+table.grouped td {
+  text-align: center;
+  padding-inline: 0.75rem;
+}
+
+table.grouped .group {
+  border-left: 1px solid var(--rule);
+  padding-inline: 1.25rem;
+}
+
+/* The interval is the longest number in a group, so it is given the most room. */
+table.grouped .interval {
+  padding-inline: 1.25rem;
+}
+
+/* One group has the frame to itself, so it splits it evenly under its own name. */
+table.grouped.even thead tr + tr th,
+table.grouped.even td {
+  width: 30%;
+}
+
+table.grouped .sample {
+  display: block;
+  color: var(--ink-secondary);
+  font-weight: 400;
+  font-size: 0.82em;
 }
 
 tbody th .icon {

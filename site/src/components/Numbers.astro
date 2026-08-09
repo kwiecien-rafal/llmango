@@ -6,16 +6,21 @@
  * table the pipeline drew nothing for is this alone, so the markup lives here
  * rather than in either of them.
  *
- * Annotated, every number carries the counts and the interval it came from,
- * which is what makes a chart's table the record of that chart. A table that is
- * itself the thing being read has those columns already, so it prints the
- * numbers alone rather than writing each one twice.
+ * Annotated, a drawn column splits into the numbers behind one estimate: the
+ * number plotted, the tally it was counted from and the interval around it. Each
+ * is a column of its own under the name of the column drawn, so a reader compares
+ * one kind of number down a column rather than reading it out of a sentence
+ * written beside the last. A sample size the whole column shares is said once, in
+ * that column's heading, and only a column whose rows were counted out of
+ * different samples spends a column of its own on it. A table that is itself the
+ * thing being read carries those columns already, so it prints the numbers alone.
  */
-import { asides, chartSrc, type Row } from "../data/charts";
+import { chartSrc, type Row } from "../data/charts";
 
 interface Props {
   experiment: string;
   row_label: string;
+  unit: string;
   columns: string[];
   rows: Row[];
   title?: string;
@@ -25,25 +30,89 @@ interface Props {
 const {
   experiment,
   row_label,
+  unit,
   columns,
   rows,
   title,
   annotated = true,
 } = Astro.props;
+
+/** One drawn column: its name, what it was counted out of, its headings and numbers. */
+const groups = columns.map((column, index) => {
+  const cells = rows.map((row) => row.cells[index]);
+  const counted = cells.every((cell) => cell.count !== undefined);
+  const shared = new Set(cells.map((cell) => cell.n)).size === 1;
+
+  return {
+    name: column,
+    sample: shared ? `n = ${cells[0].n}` : undefined,
+    headings: [
+      unit,
+      ...(counted ? ["count"] : []),
+      ...(shared ? [] : ["n"]),
+      "95% CI",
+    ],
+    numbers: cells.map((cell) => [
+      cell.written,
+      ...(counted ? [cell.count ?? cell.n] : []),
+      ...(shared ? [] : [cell.n]),
+      cell.written_interval ?? "",
+    ]),
+  };
+});
 ---
 
 <div class="scroll">
-  <table>
+  <table class:list={{ grouped: annotated, even: groups.length === 1 }}>
     {title && <caption>{title}</caption>}
     <thead>
-      <tr>
-        <th scope="col">{row_label}</th>
-        {columns.map((column) => <th scope="col">{column}</th>)}
-      </tr>
+      {
+        annotated ? (
+          <Fragment>
+            <tr>
+              <th scope="col" rowspan="2">
+                {row_label}
+              </th>
+              {groups.map((group) => (
+                <th
+                  scope="colgroup"
+                  colspan={group.headings.length}
+                  class="group"
+                >
+                  {group.name}
+                  {group.sample && <span class="sample">{group.sample}</span>}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {groups.map((group) =>
+                group.headings.map((heading, index, headings) => (
+                  <th
+                    scope="col"
+                    class:list={{
+                      group: index === 0,
+                      interval: index === headings.length - 1,
+                    }}
+                  >
+                    {heading}
+                  </th>
+                )),
+              )}
+            </tr>
+          </Fragment>
+        ) : (
+          <tr>
+            <th scope="col">{row_label}</th>
+            {columns.map((column) => (
+              <th scope="col">{column}</th>
+            ))}
+          </tr>
+        )
+      }
     </thead>
     <tbody>
       {
-        rows.map((row) => (
+        rows.map((row, index) => (
           <tr>
             <th scope="row">
               {row.icon && (
@@ -56,20 +125,20 @@ const {
               )}
               {row.label}
             </th>
-            {row.cells.map((cell) => (
-              <td>
-                {cell.written}
-                {annotated && (
-                  <span class="count">
-                    {cell.count === undefined
-                      ? `n = ${cell.n}`
-                      : `${cell.count} of ${cell.n}`}
-                    {cell.written_interval && `, 95% CI ${cell.written_interval}`}
-                    {asides(cell).map(([key, value]) => `, ${value} ${key}`)}
-                  </span>
-                )}
-              </td>
-            ))}
+            {annotated
+              ? groups.map((group) =>
+                  group.numbers[index].map((number, at, numbers) => (
+                    <td
+                      class:list={{
+                        group: at === 0,
+                        interval: at === numbers.length - 1,
+                      }}
+                    >
+                      {number}
+                    </td>
+                  )),
+                )
+              : row.cells.map((cell) => <td>{cell.written}</td>)}
           </tr>
         ))
       }

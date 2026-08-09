@@ -907,7 +907,7 @@ def test_a_category_an_arm_never_picked_is_left_to_its_mark_to_say_so() -> None:
         "20%",
         "80%",
     ]
-    assert [cell["written"] for cell in _cells(drawn, "2")] == ["0.0%"]
+    assert [cell["written"] for cell in _cells(drawn, "2")] == ["0.00%"]
 
 
 def test_a_chart_may_write_out_the_zero_its_mark_stands_for() -> None:
@@ -1039,19 +1039,21 @@ def test_the_table_keeps_the_precision_the_chart_rounds_away() -> None:
     drawn_labels = sorted(text.get_text() for text in drawn.figure.axes[0].texts)
     tabled = sorted(cell["written"] for row in drawn.rows for cell in row["cells"])
     assert drawn_labels == ["2%", "98%"]
-    assert tabled == ["1.6%", "98.4%"]
+    assert tabled == ["1.60%", "98.40%"]
 
 
-def test_a_picked_category_is_never_tabled_as_the_zero_it_is_not() -> None:
-    """The guard that keeps a drawn share off zero has to reach the table too."""
+def test_a_table_writes_every_share_to_the_same_decimals() -> None:
+    """A column of numbers is read down, so each is written to the width of the
+    last. What a drawn label spends on being read at a glance the table spends on
+    lining up, and the count beside a share is what says a category was picked."""
     drawn = distribution(
         cells={"en": _cell({"apple": 4999, "banana": 1})},
         title="answer distribution (en)",
         series_color=_palette(),
     )
 
-    banana = _cells(drawn, "banana")[0]
-    assert banana["value"] > 0.0
+    apple, banana = _cells(drawn, "apple")[0], _cells(drawn, "banana")[0]
+    assert apple["written"] == "99.98%"
     assert banana["written"] == "0.02%"
 
 
@@ -1070,7 +1072,7 @@ def test_a_tabled_estimate_is_written_in_the_unit_its_chart_plots() -> None:
 
     cell = drawn.rows[0]["cells"][0]
     assert cell["written"] == "1.06"
-    assert cell["written_interval"] == "1–1.12"
+    assert cell["written_interval"] == "1.00–1.12"
 
 
 def _pooled(cells: dict[str, int], total: int = 34000) -> Any:
