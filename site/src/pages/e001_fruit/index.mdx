@@ -35,7 +35,7 @@ But can the answer meaningfully shift when you prompt in a different language, o
 
 - [scope and experiment setup](#scope-and-experiment-setup)
   - [prompts](#prompts)
-  - [structured response](#structured-response)
+  - [structured output](#structured-output)
   - [questions](#questions)
 - [001a: same prompt in different languages](#001a-same-prompt-in-different-languages)
 - [001b: same fruits in a different fixed order](#001b-same-fruits-in-a-different-fixed-order)
@@ -55,7 +55,7 @@ Every prompt in this experiment asks the same thing: *here is a list of ten frui
 
 I prompted a single model, **gpt-5.6-luna**, at temperature **1.0**. Comparing models would be a perfectly good experiment, but I chose not to do it in this one. A second model is a second source of variance, and I wanted every difference to come from the setup alone.
 
-The unit compared throughout is an **arm**: one pairing of a language and a response schema, inside one question. 001a is asked in three languages under one schema, so it has three arms. 001d is asked in three languages as well, but not every language gets every schema there, so it has eight arms. That makes **seventeen** arms, and each one was invoked **2 000** times. In total it amounts to **34 000** responses behind everything you are about to read.
+The unit compared throughout is an **arm**: one pairing of a language and a structured output schema, inside one question. 001a is asked in three languages under one schema, so it has three arms. 001d is asked in three languages as well, but not every language gets every schema there, so it has eight arms. That makes **seventeen** arms, and each one was invoked **2 000** times. In total it amounts to **34 000** LLM outputs behind everything you are about to read.
 
 ### prompts
 
@@ -65,9 +65,9 @@ The unit compared throughout is an **arm**: one pairing of a language and a resp
   inputs={{ fruit_list: fruitList001a }}
 />
 
-### structured response
+### structured output
 
-Structured output is a way of telling the model what shape its answer must take. Alongside the prompt, you pass a schema, a small JSON-formatted description of the fields you expect back, and the model's reply is constrained to a JSON object matching it. Instead of a sentence that may or may not contain a fruit name, every response is a single field holding one string. This is the typical workflow for mass data generation: when you are collecting thousands of answers, you want each one to land in the same field of the same shape, so parsing becomes a dictionary lookup instead of a guessing game. The schema used here is deliberately minimal:
+Structured output is a way of telling the model what shape its answer must take. Alongside the prompt, you pass a schema, a small JSON-formatted description of the fields you expect back, and the model's reply is constrained to a JSON object matching it. Instead of a sentence that may or may not contain a fruit name, every output is a single field holding one string. This is the typical workflow for mass data generation: when you are collecting thousands of answers, you want each one to land in the same field of the same shape, so parsing becomes a dictionary lookup instead of a guessing game. The schema used here is deliberately minimal:
 
 <Schemas>
   <Schema lang="en" name="FruitChoice" field="fruit" />
@@ -88,7 +88,7 @@ Structured output is a way of telling the model what shape its answer must take.
   - order: shuffled for every request
   - output format: structured. Base English schema for every language.
 - **001d: structured output vs free text output**
-  - question: Does invoking the structured response in LLMs affect their answer?
+  - question: Does invoking the structured output in LLMs affect their answer?
   - order: shuffled for every request
   - output format: structured using base English schema, structured using native language and free-text.
 
@@ -167,13 +167,13 @@ Turns out, *very* bad. It was only picked four times out of 6 000 requests, all 
 
 ## 001d: structured output vs free text output
 
-**Question:** Does invoking the structured response in LLMs affect their answer?
+**Question:** Does invoking the structured output in LLMs affect their answer?
 
 **TL;DR:** the language you write the schema in barely matters. Whether there is a schema at all matters a lot.
 
-The last variable left to move is the response format. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with no schema at all. For English the native schema is the base schema, so it gets one arm fewer than the other two. Like in 001c, the order of the fruit list was shuffled independently for every request.
+The last variable left to move is the output format. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with no schema at all. For English the native schema is the base schema, so it gets one arm fewer than the other two. Like in 001c, the order of the fruit list was shuffled independently for every request.
 
-Asking the LLM without passing any structured response format does not guarantee a response which consists only of chosen the fruit name, and is sometimes called a "free-text" response request. Because of that, I added two sentences to the prompt which act as guardrails. And since any tiny change to a prompt might change the model's answer in an unpredictable way, the new. bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
+Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of chosen the fruit name. Such kind of outputs may be sometimes reffered to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since any tiny change to a prompt might change the model's answer in an unpredictable way, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
 
 <Prompts
   experiment="e001_fruit"
@@ -196,7 +196,7 @@ Asking the LLM without passing any structured response format does not guarantee
 
 Reading the first panel against the second tells you what writing the schema in the prompt's own language did. Reading a fruit's column down all three panels tells you what removing the schema did. The first comparison is the boring one, which is good news.
 
-Polish under native schema looks like Polish under English schema. Mango is at 78.8% against 76.7%, lychee at 17.6% against 19.8%. Only 2.5% of answers would have to change hands to turn one arm into the other. Japanese is not quite as flat: lychee drops from 77.3% to 71.3% and mango climbs from 12.3% to 19.6%. I write the conclusion here with relief: you can keep writing your schemas in English.
+Polish under native schema looks like Polish under English schema. Mango is at 78.8% against 76.7%, lychee at 17.6% against 19.8%. Only 2.5% of answers would have to change hands to turn one arm into the other. Japanese is not quite as flat: lychee drops from 77.3% to 71.3% and mango climbs from 12.3% to 19.6%. I write the conclusion here with relief: **you can keep writing your schemas in English**.
 
 Taking the schema away is a different size of effect entirely: it moves 18% of the English answers, 26% of the Japanese ones and 35% of the Polish ones. English keeps its winning lychee, but swaps its runner-up. But Japanese and Polish free-text arms get as close to an actual choice as this experiment gets. Now, three fruits each hold a real share in Japanese, and Polish had two main choices within 6% of each other.
 
