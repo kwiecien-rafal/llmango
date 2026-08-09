@@ -243,17 +243,32 @@ figure.chart.fit figcaption {
 
 /*
  * A table nothing was drawn from is read as the figure itself: it is titled over
- * its own columns rather than beneath a picture.
+ * its own columns rather than beneath a picture, and it is the frame's body the
+ * way a table behind a disclosure is. Every rule and the band behind the headings
+ * run the full width of the frame, and the room the outer columns need is their
+ * own padding rather than a margin drawn around the whole table.
  */
 
 figure.chart.numbers table {
   width: auto;
 }
 
+figure.chart.numbers .scroll {
+  padding-inline: 0;
+}
+
 figure.chart.numbers caption {
-  padding: 0.4rem 0 0.9rem;
+  padding: 0.4rem 1rem 0.9rem;
   text-align: center;
   font-weight: 600;
+}
+
+figure.chart.numbers tr > :first-child {
+  padding-left: 1rem;
+}
+
+figure.chart.numbers tr > :last-child {
+  padding-right: 1rem;
 }
 
 figure.chart.numbers td,
