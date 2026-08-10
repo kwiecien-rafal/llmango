@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software or the dataset it produces, please cite it as below."
+title: "LLMango: visualizing AI behaviour"
+abstract: >-
+  A pipeline and blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization.
+type: software
+authors:
+  - family-names: "Kwiecień"
+    given-names: "Rafał"
+version: "0.1.0"
+license: MIT
+repository-code: "https://github.com/kwiecien-rafal/llmango"
+url: "https://llmango.rafalkwiecien.com"
+keywords:
+  - llm
+  - multilingual
+  - evaluation
+  - structured-outputs
+  - genai

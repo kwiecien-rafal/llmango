@@ -24,7 +24,7 @@ venv/
 data/*/raw/*
 !data/*/raw/.gitkeep
 
-# Normalized results, live inHuggingFace
+# Normalized results, live in HuggingFace
 data/*/normalized/*
 !data/*/normalized/.gitkeep
 
