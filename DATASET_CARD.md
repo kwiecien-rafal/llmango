@@ -1,6 +1,6 @@
 # LLMango responses
 
-This is a dataset used by LLMango: a blog dedicated to showcasing different behaviours of Large Langauge Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs. This dataset is every LLM response received, one row per call, with the prompt that produced it and the provider's verbatim request, and many more, included.
+This is a dataset used by LLMango: a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs. This dataset is every LLM response received, one row per call, with the prompt that produced it and the provider's verbatim response, and many more, included.
 
 - Charts and write-ups: https://llmango.rafalkwiecien.com
 - Pipeline that produced this: https://github.com/kwiecien-rafal/llmango
@@ -80,7 +80,7 @@ A shuffle draws from a per-sample seed picked at random by the run. Every arm of
 | `service_tier` | string | Service tier the call was served on |
 | `provider_created_at` | timestamp[us, UTC] | Creation time the provider reported |
 | `response_schema` | string | JSON Schema sent for this arm; null for free text |
-| `request_envelope` | string | Verbatim request body |
+| `request_envelope` | string | Request body |
 | `response_envelope` | string | Verbatim response body |
 
 **Usage and cost**
