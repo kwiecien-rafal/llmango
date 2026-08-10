@@ -44,7 +44,7 @@ def _response_format(schema: type[BaseModel]) -> dict[str, Any]:
 
 
 def _request_envelope(request: GenRequest) -> str:
-    """Serialize what is sent, never a seed: it would suppress randomness."""
+    """Rebuild the body as sent."""
     body: dict[str, Any] = {
         "model": request.model,
         "messages": [{"role": "user", "content": request.prompt}],
@@ -88,7 +88,7 @@ class OpenAIBackend(Backend):
         self._client = client or OpenAI(api_key=require_openai_key())
 
     def generate(self, request: GenRequest) -> GenResult:
-        """Generate one response, recording the verbatim bodies both ways."""
+        """Generate one response, recording the body sent and the one returned."""
         created_at = datetime.now(UTC)
         envelope = _request_envelope(request)
         messages: list[ChatCompletionMessageParam] = [
