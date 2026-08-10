@@ -2,7 +2,7 @@
 
 ![LLMango - visualizing AI behaviour](site/public/og.png)
 
-[website](https://llmango.rafalkwiecien.com) · [001: fruit](https://llmango.rafalkwiecien.com/e001_fruit) · [dataset](https://huggingface.co/datasets/rafalkwiecien/llmango)
+website · 001: fruit · [dataset](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
 </div>
 
@@ -64,7 +64,7 @@ The result of experiment 001_fruit can be summarized with this chart, which show
 
 ![Chart_1.6](site/public/charts/e001_fruit/randomness.svg)
 
-The full write-up is at [llmango.rafalkwiecien.com/e001_fruit](https://llmango.rafalkwiecien.com/e001_fruit).
+The full write-up is at <NOT_PUBLISHED_YET>
 
 ## What is in this repository
 
