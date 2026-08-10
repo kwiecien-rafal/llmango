@@ -126,7 +126,7 @@ So is it safe to say that *the model prefers lychee in English and pomegranate i
   alt="Two stacked panels, one per fixed option order, over the fruits some arm picked. Three columns per fruit in each panel, one per prompt language."
 />
 
-Three things to pick up from chart 1.2: English barely budged, Japanese changed its answer completely, and... mango! In **001a**, it was not even chosen once by any of the languages, and suddenly the Polish **001b** arm setup it **2 000 out of 2 000** times. Even the 8% for English and 5% for Japanese are high enough percentages to be considered an actual pick.
+Three things to pick up from chart 1.2: English barely budged, Japanese changed its answer completely, and... mango! In **001a**, it was not even chosen once by any of the languages, and suddenly the Polish **001b** arm picked it **2 000 out of 2 000** times. Even the 8% for English and 5% for Japanese are high enough percentages to be considered an actual pick.
 
 Based on charts 1.1 and 1.2 you may start to wonder, which one of the two is more important: the **fruit** itself, or the **position** it holds in the given order of fruits?
 
@@ -134,7 +134,7 @@ When conveying information, an important aspect to consider is the order of the 
 
 With that in mind, mango was in the first position in **001a**, and when **001b** moved it, the Polish arm defaulted to it. But mango moved from the *first* position to the *last*, so shouldn't that again impact the model's choice? Well, maybe it did. *Maybe* the last position is the most important one.
 
-But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly chose lychee, like it suddenly was able to choose it. I think analyzing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
+But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly choose lychee, like it suddenly was able to choose it. I think analyzing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
 
 One thing is undeniable: a reorder of the same ten fruits made two of the three languages answer something else entirely. Whatever else is true, "the model prefers pomegranate in Japanese" has stopped being a safe sentence to write down.
 
@@ -173,7 +173,7 @@ Turns out, *very* bad. It was only picked four times out of 6 000 requests, all 
 
 The last variable left to move is the **output format**. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with *no schema at all*. For English the native schema is the base schema, so it gets one arm fewer than the other two. Like in **001c**, the order of the fruit list was shuffled independently for every request.
 
-Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of chosen the fruit name. Such kind of outputs may be sometimes reffered to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
+Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of the fruit name. Such kind of outputs may be sometimes referred to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
 
 <Prompts
   experiment="e001_fruit"
@@ -247,4 +247,4 @@ The code and data behind this experiment are open-sourced. You can find the code
 
 [^position_effect]: In psychology this is the serial-position effect: when people recall items from a list, the first and last ones are remembered best, known respectively as the primacy and recency effects. Whether an LLM's position bias works by the same mechanism is not something this experiment can say. See [Serial-position effect](https://en.wikipedia.org/wiki/Serial-position_effect) on Wikipedia.
 
-[^entropy]: Shannon entropy measures the uncertainty in a probability distribution: H = −Σ pᵢ ln pᵢ, where pᵢ is the share of answers landing on option i. It is zero when one option always wins and highest when all options are equally likely. Taking eᴴ converts it back into a count of equally likely options, which is the number plotted here. See [Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_%28information_theory%29) on Wikipedia.
+[^entropy]: Shannon entropy measures the uncertainty in a probability distribution: H = −Σ pᵢ ln pᵢ, where pᵢ is the share of answers landing on option i. It is zero when one option always wins and highest when all options are equally likely. Taking eᴴ converts it back into a count of equally likely options, which is the number plotted here. H is not the plain count off the sample: entropy measured from a finite sample runs low, so it carries the Miller-Madow correction, which adds (k−1)/2n, where k is how many options the arm actually picked and n is how many times it was asked. At 2 000 samples that is worth under 0.004 of a choice - far smaller than any gap this chart is read for, though large enough to show in the second decimal of two arms. The corrected value is the one plotted. See [Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_%28information_theory%29) and [Entropy estimation](https://en.wikipedia.org/wiki/Entropy_estimation) on Wikipedia.
