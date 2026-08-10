@@ -163,7 +163,7 @@ Looking at chart 1.3, it turns out that mango was the favorite fruit when asked 
 Turns out, *very* bad. It was only picked four times out of 6 000 requests, all of them in Polish! Three things stand out from this chart:
   - The model **avoided position 1 like the plague**. It behaved in a very human-like way, refusing to pick the first option offered.
   - **Position 2** sits at **half** the average pick rate of the remaining positions, or below it. In Polish it is closer to a quarter.
-  - **Position 10** shows **the biggest difference between languages**. Japanese refuses it the hardest and English only mildly dips. Polish, on the other hand, ignores the idea entirely and picks the last fruit 11.2% of the time, higher than its previous position pick rate.
+  - **Position 10** shows **the biggest difference between languages**. Japanese refuses this slot the hardest and English only mildly dips compared to the previous position. Polish, on the other hand, ignores the idea entirely and picks the last fruit 11.2% of the time, higher than its previous position pick rate.
 
 ## 001d: structured output vs free text output
 
@@ -200,11 +200,11 @@ Polish under native schema looks like Polish under English schema. Mango is at 7
 
 Taking the schema away is a different size of effect entirely: it moves 18% of the English answers, 26% of the Japanese ones and 35% of the Polish ones. English keeps its winning lychee, but swaps its runner-up. But **Japanese and Polish free-text arms get as close to an actual choice as this experiment gets**. Now, three fruits each hold a real share in Japanese, and Polish had two main choices within 6% of each other.
 
-One more thing **001d** can be read for, and while I was expecting this shift, I didn't anticipate this much. **001d**'s English schema arms are essentially **001c** run again. It's the same shuffled list, same schema, differing only by the two guardrail sentences. The Polish **001d** arm agrees with its **001c** counterpart, but the English and Japanese arms do not. They move by **12.0%** and **16.1%** respectively, creating margins that cannot be blamed on sampling. This shows something every LLM experiment of this nature should always carry as a disclaimer - **you never know which additional word or sentence in your prompt, which you would swear should not have any effect on the outcome, does exactly that** (*has an effect on the outcome*).
+One more thing **001d** can be read for, and while I was expecting this shift, I didn't anticipate by how much. **001d**'s English schema arms are essentially **001c** run again. It's the same shuffled list, same schema, differing only by the two guardrail sentences. The Polish **001d** arm agrees with its **001c** counterpart, but the English and Japanese arms do not. They move by **12.0%** and **16.1%** respectively, creating margins that cannot be blamed on sampling. This shows something every LLM experiment of this nature should always carry as a disclaimer - **you never know which additional word or sentence in your prompt, which you would swear should not have any effect on the outcome, does exactly that** (*has an effect on the outcome*).
 
 ## conclusion: how much randomness is actually in there?
 
-**TL;DR:** not much, but you can do some things to make it better.
+**TL;DR:** not much, but you can do some things to improve it.
 
 To quantify all of the "randomness" takes above, let's ask of each arm whether there was *ever* a choice being made. The chart below converts each arm's answer distribution into its effective number of choices - the exponential of its Shannon entropy[^entropy], i.e. how many equally likely options would produce the same spread. A fair ten-sided die scores 10, a coin flip between two fruits scores 2, and a constant scores exactly 1.
 
