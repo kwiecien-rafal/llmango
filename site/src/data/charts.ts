@@ -1,12 +1,9 @@
 /**
  * The chart index written by `llmango analyze`, read at build time.
  *
- * Every number the site shows comes from here. The pipeline owns the numbers
- * and the drawings; this module only looks them up, so the site can never
- * disagree with the chart it is sitting next to.
- *
- * A chart is looked up by the experiment that declares it and the name it is
- * declared under, so a page cites a chart the same way the experiment names it.
+ * Every number the site shows comes from here. The pipeline owns the numbers and
+ * the drawings; this module only looks them up, by the experiment that declares a
+ * chart and the name it is declared under.
  */
 
 export type Cell = {

@@ -2,18 +2,10 @@
 /**
  * The numbers the pipeline wrote, as the table a reader can copy out of.
  *
- * A figure keeps this behind a disclosure, beside the drawing it belongs to. A
- * table the pipeline drew nothing for is this alone, so the markup lives here
- * rather than in either of them.
- *
- * Annotated, a drawn column splits into the numbers behind one estimate: the
- * number plotted, the tally it was counted from and the interval around it. Each
- * is a column of its own under the name of the column drawn, so a reader compares
- * one kind of number down a column rather than reading it out of a sentence
- * written beside the last. A sample size the whole column shares is said once, in
- * that column's heading, and only a column whose rows were counted out of
- * different samples spends a column of its own on it. A table that is itself the
- * thing being read carries those columns already, so it prints the numbers alone.
+ * Annotated, a drawn column splits into the estimate, the tally behind it and its
+ * interval, each a column of its own. A sample size the whole column shares is
+ * said once in its heading. A table that is itself the thing being read carries
+ * those columns already, so it prints the numbers alone.
  */
 import { chartSrc, type Row } from "../data/charts";
 

@@ -2,11 +2,8 @@
 /**
  * One table of numbers the pipeline wrote with no figure drawn from them.
  *
- * Some numbers are worth reading and not worth plotting. A total per category
- * over every arm is one of them: it is ten numbers with no comparison in it, and
- * a chart of it would draw one bar too tall to read the other nine against. It
- * still comes from the aggregates through analyze, so it cannot drift from the
- * charts around it the way a hand-written table on the page would.
+ * Some numbers are worth reading and not worth plotting. They still come from the
+ * aggregates through analyze, so they cannot drift from the charts around them.
  */
 import { table as findTable } from "../data/charts";
 import Numbers from "./Numbers.astro";

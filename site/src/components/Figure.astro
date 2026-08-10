@@ -2,29 +2,12 @@
 /**
  * One chart: the drawn SVG plus the table of numbers behind it.
  *
- * The SVG's text is outlined paths, so nothing in the image is selectable or
- * reachable by a screen reader. The table is not an extra, it is how those
- * numbers stay readable, copyable and searchable.
- *
- * Text is outlined rather than written because a chart turns some of its labels,
- * and a browser rasterises a turned <text> through the glyph rasteriser: hinted
- * along the turned axis and fringed by subpixel antialiasing, which reads as
- * ragged next to the upright labels beside it. Outlines are filled geometry, so
- * every label in the drawing is rasterised the same way whichever way it faces.
- * Placing the SVG in the page rather than pointing an <img> at it changes none of
- * that - measured, the two rasterise identically.
- *
- * alt is required rather than optional, and a generated fallback is deliberately
- * not offered: a sentence describing the table's dimensions tells a screen
- * reader nothing about the chart. A page whose content is the figure plus its
- * table passes alt="", which says the image adds nothing, instead of announcing
- * something uninformative that cannot be skipped.
- *
- * The two renditions are the same chart drawn for the two widths the page reads
- * it at. Point sizes are declared, not scaled, so a phone shown the wide drawing
- * would read it at half the type it was drawn in; the narrow drawing lays the
- * same numbers out for the width it will actually get. The breakpoint matches
- * the one global.css takes the figure edge to edge at.
+ * The SVG's text is outlined paths, so the table is not an extra - it is how
+ * those numbers stay readable, copyable and searchable. alt is required rather
+ * than generated: a sentence describing the table's dimensions tells a screen
+ * reader nothing, and a page whose content is the figure plus its table passes
+ * alt="". The two renditions are the same chart drawn at the two widths the page
+ * reads it at, since point sizes are declared rather than scaled.
  */
 import { chart as findChart, chartSrc } from "../data/charts";
 import Numbers from "./Numbers.astro";

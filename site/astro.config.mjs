@@ -1,12 +1,9 @@
 import { defineConfig } from "astro/config";
 import mdx from "@astrojs/mdx";
 
-// The charts under public/charts are written by `llmango analyze` and served
-// verbatim, so no build step ever touches them.
+// The charts under public/charts are written by `llmango analyze` and served verbatim.
 export default defineConfig({
   site: "https://llmango.rafalkwiecien.com",
-  // GFM footnotes name their own section, so it is named the way every other
-  // heading on a page is.
   markdown: {
     remarkRehype: {
       footnoteLabel: "footnotes",

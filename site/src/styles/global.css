@@ -1,7 +1,4 @@
-/*
- * Page chrome only. The charts are transparent SVGs carrying their own colors,
- * so nothing here restyles a chart.
- */
+/* Page chrome only. A chart carries its own colors, so nothing here restyles one. */
 
 :root {
   --page: #e3dac9;
@@ -31,19 +28,16 @@ body {
   line-height: 1.65;
 }
 
-/*
- * Two measures, not one. The shell is the widest a figure may be; prose sits at
- * its own reading measure inside it, so a chart breaks out of the column the
- * text is read in rather than being held to it.
- */
+/* Two measures: the shell is the widest a figure may be, prose is narrower. */
 
 .shell {
   max-width: 52rem;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 5rem;
+  padding: 2.5rem 1.25rem 3rem;
 }
 
 header.site,
+footer.site,
 main > :not(figure.chart) {
   max-width: 42rem;
   margin-inline: auto;
@@ -70,6 +64,75 @@ header.site a.brand {
 
 header.site a:hover {
   color: var(--accent);
+}
+
+footer.site {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  align-items: baseline;
+  justify-content: space-between;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.75rem;
+  margin-top: 4rem;
+  color: var(--ink-secondary);
+  font-size: 0.92rem;
+}
+
+footer.site .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+footer.site .brand img {
+  width: 1.5rem;
+  height: auto;
+}
+
+footer.site .contact {
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  gap: 0.3rem 1.25rem;
+}
+
+footer.site a {
+  color: var(--ink-secondary);
+  text-decoration: none;
+}
+
+footer.site a:hover {
+  color: var(--accent);
+}
+
+/* rem, not em, so the monogram does not shrink its own slot; dropped a hair to read as centred. */
+
+footer.site .contact a {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+footer.site .icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  translate: 0 0.06em;
+}
+
+footer.site svg.icon {
+  fill: currentColor;
+}
+
+footer.site .initials {
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 h1,
@@ -221,12 +284,7 @@ figure.chart details {
   border-top: 1px solid var(--frame-soft);
 }
 
-/*
- * A drawing is given the width it was drawn at. Everything else in a frame -
- * a table of numbers, a prompt, a schema - is only as wide as the characters in
- * it, since either one stretched across the text column reads as spacing rather
- * than as rows.
- */
+/* Anything but a drawing is only as wide as its characters: stretched, rows read as spacing. */
 
 figure.chart.fit {
   width: fit-content;
@@ -241,13 +299,7 @@ figure.chart.fit figcaption {
   min-width: 100%;
 }
 
-/*
- * A table nothing was drawn from is read as the figure itself: it is titled over
- * its own columns rather than beneath a picture, and it is the frame's body the
- * way a table behind a disclosure is. Every rule and the band behind the headings
- * run the full width of the frame, and the room the outer columns need is their
- * own padding rather than a margin drawn around the whole table.
- */
+/* A table nothing was drawn from is the figure itself: titled over its own columns. */
 
 figure.chart.numbers table {
   width: auto;
@@ -302,11 +354,7 @@ figure.chart details[open] summary {
   border-bottom: 1px solid var(--frame-soft);
 }
 
-/*
- * Panes: what was sent, one language per row, read across the rows rather than
- * down one. The language's chart color is the rail rather than the label's ink,
- * so no text on the page depends on a hue to be read.
- */
+/* One language per row. Its chart color is the rail, so no text depends on a hue to be read. */
 
 .panes {
   list-style: none;
@@ -352,11 +400,7 @@ figure.chart details[open] summary {
   box-decoration-break: clone;
 }
 
-/*
- * Once the shell is narrower than the track it wants, the margin beside a chart
- * is worth less than the chart is. The figure spans the viewport and keeps only
- * the borders that still separate it from the text above and below it.
- */
+/* Narrower than the track it wants, a figure is worth more than the margin beside it. */
 
 @media (max-width: 54.5rem) {
   figure.chart:not(.fit) {
@@ -376,11 +420,7 @@ figure.chart details[open] summary {
   padding: 0.75rem 1rem 1rem;
 }
 
-/*
- * Behind a disclosure the table is the body, so it is given all of it: the frame
- * edge is the table's edge, and the room a name needs beside it is that cell's
- * own padding rather than a margin drawn around the whole table.
- */
+/* Behind a disclosure the table is the body, so the frame edge is the table's edge. */
 
 figure.chart details .scroll {
   padding: 0 0 1rem;
@@ -391,11 +431,7 @@ table.grouped tbody th {
   padding-inline: 1rem;
 }
 
-/*
- * The bar under a table is the only thing that says the table goes on past the
- * frame, so it is drawn at twice the browser's own height: the same bar, at a
- * width worth noticing and easy to catch.
- */
+/* The only sign a table runs past the frame, so it is drawn at twice the browser's height. */
 
 .scroll::-webkit-scrollbar {
   height: 30px;
@@ -422,7 +458,6 @@ td {
   white-space: nowrap;
 }
 
-/* Headings read as the band the numbers hang from, the way a card's tag does. */
 thead th {
   background: var(--table-head);
   color: var(--ink);
@@ -433,13 +468,7 @@ tbody th {
   font-weight: 400;
 }
 
-/*
- * A drawn column is three columns of numbers, so it is read as one: a rule opens
- * the group, and its name, its headings and its numbers are all centred on the
- * column they belong to. The sample the tallies are out of belongs to the whole
- * column, so it is stated under the column's name rather than beside each of its
- * numbers.
- */
+/* A drawn column is three columns of numbers read as one: ruled, centred, its sample said once. */
 
 table.grouped th:not(:first-child),
 table.grouped td {
@@ -523,13 +552,7 @@ a.card p {
 
 /* Footnotes -------------------------------------------------------------- */
 
-/*
- * Markdown writes this section itself, numbered in the order the markers appear
- * and linked both ways. Everything here is presentation: the marker is widened
- * into something a thumb can hit, and the note it lands on is lit until the
- * reader looks away, so a jump to the bottom of a long page shows which of the
- * notes was asked for.
- */
+/* Markdown writes this section. Here the marker is widened and the note it lands on is lit. */
 
 sup:has(a[data-footnote-ref]) {
   line-height: 0;

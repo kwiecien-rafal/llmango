@@ -1,9 +1,4 @@
-/**
- * The prompt files the runs were sent from, read at build time.
- *
- * A page shows the prompt the pipeline sent rather than a copy of it, the same
- * way charts.ts shows the numbers the pipeline wrote.
- */
+/** The prompt files the runs were sent from, read at build time rather than copied. */
 
 import { LANGUAGES, LANGUAGE_NAMES, type Language } from "./languages";
 
