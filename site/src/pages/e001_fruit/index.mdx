@@ -1,7 +1,7 @@
 ---
 layout: ../../layouts/Article.astro
 title: "001_Fruit: does an LLM have language-based preferences?"
-description: "Experiment answering whether an LLM's answer meaningfully shifts when you prompt in a different language, or when you present information to them in a different manner."
+description: "Does an LLM's answer shift when you prompt it in another language, or reorder the choices it needs to choose from? Analysing 34 000 LLM responses across English, Polish and Japanese."
 type: "article"
 ---
 
@@ -40,7 +40,7 @@ But can the answer meaningfully shift when you prompt in a different language, o
 - [001a: same prompt in different languages](#001a-same-prompt-in-different-languages)
 - [001b: same fruits in a different fixed order](#001b-same-fruits-in-a-different-fixed-order)
 - [001c: same fruits in shuffled order](#001c-same-fruits-in-shuffled-order)
-- [001d: structured output vs free text output](#001d-structured-output-vs-free-text-output)
+- [001d: structured output vs free-text output](#001d-structured-output-vs-free-text-output)
 - [conclusion: how much randomness is actually in there?](#conclusion-how-much-randomness-is-actually-in-there)
 - [bonus round](#bonus-round)
 - [code and data](#code-and-data)
@@ -87,7 +87,7 @@ Structured output is a way of telling the model what shape its answer must take.
   - **question**: Across a large sample size, every order of choices presented to the LLM is shuffled. Does the answer get "more random"?
   - **order**: shuffled for every request
   - **output format**: structured. Base English schema for every language.
-- **001d: structured output vs free text output**
+- **001d: structured output vs free-text output**
   - **question**: Does requiring structured output in LLMs change their answer?
   - **order**: shuffled for every request
   - **output format**: structured using the base English schema, structured using the native-language schema, and free text.
@@ -98,7 +98,7 @@ Structured output is a way of telling the model what shape its answer must take.
 
 **TL;DR:** yes.
 
-Starting off with the first question: **001a**. It had three arms, one for each language, each paired with the base English schema.
+Starting off with the first question: **001a**. It has three arms, one for each language, each paired with the base English schema.
 
 <Figure
   experiment="e001_fruit"
@@ -116,9 +116,9 @@ So is it safe to say that *the model prefers lychee in English and pomegranate i
 
 **Question:** When presented with a different order of the same set of choices, will an LLM shift its answer?
 
-**TL;DR:** in English, the model was in fact choosing the fruit. In Polish and Japanese, it was choosing neither the fruit nor, as it turns out, the position.
+**TL;DR:** in English, the model is in fact choosing the fruit. In Polish and Japanese, it is choosing neither the fruit nor, as it turns out, the position.
 
-**001b**'s setup is **001a** with exactly one thing altered: a new fixed order of the presented fruits, which is again identical across all three languages and all 6 000 requests. This question is also still using only the base English schema for its structured output, and the wording of the prompts did not change whatsoever, besides the given order of the fruits.
+**001b**'s setup is **001a** with exactly one thing altered: a new fixed order of the presented fruits, again identical across all three languages and all 6 000 requests. The wording around that list did not change, and the structured output is still the base English schema.
 
 <Figure
   experiment="e001_fruit"
@@ -126,7 +126,7 @@ So is it safe to say that *the model prefers lychee in English and pomegranate i
   alt="Two stacked panels, one per fixed option order, over the fruits some arm picked. Three columns per fruit in each panel, one per prompt language."
 />
 
-Three things to pick up from chart 1.2: English barely budged, Japanese changed its answer completely, and... mango! In **001a**, it was not even chosen once by any of the languages, and suddenly the Polish **001b** arm picked it **2 000 out of 2 000** times. Even the 8% for English and 5% for Japanese are high enough percentages to be considered an actual pick.
+Three things to pick up from chart 1.2: English barely budges, Japanese changes its answer completely, and... mango! In **001a**, it is not chosen once by any of the languages, and suddenly the Polish **001b** arm picks it **2 000 out of 2 000** times. Even the 8% for English and 5% for Japanese are high enough percentages to be considered an actual pick.
 
 Based on charts 1.1 and 1.2 you may start to wonder which one of the two is more important: the **fruit** itself, or the **position** it holds in the given order of fruits?
 
@@ -134,9 +134,9 @@ When conveying information, an important aspect to consider is the order of the 
 
 With that in mind, mango was in the first position in **001a**, and when **001b** moved it, the Polish arm defaulted to it. But mango moved from the *first* position to the *last*, so shouldn't that again impact the model's choice? Well, maybe it did. *Maybe* the last position is the most important one.
 
-But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly choose lychee, as if it were suddenly able to choose it. I think analyzing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
+But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly choose lychee, as if it were suddenly able to choose it. I think analysing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
 
-One thing is undeniable: a reorder of the same ten fruits made two of the three languages answer something else entirely. Whatever else is true, "the model prefers pomegranate in Japanese" has stopped being a safe sentence to write down.
+One thing is undeniable: a reorder of the same ten fruits makes two of the three languages answer something else entirely. Whatever else is true, "the model prefers pomegranate in Japanese" has stopped being a safe sentence to write down.
 
 ## 001c: same fruits in shuffled order
 
@@ -152,7 +152,7 @@ For this question, every LLM request had the order of fruits in its prompt rando
   alt="Grouped columns under a per-sample shuffle, one series per language, over the fruits some language picked."
 />
 
-Looking at chart 1.3, it turns out that mango was the favorite fruit when asked in Polish after all, and lychee wins for both English and Japanese. I still find the mango and Polish pair the most interesting: this arm picked this fruit 74% of the time, but in **001a** it was zero picks out of two thousand. So it now looks like **position number one is bad**, but let's see just how bad:
+Looking at chart 1.3, it turns out that mango is the favourite fruit when asked in Polish after all, and lychee wins for both English and Japanese. I still find the mango and Polish pair the most interesting: this arm picked this fruit 74% of the time, but in **001a** it was zero picks out of two thousand. So it now looks like **position number one is bad**, but let's see just how bad:
 
 <Figure
   experiment="e001_fruit"
@@ -160,12 +160,12 @@ Looking at chart 1.3, it turns out that mango was the favorite fruit when asked 
   alt="Horizontal bars over the ten positions in the shown list, running down from first to last, one series per language, against a uniform reference."
 />
 
-Turns out, *very* bad. It was only picked four times out of 6 000 requests, all of them in Polish! Three things stand out from this chart:
-  - The model **avoided position 1 like the plague**. It behaved in a very human-like way, refusing to pick the first option offered.
+Turns out, *very* bad. It is picked only four times out of 6 000 requests, all of them in Polish! Three things stand out from this chart:
+  - The model **avoids position 1 like the plague**. It behaves in a very human-like way, refusing to pick the first option offered.
   - **Position 2** sits at **half** the average pick rate of the remaining positions, or below it. In Polish it is closer to a quarter.
   - **Position 10** shows **the biggest difference between languages**. Japanese refuses this slot the hardest and English only mildly dips compared to the previous position. Polish, on the other hand, ignores the idea entirely and picks the last fruit 11.2% of the time, higher than its previous position pick rate.
 
-## 001d: structured output vs free text output
+## 001d: structured output vs free-text output
 
 **Question:** Does requiring structured output in LLMs change their answer?
 
@@ -173,7 +173,7 @@ Turns out, *very* bad. It was only picked four times out of 6 000 requests, all 
 
 The last variable left to move is the **output format**. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with *no schema at all*. For English the native schema is the base schema, so it gets one arm fewer than the other two. As in **001c**, the order of the fruit list was shuffled independently for every request.
 
-Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of the fruit name. Outputs like these may be sometimes referred to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
+Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of the fruit name. Outputs like these are sometimes referred to as "free text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
 
 <Prompts
   experiment="e001_fruit"
@@ -198,9 +198,9 @@ Reading the first panel against the second tells you what writing the schema in 
 
 Polish under native schema looks like Polish under English schema. Mango is at 78.8% against 76.7%, lychee at 17.6% against 19.8%. Only 2.5% of answers would have to change hands to turn one arm into the other. Japanese is not quite as flat: lychee drops from 77.3% to 71.3% and mango climbs from 12.3% to 19.6%. I write the conclusion here with relief: **you can keep writing your schemas in English**.
 
-Taking the schema away is a different size of effect entirely: it moves 18% of the English answers, 26% of the Japanese ones and 35% of the Polish ones. English keeps its winning lychee, but swaps its runner-up. But **Japanese and Polish free-text arms get as close to an actual choice as this experiment gets**. Now, three fruits each hold a real share in Japanese, and Polish had two main choices within 6% of each other.
+Taking the schema away is a different size of effect entirely: it moves 18% of the English answers, 26% of the Japanese ones and 35% of the Polish ones. English keeps its winning lychee, but swaps its runner-up. But **Japanese and Polish free-text arms get as close to an actual choice as this experiment gets**. Now, three fruits each hold a real share in Japanese, and Polish has two main choices within 6% of each other.
 
-One more thing **001d** can be read for, and while I was expecting this shift, I didn't anticipate by how much. **001d**'s English schema arms are essentially **001c** run again. It's the same shuffled list, same schema, differing only by the two guardrail sentences. The Polish **001d** arm agrees with its **001c** counterpart, but the English and Japanese arms do not. They move by **12.0%** and **16.1%** respectively, creating margins that cannot be blamed on sampling. This shows something every LLM experiment of this nature should always carry as a disclaimer - **you never know which additional word or sentence in your prompt, which you would swear should not have any effect on the outcome, does exactly that** (*has an effect on the outcome*).
+There is one more thing **001d** can be read for. I was expecting a shift like this, but not of this size. **001d**'s English schema arms are essentially **001c** run again. It's the same shuffled list, same schema, differing only by the two guardrail sentences. The Polish **001d** arm agrees with its **001c** counterpart, but the English and Japanese arms do not. They move by **12.0%** and **16.1%** respectively, creating margins that cannot be blamed on sampling. This shows something every LLM experiment of this nature should always carry as a disclaimer - **you never know which additional word or sentence in your prompt, which you would swear should not have any effect on the outcome, does exactly that** (*has an effect on the outcome*).
 
 ## conclusion: how much randomness is actually in there?
 
@@ -214,9 +214,9 @@ To quantify all of the "randomness" takes above, let's ask of each arm whether t
   alt="One row per arm, coloured by prompt language: a dot at how many of the ten fruits that arm behaved as though it was choosing between, sitting on the 95% interval around it. The axis starts at one, the score of an arm that always answers the same fruit."
 />
 
-Seventeen arms, and sixteen of them sit below 2.7. The one that does not is Japanese with a shuffled list and no schema at all, at 3.01. Across 34 000 explicit instructions to be random, that is the single arm that behaved like it was choosing between as many as three of the ten fruits on offer.
+Seventeen arms, and sixteen of them sit below 2.7. The one that does not is Japanese with a shuffled list and no schema at all, at 3.01. Across 34 000 explicit instructions to be random, that is the single arm that behaves as though it were choosing between as many as three of the ten fruits on offer.
 
-The other end of the chart also deserves some attention. **001b**'s Polish arm scores exactly 1. **All 2 000 of its 2 000 requests came back mango**, leaving no interval to draw. There, a fixed order made the model **deterministic**.
+The other end of the chart also deserves some attention. **001b**'s Polish arm scores exactly 1. **All 2 000 of its 2 000 requests come back mango**, leaving no interval to draw. There, a fixed order makes the model **deterministic**.
 
 The shuffled arms mostly score higher than the fixed ones. English goes 1.09 and 1.34 fixed against 2.02 shuffled, Japanese 1.09 and 1.75 against 2.45. The single arm that beats its own shuffle is Polish in **001a**, 2.28 against 2.11.
 
@@ -241,10 +241,10 @@ The code and data behind this experiment are open-sourced. You can find the code
 - GitHub: [kwiecien-rafal/llmango](https://github.com/kwiecien-rafal/llmango)
 - HuggingFace: [rafalkwiecien/llmango](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
-[^temperature]: Temperature scales how the model samples from its output distribution. Values below 1.0 sharpen the distribution towards the most probable tokens, values above 1.0 flatten it towards the less probable ones. At 1.0 the distribution is used as the model produced it, neither sharpened nor flattened.
+[^temperature]: Temperature scales how the model samples from its output distribution. Values below 1.0 sharpen the distribution towards the most probable tokens, while values above 1.0 flatten it towards the less probable ones. At 1.0 the distribution is used as the model produced it, neither sharpened nor flattened.
 
 [^json]: JavaScript Object Notation (JSON) is a data format derived from JavaScript. It's used to store and transport data, using key-value pairs.
 
 [^position_effect]: In psychology this is the serial-position effect: when people recall items from a list, the first and last ones are remembered best, known respectively as the primacy and recency effects. Whether an LLM's position bias works by the same mechanism is not something this experiment can say. See [Serial-position effect](https://en.wikipedia.org/wiki/Serial-position_effect) on Wikipedia.
 
-[^entropy]: Shannon entropy measures the uncertainty in a probability distribution: H = −Σ pᵢ ln pᵢ, where pᵢ is the share of answers landing on option i. It is zero when one option always wins and highest when all options are equally likely. Taking eᴴ converts it back into a count of equally likely options, which is the number plotted here. H is not the plain count off the sample: entropy measured from a finite sample runs low, so it carries the Miller-Madow correction, which adds (k−1)/2n, where k is how many options the arm actually picked and n is how many times it was asked. At 2 000 samples that is worth under 0.004 of a choice - far smaller than any gap this chart is read for, though large enough to show in the second decimal of two arms. The corrected value is the one plotted. See [Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_%28information_theory%29) and [Entropy estimation](https://en.wikipedia.org/wiki/Entropy_estimation) on Wikipedia.
+[^entropy]: Shannon entropy measures the uncertainty in a probability distribution: H = −Σ pᵢ ln pᵢ, where pᵢ is the share of answers landing on option i. It is zero when one option always wins and highest when all options are equally likely. Taking eᴴ converts it back into a count of equally likely options, which is the number plotted here. H is not the raw sample estimate: entropy measured from a finite sample runs low, so it carries the Miller-Madow correction, which adds (k−1)/2n, where k is how many options the arm actually picked and n is how many times it was asked. At 2 000 samples that is worth under 0.004 of a choice - far smaller than any gap this chart is read for, though large enough to show in the second decimal of three arms. The corrected value is the one plotted. See [Entropy (information theory)](https://en.wikipedia.org/wiki/Entropy_%28information_theory%29) and [Entropy estimation](https://en.wikipedia.org/wiki/Entropy_estimation) on Wikipedia.
