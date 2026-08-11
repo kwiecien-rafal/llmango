@@ -61,6 +61,14 @@ def schema_label(schema: str) -> str:
     return f"{_SCHEMA_LANGUAGES[schema]} schema"
 
 
+def _schema_asked(schema: str) -> str:
+    """Name a schema arm as briefly as a row label sitting beside a chart allows."""
+    if schema == FREE_TEXT:
+        return "free"
+
+    return _SCHEMA_LANGUAGES[schema]
+
+
 def language_drift(aggregates: dict[str, Aggregate], title: str) -> Drawn:
     """001a's three language arms: the baseline distribution."""
     return _fruit_distribution(aggregates["001a"], title, zeros_written=True)
@@ -264,7 +272,7 @@ def _language_key(arms: dict[str, tuple[str, int, Distribution]]) -> dict[str, s
 def _arm_name(question_id: str, aggregate: Aggregate, schema: str, lang: str) -> str:
     """Name one arm across questions, by every dimension its question varies."""
     if len(aggregate["distributions"]) > 1:
-        return f"{question_id} {lang} / {schema_label(schema)}"
+        return f"{question_id} {lang}+{_schema_asked(schema)}"
 
     return f"{question_id} {lang}"
 

@@ -190,14 +190,14 @@ def test_the_randomness_chart_names_each_arm_by_what_its_question_varies() -> No
 
     assert [row["label"] for row in drawn.rows] == [
         "001a en",
-        "001d en / en schema",
-        "001d ja / en schema",
-        "001d pl / en schema",
-        "001d ja / ja schema",
-        "001d pl / pl schema",
-        "001d en / no schema",
-        "001d ja / no schema",
-        "001d pl / no schema",
+        "001d en+en",
+        "001d ja+en",
+        "001d pl+en",
+        "001d ja+ja",
+        "001d pl+pl",
+        "001d en+free",
+        "001d ja+free",
+        "001d pl+free",
     ]
 
 
