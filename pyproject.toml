@@ -1,7 +1,7 @@
 [project]
 name = "llmango"
 version = "0.1.0"
-description = "Probing how LLM behavior shifts across languages, one question at a time."
+description = "Showcasing different behaviours of large language models, by prompting them in great volumes and data visualization."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }

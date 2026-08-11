@@ -11,6 +11,8 @@ website · 001: fruit · [dataset](https://huggingface.co/datasets/rafalkwiecien
 - [Background](#background)
 - [Main pipeline](#main-pipeline)
 - [Experiments](#experiments)
+  - [001: Fruit](#001-fruit)
+- [What is in this repository](#what-is-in-this-repository)
 - [Run it yourself](#run-it-yourself)
 - [Layout](#layout)
 - [Tech stack](#tech-stack)
@@ -21,7 +23,7 @@ website · 001: fruit · [dataset](https://huggingface.co/datasets/rafalkwiecien
 
 ## Background
 
-Ever wonder how small prompt changes might impact a Large Language Model's answer? This project measures them, by moving one thing at a time and asking thousands of times.
+This is a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs.
 
 ## Main pipeline
 
@@ -29,7 +31,7 @@ The project is divided into three levels, starting from the top:
 
 `experiment > question > arm`
 
-An experiment is a bigger topic, which is divided into related, smaller **questions**. They aim to measure the change of one variable, across many **arms**. An **arm** is one setup under a question, like the combination of a prompt in a specific language and a prompt input, and is sampled thousands of times.
+An experiment is a bigger topic, which is divided into related, smaller **questions**. They aim to measure the change of one variable, across many **arms**. An **arm** is one setup under a question, like the combination of a prompt in a specific language, prompt input, or an output format, and is sampled thousands of times.
 
 The pipeline is four stages:
 
@@ -47,9 +49,9 @@ run  ->  normalize  ->  aggregate  ->  analyze
 
 ## Experiments
 
-### 001: fruit
+### 001: Fruit
 
-*Do LLMs have language-based preferences, and are they able to choose something truly randomly?* One list of ten fruits, one model (**gpt-5.6-luna** at temperature 1.0), three languages: **English**, **Polish** and **Japanese**. This experiment is divided into four questions, each moving exactly one thing, for seventeen arms at 2 000 samples each: **34 000 answers**.
+*Can an LLM response change when you prompt it in a different language, or when you present information to the model in a different manner?* One list of ten fruits, one model (**gpt-5.6-luna** at temperature 1.0), prompted in three languages: **English**, **Polish** and **Japanese**. This experiment is divided into four questions, for seventeen arms at 2 000 samples each, totalling **34 000 answers**.
 
 | id | isolates | list order | output format | arms |
 | --- | --- | --- | --- | --- |
@@ -62,7 +64,7 @@ run  ->  normalize  ->  aggregate  ->  analyze
 
 The result of experiment 001_fruit can be summarized with this chart, which showcases how many equally likely options would produce the same spread:
 
-![Chart_1.6](site/public/charts/e001_fruit/randomness.svg)
+![Chart 1.6](site/public/charts/e001_fruit/randomness.svg)
 
 The full write-up is at <NOT_PUBLISHED_YET>
 
