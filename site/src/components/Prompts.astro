@@ -64,7 +64,7 @@ const rows = prompts(experiment, question).map((entry) => ({
       rows.map((row) => (
         <li class="pane" style={`--lang: var(--lang-${row.lang})`}>
           <p class="tag">{row.name} prompt</p>
-          <pre class="wrapped">{row.segments.map((segment) =>
+          <pre>{row.segments.map((segment) =>
             segment.added ? <mark>{segment.text}</mark> : segment.text,
           )}</pre>
         </li>

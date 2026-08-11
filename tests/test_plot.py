@@ -497,11 +497,14 @@ def test_several_arms_are_keyed_by_a_legend(languages: Aggregate) -> None:
     assert [text.get_text() for text in legend.get_texts()] == ["en", "pl"]
 
 
-def test_a_title_is_centred_and_its_legend_keyed_off_to_the_right(
+def test_a_title_is_centred_on_the_canvas_and_its_legend_keyed_off_to_the_right(
     languages: Aggregate,
 ) -> None:
     """The two sit on their own rows above the plot, so a long title never has to
-    negotiate width with the key that names its series."""
+    negotiate width with the key that names its series. What the title is centred
+    on is the canvas and not the plot, which the labels down the value axis push
+    to the right: centred on the plot, a title long enough to wrap is drawn off
+    the edge of the canvas and the writing past that edge is lost."""
     figure = question_distribution(languages, _TITLE, _palette()).figure
     FigureCanvasAgg(figure)
     figure.canvas.draw()
@@ -509,11 +512,13 @@ def test_a_title_is_centred_and_its_legend_keyed_off_to_the_right(
 
     axes = figure.axes[0]
     legend = axes.get_legend()
-    assert axes.title.get_horizontalalignment() == "center"
     assert legend is not None
+    titled = figure.texts[0].get_window_extent(renderer)
     keyed = legend.get_window_extent(renderer)
+    assert titled.x0 >= 0.0 and titled.x1 <= figure.bbox.x1
+    assert abs(titled.x0 + titled.x1 - figure.bbox.x1) < _INLINE_SLACK_PX
     assert abs(keyed.x1 - axes.get_window_extent().x1) < _INLINE_SLACK_PX
-    assert keyed.y0 >= axes.get_window_extent().y1
+    assert axes.get_window_extent().y1 <= keyed.y0 and keyed.y1 <= titled.y0
 
 
 def test_a_single_arm_needs_no_legend() -> None:
@@ -1350,7 +1355,7 @@ def test_a_title_too_long_for_the_figure_is_broken_over_lines() -> None:
     FigureCanvasAgg(figure)
     figure.canvas.draw()
 
-    title = figure.axes[0].title
+    title = figure.texts[0]
     assert "\n" in title.get_text()
     assert drawn.title == written
     assert (

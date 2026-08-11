@@ -85,7 +85,6 @@ _TITLE_PT = 13.0
 _BODY_PT = 12.0
 _TICK_PAD_PT = 4.5
 _TITLE_PAD_PT = 10.0
-_OVER_LEGEND_PT = 30.0
 _KEY_DROP_PT = 8.1
 _ROW_RULE_PT = 1.0
 _ROW_RULE_GAP_PT = 7.0
@@ -713,12 +712,12 @@ def columns(
     axes = figure.add_subplot()
 
     _frame(
+        figure,
         axes,
         written,
         title,
         value_label,
         unit,
-        legend,
         ceiling or _top(series, reference, _headroom(series, turned_values)),
     )
     if reference is not None:
@@ -855,6 +854,7 @@ def bars(
     offsets = _offsets(count, _BAR_IN / pitch, _BAR_STEP)
 
     _horizontal_frame(
+        figure,
         axes,
         category_labels,
         title,
@@ -862,7 +862,6 @@ def bars(
         unit,
         0.0,
         ceiling or _top(series, reference, _BAR_HEADROOM),
-        legend,
     )
     if reference is not None:
         _reference(axes, reference, horizontal=True)
@@ -928,6 +927,7 @@ def dots(
     axes = figure.add_subplot()
 
     _horizontal_frame(
+        figure,
         axes,
         labels,
         title,
@@ -935,7 +935,6 @@ def dots(
         unit,
         floor,
         end,
-        legend,
     )
     axes.tick_params(axis="y", pad=_DOT_PT / 2.0 + _TICK_PAD_PT)
     if key:
@@ -1243,18 +1242,18 @@ def _settle(figure: Figure) -> None:
 
 
 def _frame(
+    figure: Figure,
     axes: Axes,
     written: list[Written],
     title: str,
     value_label: str,
     unit: Unit,
-    legend: bool,
     top: float,
 ) -> None:
     """Set up the plot frame: a recessive grid, its own unit and room for labels."""
     _value_axis(axes, written, unit, top)
     axes.set_ylabel(value_label, fontsize=_AXIS_LABEL_PT)
-    _bare(axes, title, legend)
+    _bare(figure, axes, title)
 
 
 def _panel_frame(
@@ -1329,6 +1328,7 @@ def _value_axis(axes: Axes, written: list[Written], unit: Unit, top: float) -> N
 
 
 def _horizontal_frame(
+    figure: Figure,
     axes: Axes,
     category_labels: list[str],
     title: str,
@@ -1336,7 +1336,6 @@ def _horizontal_frame(
     unit: Unit,
     start: float,
     end: float,
-    legend: bool,
 ) -> None:
     """Set up a horizontal chart's frame, its categories reading down from the top."""
     axes.set_xlim(start, end)
@@ -1347,14 +1346,12 @@ def _horizontal_frame(
     axes.set_yticks(range(len(category_labels)), labels=category_labels)
     axes.set_xlabel(value_label, fontsize=_AXIS_LABEL_PT)
     axes.grid(axis="x", color=INK, alpha=0.25, linewidth=0.6)
-    _bare(axes, title, legend)
+    _bare(figure, axes, title)
 
 
-def _bare(axes: Axes, title: str, legend: bool) -> None:
+def _bare(figure: Figure, axes: Axes, title: str) -> None:
     """Strip a plot to its centred title and its grid, which both forms share."""
-    axes.set_title(
-        _wrapped(title), loc="center", pad=_OVER_LEGEND_PT if legend else _TITLE_PAD_PT
-    )
+    figure.suptitle(_wrapped(title), fontsize=_TITLE_PT)
     _stripped(axes)
 
 

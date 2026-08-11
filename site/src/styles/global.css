@@ -382,14 +382,11 @@ figure.chart details[open] summary {
 .pane pre {
   margin: 0;
   padding: 0.85rem 1rem;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.86rem;
   line-height: 1.55;
-}
-
-.pane pre.wrapped {
-  white-space: pre-wrap;
 }
 
 .pane mark {
@@ -400,13 +397,17 @@ figure.chart details[open] summary {
   box-decoration-break: clone;
 }
 
-/* Narrower than the track it wants, a figure is worth more than the margin beside it. */
+/* Narrow, the page takes its margin down to a sliver and prose keeps its own inset. */
 
 @media (max-width: 54.5rem) {
-  figure.chart:not(.fit) {
-    margin-inline: -1.25rem;
-    border-inline-width: 0;
-    border-radius: 0;
+  .shell {
+    padding-inline: 0.5rem;
+  }
+
+  header.site,
+  footer.site,
+  main > :not(figure.chart) {
+    max-width: min(42rem, 100% - 1.5rem);
   }
 
   figure.chart picture img {
@@ -458,10 +459,13 @@ td {
   white-space: nowrap;
 }
 
+/* A number breaks nowhere, but the name over a column is a phrase and may wrap. */
+
 thead th {
   background: var(--table-head);
   color: var(--ink);
   font-weight: 600;
+  white-space: normal;
 }
 
 tbody th {
