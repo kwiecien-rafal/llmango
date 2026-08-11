@@ -25,7 +25,7 @@ export const fruitList001d = {
 
 # 001: fruit
 
-By now, most people know, or have at least heard, that **LLMs are not quite random, even when you ask them to be**. Even with high temperature[^temperature] settings, a large language model leans towards the most probable answer, as that's how they are *essentially* built to be.
+By now, most people know, or have at least heard, that **LLMs are not quite random, even when you ask them to be**. Even with high temperature[^temperature] settings, a large language model will still lean towards the most probable answer, as that's how it is *essentially* built to be.
 
 But can the answer meaningfully shift when you prompt in a different language, or when you present information to the model in a different manner? This experiment aims to answer this question.
 
@@ -49,13 +49,13 @@ But can the answer meaningfully shift when you prompt in a different language, o
 
 ## scope and experiment setup
 
-The scope is three languages: **English**, **Polish** and **Japanese**. There was exactly one requirement when picking them - I have to speak the language. And that's only because I did not want a translator sitting between me and my own data.
+The scope is three languages: **English**, **Polish** and **Japanese**. For this first LLMango experiment there was exactly one requirement when picking them - I had to speak the language. I just did not want a translator in between me and my own prompts.
 
 Every prompt in this experiment asks the same thing: *here is a list of ten fruits, pick one at random*. The ten fruits never change - **apple**, **banana**, **orange**, **mango**, **grape**, **strawberry**, **watermelon**, **pineapple**, **lychee** and **pomegranate**. What changes between questions is the order the fruits are shown in, the language they are written in, and the structure the model has to answer in.
 
 I prompted a single model, **gpt-5.6-luna**, at temperature **1.0**. Comparing models would be a perfectly good experiment, but I chose not to do it in this one. A second model is a second source of variance, and I wanted every difference to come from the setup alone.
 
-The unit compared throughout is an **arm**: one pairing of a language and a structured output schema, inside one question. **001a** is asked in three languages under one schema, so it has three arms. **001d** is asked in three languages as well, but not every language gets every schema there, so it has eight arms. That makes **seventeen** arms, and each one was invoked **2 000** times. In total it amounts to **34 000** LLM outputs behind everything you are about to read.
+The unit compared throughout is an **arm**: one pairing of a language and an output format inside one question. **001a** is asked in three languages under one schema, so it has three arms. **001d** is asked in three languages as well, but not every language gets every schema there, so it has eight arms. That makes **seventeen** arms, and each one was invoked **2 000** times. In total it amounts to **34 000** LLM outputs behind everything you are about to read.
 
 ### prompts
 
@@ -80,7 +80,7 @@ Structured output is a way of telling the model what shape its answer must take.
   - **order**: fixed - [mango, apple, banana, pomegranate, strawberry, orange, watermelon, grape, pineapple, lychee]
   - **output format**: structured. Base English schema for every language.
 - **001b: same fruits in a different fixed order**
-  - **question**: when presented with a different order of the same set of choices, will an LLM shift its answer?
+  - **question**: When presented with a different order of the same set of choices, will an LLM shift its answer?
   - **order**: fixed - [pineapple, grape, watermelon, orange, strawberry, pomegranate, banana, lychee, apple, mango]
   - **output format**: structured. Base English schema for every language.
 - **001c: same fruits in shuffled order**
@@ -88,9 +88,9 @@ Structured output is a way of telling the model what shape its answer must take.
   - **order**: shuffled for every request
   - **output format**: structured. Base English schema for every language.
 - **001d: structured output vs free text output**
-  - **question**: Does invoking the structured output in LLMs affect their answer?
+  - **question**: Does requiring structured output in LLMs change their answer?
   - **order**: shuffled for every request
-  - **output format**: structured using base English schema, structured using native language and free-text.
+  - **output format**: structured using the base English schema, structured using the native-language schema, and free text.
 
 ## 001a: same prompt in different languages
 
@@ -108,7 +108,7 @@ Starting off with the first question: **001a**. It had three arms, one for each 
 
 The first thing you see straight away is that **six of the ten fruits were never chosen even once**, and two of the four that were chosen are marginal. The model *loves* lychee when asked in English (98.4%), loves pomegranate when asked in Japanese (98.4%), and only Polish introduces any variety: pomegranate takes 61.9%, lychee still walks away with a third of the Polish answers, and pineapple sneaks in at 5.6%.
 
-Notice which fruits never appeared. Apple, banana and orange would probably be the obvious answers to give if you asked someone to "name any fruit", **but here it's the opposite**. Or maybe that's precisely the reason lychee, pomegranate and pineapple were chosen? They are more "exotic", or more "interesting" answers.
+Notice which fruits never appeared. Apple, banana and orange would probably be the obvious answers to give if you asked someone to "name any fruit", **but here it's the opposite**. Maybe that's precisely the reason lychee, pomegranate and pineapple were chosen? They are more "exotic", or more "interesting" answers.
 
 So is it safe to say that *the model prefers lychee in English and pomegranate in Japanese*? I mean, that is what this chart says. It is also, as the next two questions show, only half of what is going on.
 
@@ -118,7 +118,7 @@ So is it safe to say that *the model prefers lychee in English and pomegranate i
 
 **TL;DR:** in English, the model was in fact choosing the fruit. In Polish and Japanese, it was choosing neither the fruit nor, as it turns out, the position.
 
-**001b**'s setup is **001a** with exactly one thing altered: a new fixed order of the presented fruits, which is again identical across all three languages and all 6000 requests. This question is also still using only the base English schema for its structured output, and the wording of the prompts did not change whatsoever, besides the given order of the fruits.
+**001b**'s setup is **001a** with exactly one thing altered: a new fixed order of the presented fruits, which is again identical across all three languages and all 6 000 requests. This question is also still using only the base English schema for its structured output, and the wording of the prompts did not change whatsoever, besides the given order of the fruits.
 
 <Figure
   experiment="e001_fruit"
@@ -128,13 +128,13 @@ So is it safe to say that *the model prefers lychee in English and pomegranate i
 
 Three things to pick up from chart 1.2: English barely budged, Japanese changed its answer completely, and... mango! In **001a**, it was not even chosen once by any of the languages, and suddenly the Polish **001b** arm picked it **2 000 out of 2 000** times. Even the 8% for English and 5% for Japanese are high enough percentages to be considered an actual pick.
 
-Based on charts 1.1 and 1.2 you may start to wonder, which one of the two is more important: the **fruit** itself, or the **position** it holds in the given order of fruits?
+Based on charts 1.1 and 1.2 you may start to wonder which one of the two is more important: the **fruit** itself, or the **position** it holds in the given order of fruits?
 
 When conveying information, an important aspect to consider is the order of the information you provide, no matter if the recipient is human or an LLM. Pieces of information are perceived differently depending on their order of presentation, **especially if they are either first or last**[^position_effect].
 
 With that in mind, mango was in the first position in **001a**, and when **001b** moved it, the Polish arm defaulted to it. But mango moved from the *first* position to the *last*, so shouldn't that again impact the model's choice? Well, maybe it did. *Maybe* the last position is the most important one.
 
-But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly choose lychee, like it suddenly was able to choose it. I think analyzing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
+But but but, lychee was in the last position, and now it isn't. And only now did the Japanese arm mostly choose lychee, as if it were suddenly able to choose it. I think analyzing just the position from these two charts might be the wrong approach. If the last position was the most important one, we would have seen more lychee in Polish and Japanese in **001a**. So maybe this slot is important in Polish, but not so much in Japanese? Or maybe the combination of mango and the last position is what made it special?
 
 One thing is undeniable: a reorder of the same ten fruits made two of the three languages answer something else entirely. Whatever else is true, "the model prefers pomegranate in Japanese" has stopped being a safe sentence to write down.
 
@@ -167,13 +167,13 @@ Turns out, *very* bad. It was only picked four times out of 6 000 requests, all 
 
 ## 001d: structured output vs free text output
 
-**Question:** Does invoking the structured output in LLMs affect their answer?
+**Question:** Does requiring structured output in LLMs change their answer?
 
 **TL;DR:** the language you write the schema in barely matters. Whether there is a schema at all matters a lot.
 
-The last variable left to move is the **output format**. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with *no schema at all*. For English the native schema is the base schema, so it gets one arm fewer than the other two. Like in **001c**, the order of the fruit list was shuffled independently for every request.
+The last variable left to move is the **output format**. This question has eight arms, the most of any question. Each language answers under the base English schema, under a schema written in its own language, and with *no schema at all*. For English the native schema is the base schema, so it gets one arm fewer than the other two. As in **001c**, the order of the fruit list was shuffled independently for every request.
 
-Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of the fruit name. Such kind of outputs may be sometimes referred to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
+Asking the LLM without passing any desired structured output format does not guarantee an output which consists only of the fruit name. Outputs like these may be sometimes referred to as "free-text". Because of that, I added two sentences to the prompt which act as guardrails. And since **any tiny change to a prompt might change the model's answer in an unpredictable way**, the new, bigger prompts were also run with the base English schema and the native schema. That way, I can compare the results with only one factor moving at a time.
 
 <Prompts
   experiment="e001_fruit"
@@ -233,7 +233,7 @@ Three short bullet points to take away from all of this:
 
 **Clear winner: lychee**, picked in more than half of total requests.
 
-**Clear loser: orange.** It was never picked, not once in 34 000 answers.
+**Clear loser: orange**, not once picked across 34 000 answers.
 
 ## code and data
 
@@ -241,9 +241,9 @@ The code and data behind this experiment are open-sourced. You can find the code
 - GitHub: [kwiecien-rafal/llmango](https://github.com/kwiecien-rafal/llmango)
 - HuggingFace: [rafalkwiecien/llmango](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
-[^temperature]: Temperature scales how the model samples from its output distribution. Values below 1.0 sharpen the distribution towards the most probable tokens, values above 1.0 flatten it towards the less probable ones. At 1.0 the distribution is used as the model produced it, neither sharpened nor flattened
+[^temperature]: Temperature scales how the model samples from its output distribution. Values below 1.0 sharpen the distribution towards the most probable tokens, values above 1.0 flatten it towards the less probable ones. At 1.0 the distribution is used as the model produced it, neither sharpened nor flattened.
 
-[^json]: JavaScript Object Notation (JSON) is a data format derived from JavaScript. It's used to store and transport data, using key value pairs.
+[^json]: JavaScript Object Notation (JSON) is a data format derived from JavaScript. It's used to store and transport data, using key-value pairs.
 
 [^position_effect]: In psychology this is the serial-position effect: when people recall items from a list, the first and last ones are remembered best, known respectively as the primacy and recency effects. Whether an LLM's position bias works by the same mechanism is not something this experiment can say. See [Serial-position effect](https://en.wikipedia.org/wiki/Serial-position_effect) on Wikipedia.
 
