@@ -2,8 +2,6 @@
 
 ![LLMango: visualizing AI behaviour](site/public/og.png)
 
-[WIP - public links not live yet]
-
 [website](https://llmango.rafalkwiecien.com) · [001: fruit](https://llmango.rafalkwiecien.com/e001_fruit) · [dataset](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
 </div>
