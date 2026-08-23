@@ -59,7 +59,12 @@ header.site a {
 
 header.site a.brand {
   color: var(--ink);
+}
+
+header.site a[aria-current="page"] {
   font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 header.site a:hover {
