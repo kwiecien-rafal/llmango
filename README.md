@@ -2,7 +2,7 @@
 
 ![LLMango - visualizing AI behaviour](site/public/og.png)
 
-website · 001: fruit · [dataset](https://huggingface.co/datasets/rafalkwiecien/llmango)
+[website](https://llmango.rafalkwiecien.com) · [001: fruit](https://llmango.rafalkwiecien.com/e001_fruit) · [dataset](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
 </div>
 
@@ -23,7 +23,7 @@ website · 001: fruit · [dataset](https://huggingface.co/datasets/rafalkwiecien
 
 ## Background
 
-This is a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs.
+This is a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments - each one is different and tries to answer specific questions you might have about LLMs.
 
 ## Main pipeline
 
@@ -51,22 +51,23 @@ run  ->  normalize  ->  aggregate  ->  analyze
 
 ### 001: Fruit
 
-*Can an LLM response change when you prompt it in a different language, or when you present information to the model in a different manner?* One list of ten fruits, one model (**gpt-5.6-luna** at temperature 1.0), prompted in three languages: **English**, **Polish** and **Japanese**. This experiment is divided into four questions, for seventeen arms at 2 000 samples each, totalling **34 000 answers**.
+<mark>*Can an LLM response change when you prompt it in a different language, or when you present information to the model in a different manner?*</mark>
 
-| id | isolates | list order | output format | arms |
-| --- | --- | --- | --- | --- |
-| `001a` | baseline distribution | fixed | English schema | 3 |
-| `001b` | the fruit vs. its position | a second fixed order | English schema | 3 |
-| `001c` | position as a confound | shuffled per sample | English schema | 3 |
-| `001d` | the response schema itself | shuffled per sample | English schema, native schema, none | 8 |
+The experiment is ran with one model, **OpenAI's gpt-5.6-luna**. It's divided into four questions:
 
-<br>
+| ID | Question |
+| --- | --- |
+| 001a | When presented with the same set of choices that are in the same order, will an LLM shift its answer, if prompted in a different language? |
+| 001b | When presented with a different order of the same set of choices, will an LLM shift its answer? |
+| 001c | Across a large sample size, every order of choices presented to the LLM is shuffled. Does the answer get "more random"? |
+| 001d | Does requiring structured output in LLMs change their answer? |
 
-The result of experiment 001_fruit can be summarized with this chart, which showcases how many equally likely options would produce the same spread:
+Each question is asked in three languages: **English**, **Polish** and **Japanese**. The end result can be summarized with this chart, which showcases how many equally likely options would produce the same spread:
 
-![Chart 1.6](site/public/charts/e001_fruit/randomness.svg)
+![Chart 1.6: How many of the 10 fruits each arm was choosing between](site/public/charts/e001_fruit/randomness.svg)
 
-The full write-up is at <NOT_PUBLISHED_YET>
+- full write-up: [llmango.rafalkwiecien.com/e001_fruit](https://llmango.rafalkwiecien.com/e001_fruit)
+- dataset: [dataset card](https://huggingface.co/datasets/rafalkwiecien/llmango)
 
 ## What is in this repository
 
@@ -85,7 +86,7 @@ A fresh clone can therefore redraw every chart and serve the site, but it cannot
 
 ## Run it yourself
 
-You need **Python 3.12+** and [uv](https://docs.astral.sh/uv/). The site additionally needs **Node 22.12+** and **npm 9.6.5+**, which is what Astro 7.1.3 requires.
+You need **Python 3.12+** and [uv](https://docs.astral.sh/uv/). The site additionally needs **Node 22.12+** and **npm 9.6.5+**, as required by Astro 7.1.3.
 
 [just](https://github.com/casey/just) is 100% optional, but I use it as my go-to command runner, so if you wish to use any of my recipes, get it as well.
 
@@ -96,7 +97,7 @@ uv sync --extra dev
 cp .env.example .env
 ```
 
-`.env` holds two keys, and neither is needed unless you are making calls:
+`.env` holds two keys, at this point I only used OpenAI models, so simply set OPENAI_API_KEY if you wish to make any calls, and HF_TOKEN is used solely for publishing the datasets.
 
 - `OPENAI_API_KEY` for `run` and `normalize`
 - `HF_TOKEN` for `publish`
@@ -117,7 +118,7 @@ just all 001a -n 5    # run -> normalize -> aggregate -> analyze, 5 samples per 
 
 A few things worth knowing:
 
-- `run`, `normalize` and `publish` take `--dry-run`, which needs no key. With this argument passed, `run` prints the plan, the arms it covers and the model's price per million tokens. `normalize` prints how many rows and distinct answers it found, and how many of them would need a paid call. `publish` prints the files it would upload.
+- `run`, `normalize` and `publish` take `--dry-run`, which doesn't need any API key. With this argument passed, `run` prints the plan, the arms it covers and the model's price per million tokens. `normalize` prints how many rows and distinct answers it found, and how many of them would need a paid call. `publish` prints the files it would upload.
 - More than **100 paid calls** refuses to start without `--force`. This guards both `run` and `normalize`. `run` also refuses outright, `--force` or not, if the model has no entry in `src/llmango/pricing.json`.
 - A rerun **grows** the sample rather than replacing it. `normalize` pools every run of a question and nothing deduplicates.
 - `question.yaml` declares the model, the languages, the schemas each language is asked under, and the inputs. Provider and temperature default to `openai` and `1.0` unless the file states otherwise. Nothing on the command line narrows a run to a single arm, so running a subset means editing that file. The model used for normalization is pinned separately, in `src/llmango/config.py`.
@@ -149,19 +150,6 @@ tests/                                 one module per source module
 ## Contributing
 
 Issues and pull requests are welcome. Open an issue to ask a question or propose a change before sending a large PR. Run `just check` before opening one.
-
-## Citation
-
-Machine-readable metadata is in [`CITATION.cff`](CITATION.cff). To cite the dataset:
-
-```bibtex
-@misc{kwiecien_llmango,
-  author = {Rafał Kwiecień},
-  title  = {LLMango: visualizing AI behaviour},
-  url    = {https://huggingface.co/datasets/rafalkwiecien/llmango},
-  note   = {Charts and write-ups at https://llmango.rafalkwiecien.com}
-}
-```
 
 ## Licence
 

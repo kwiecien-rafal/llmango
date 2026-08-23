@@ -1,11 +1,13 @@
 # LLMango responses
 
-This is a dataset used by LLMango: a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs. This dataset is every LLM response received, one row per call, with the prompt that produced it and the provider's verbatim response, and many more, included.
+This is the dataset behind LLMango: a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs.
+
+One row is one call. It holds the prompt that produced it, the provider's verbatim response, and the usage, cost and timing the provider reported.
 
 - Charts and write-ups: https://llmango.rafalkwiecien.com
 - Pipeline that produced this: https://github.com/kwiecien-rafal/llmango
 
-## Structure
+## Usage
 
 A **config** is an experiment. A **split** is one question inside it.
 
@@ -21,7 +23,7 @@ Every question shares its experiment's columns, so splits within a config compar
 
 ### e001_fruit
 
-An LLM is prompted to pick one fruit out of ten, randomly. Different splits have different arms, which are combinations of the prompt (and the language they are in), response schemas, and whether the given fruit order is fixed or shuffled. Seventeen arms in total, each sampled 2 000 times, for 34 000 rows.
+**gpt-5.6-luna** at temperature 1.0 is prompted to pick one fruit out of ten, at random. An arm is one combination of prompt language, response schema and fruit order; each split is a question, and each question varies exactly one of those. Seventeen arms in total, each sampled 2 000 times, for 34 000 rows.
 
 | Split | Languages | Response schema | List order |
 | --- | --- | --- | --- |
@@ -104,7 +106,13 @@ A shuffle draws from a per-sample seed picked at random by the run. Every arm of
 | `generation_seconds` | float64 | Wall-clock duration of the call |
 | `created_at` | timestamp[us, UTC] | When the call was made |
 
-## License
+## Provenance and limitations
+
+- `canonical` on the free-text arm is assigned by `normalize`, which matches offline first and falls back to an LLM for what it cannot resolve.
+- A code run appends to a split, without any replacement of already existing data, nothing is deduplicated.
+- No personal data and no human subjects, every row is a model's output to a prompt in `prompts/`.
+
+## Licence
 
 CC BY 4.0. Attribution to Rafał Kwiecień, linking back to this dataset.
 
