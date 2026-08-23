@@ -6,8 +6,10 @@
  * those numbers stay readable, copyable and searchable. alt is required rather
  * than generated: a sentence describing the table's dimensions tells a screen
  * reader nothing, and a page whose content is the figure plus its table passes
- * alt="". The two renditions are the same chart drawn at the two widths the page
- * reads it at, since point sizes are declared rather than scaled.
+ * alt="". The drawn title is outlined paths too, so it opens the alt the page
+ * wrote, giving a reader the number the prose cites the chart by. The two
+ * renditions are the same chart drawn at the two widths the page reads it at,
+ * since point sizes are declared rather than scaled.
  */
 import { chart as findChart, chartSrc } from "../data/charts";
 import Numbers from "./Numbers.astro";
@@ -20,6 +22,7 @@ interface Props {
 
 const { experiment, chart, alt } = Astro.props;
 const entry = findChart(experiment, chart);
+const titled_alt = `${entry.title}. ${alt}`;
 ---
 
 <figure class="chart">
@@ -28,7 +31,7 @@ const entry = findChart(experiment, chart);
       media="(max-width: 30rem)"
       srcset={chartSrc(experiment, entry.narrow_file)}
     />
-    <img src={chartSrc(experiment, entry.file)} alt={alt} loading="lazy" />
+    <img src={chartSrc(experiment, entry.file)} alt={titled_alt} loading="lazy" />
   </picture>
   <figcaption>Datasets: {entry.questions.join(", ")}</figcaption>
   <details>
