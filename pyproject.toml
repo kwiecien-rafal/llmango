@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Rafal Kwiecien", email = "dev@rafalkwiecien.com" }]
-keywords = ["llm", "multilingual", "evaluation", "structured-outputs", "openai"]
+keywords = ["llm", "multilingual", "structured-outputs", "evaluation", "genai", "openai", "randomness"]
 
 dependencies = [
     "openai",

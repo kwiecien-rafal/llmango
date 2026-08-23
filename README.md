@@ -1,6 +1,6 @@
 <div align="center">
 
-![LLMango - visualizing AI behaviour](site/public/og.png)
+![LLMango: visualizing AI behaviour](site/public/og.png)
 
 [WIP - public links not live yet]
 
@@ -13,19 +13,18 @@
 - [Background](#background)
 - [Main pipeline](#main-pipeline)
 - [Experiments](#experiments)
-  - [001: Fruit](#001-fruit)
+  - [001: fruit](#001-fruit)
 - [What is in this repository](#what-is-in-this-repository)
 - [Run it yourself](#run-it-yourself)
 - [Layout](#layout)
 - [Tech stack](#tech-stack)
 - [Maintainers](#maintainers)
 - [Contributing](#contributing)
-- [Citation](#citation)
 - [Licence](#licence)
 
 ## Background
 
-This is a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments - each one is different and tries to answer specific questions you might have about LLMs.
+This is a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments, where each one is different and tries to answer specific questions you might have about LLMs.
 
 ## Main pipeline
 
@@ -33,7 +32,7 @@ The project is divided into three levels, starting from the top:
 
 `experiment > question > arm`
 
-An experiment is a bigger topic, which is divided into related, smaller **questions**. They aim to measure the change of one variable, across many **arms**. An **arm** is one setup under a question, like the combination of a prompt in a specific language, prompt input, or an output format, and is sampled thousands of times.
+An experiment is a bigger topic, which is divided into related, smaller **questions**. They aim to measure the change of one variable, across many **arms**. An **arm** is one setup under a question, like the combination of a prompt in a specific language, prompt input, or an output format, and is sampled thousands of times. The arm setup and definition may differ throughout the experiments.
 
 The pipeline is four stages:
 
@@ -51,11 +50,11 @@ run  ->  normalize  ->  aggregate  ->  analyze
 
 ## Experiments
 
-### 001: Fruit
+### 001: fruit
 
-<mark>*Can an LLM response change when you prompt it in a different language, or when you present information to the model in a different manner?*</mark>
+<mark>*Can an LLM's response meaningfully change when you prompt it in a different language, or when you present information to the model in a different manner?*</mark>
 
-The experiment is ran with one model, **OpenAI's gpt-5.6-luna**. It's divided into four questions:
+The experiment was ran with one model, **OpenAI's gpt-5.6-luna**. It's divided into four questions:
 
 | ID | Question |
 | --- | --- |
@@ -80,8 +79,8 @@ Each question is asked in three languages: **English**, **Polish** and **Japanes
 
 Not committed:
 
-- `data/<experiment>/raw/` - the JSONL each run appends to.
-- `data/<experiment>/normalized/` - these live on [HuggingFace](https://huggingface.co/datasets/rafalkwiecien/llmango).
+- `data/<experiment>/raw/` - the JSONL each run appends to
+- `data/<experiment>/normalized/` - these live on [HuggingFace](https://huggingface.co/datasets/rafalkwiecien/llmango)
 - `.env`, `site/dist/` and `site/node_modules/`
 
 A fresh clone can therefore redraw every chart and serve the site, but it cannot run `aggregate` or `publish`, because both read normalized data. Generate your own with `run` and `normalize`, or pull the published Parquet files down from HuggingFace.
@@ -90,7 +89,7 @@ A fresh clone can therefore redraw every chart and serve the site, but it cannot
 
 You need **Python 3.12+** and [uv](https://docs.astral.sh/uv/). The site additionally needs **Node 22.12+** and **npm 9.6.5+**, as required by Astro 7.1.3.
 
-[just](https://github.com/casey/just) is 100% optional, but I use it as my go-to command runner, so if you wish to use any of my recipes, get it as well.
+[just](https://github.com/casey/just) is 100% optional, but this repo uses it as the go-to command runner, so if you wish to use any of the existing recipes, get it as well.
 
 ```sh
 git clone https://github.com/kwiecien-rafal/llmango
@@ -99,7 +98,7 @@ uv sync --extra dev
 cp .env.example .env
 ```
 
-`.env` holds two keys, at this point I only used OpenAI models, so simply set OPENAI_API_KEY if you wish to make any calls, and HF_TOKEN is used solely for publishing the datasets.
+`.env` holds two keys, at this point this repo only uses OpenAI models, so simply set OPENAI_API_KEY if you wish to make any calls. HF_TOKEN is used solely for publishing the datasets.
 
 - `OPENAI_API_KEY` for `run` and `normalize`
 - `HF_TOKEN` for `publish`

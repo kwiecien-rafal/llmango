@@ -1,7 +1,7 @@
 ---
 layout: ../../layouts/Article.astro
-title: "001_Fruit: does an LLM have language-based preferences?"
-description: "Does an LLM's answer shift when you prompt it in another language, or reorder the choices it needs to choose from? Analysing 34 000 LLM responses across English, Polish and Japanese."
+title: "001: fruit - does an LLM have language-based preferences?"
+description: "Can an LLM's response meaningfully change when you prompt it in a different language, or when you present information to the model in a different manner? Analysing 34 000 LLM responses across English, Polish and Japanese."
 type: "article"
 ---
 
@@ -27,7 +27,7 @@ export const fruitList001d = {
 
 By now, most people know, or have at least heard, that **LLMs are not quite random, even when you ask them to be**. Even with high temperature[^temperature] settings, a large language model will still lean towards the most probable answer, as that's how it is *essentially* built to be.
 
-But can the answer meaningfully shift when you prompt in a different language, or when you present information to the model in a different manner? This experiment aims to answer this question.
+But can an LLM's response meaningfully change when you prompt it in a different language, or when you present information to the model in a different manner? This experiment aims to answer this question.
 
 ## table of contents
 
@@ -49,9 +49,9 @@ But can the answer meaningfully shift when you prompt in a different language, o
 
 ## scope and experiment setup
 
-The scope is three languages: **English**, **Polish** and **Japanese**. For this first LLMango experiment there was exactly one requirement when picking them - I had to speak the language. I just did not want a translator in between me and the prompts.
+As this experiment is partly set to analyse differences between the same prompts written in different languages, the first step is to settle on a language scope. I chose **English**, **Polish** and **Japanese**, simply because these are the languages that I can speak, and I did not want a translator in between me and the prompts.
 
-Every prompt in this experiment asks for the same thing: *here is a list of ten fruits, pick one at random*. The ten fruits never change - **apple**, **banana**, **orange**, **mango**, **grape**, **strawberry**, **watermelon**, **pineapple**, **lychee** and **pomegranate**. What changes between questions is the order the fruits are shown in, the language the prompts are written in, and the structure the model has to use when answering.
+Every prompt in this experiment asks for the same thing: *here is a list of ten fruits, pick one at random*. The ten fruits never change - **apple**, **banana**, **orange**, **mango**, **grape**, **strawberry**, **watermelon**, **pineapple**, **lychee** and **pomegranate**. What changes between questions is the order the fruits are shown in, and the structure the model has to use when answering.
 
 I prompted a single model, **gpt-5.6-luna** from OpenAI, at temperature **1.0**. Comparing models would be a perfectly good experiment, but I chose not to do it in this one. A second model is a second source of variance, and I wanted every difference to come from the setup alone.
 

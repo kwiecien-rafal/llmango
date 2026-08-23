@@ -1,6 +1,6 @@
 # LLMango responses
 
-This is the dataset behind LLMango: a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments: each one is different and tries to answer specific questions you might have about LLMs.
+This is the dataset behind LLMango: a blog dedicated to showcasing different behaviours of Large Language Models through prompting them in great volumes and data visualization. LLMango is divided into experiments, where each one is different and tries to answer specific questions you might have about LLMs.
 
 One row is one call. It holds the prompt that produced it, the provider's verbatim response, and the usage, cost and timing the provider reported.
 
@@ -21,18 +21,20 @@ Every question shares its experiment's columns, so splits within a config compar
 
 ## Experiments
 
-### e001_fruit
+### 001: fruit
 
-**gpt-5.6-luna** at temperature 1.0 is prompted to pick one fruit out of ten, at random. An arm is one combination of prompt language, response schema and fruit order; each split is a question, and each question varies exactly one of those. Seventeen arms in total, each sampled 2 000 times, for 34 000 rows.
+Experiment: Can an LLM's response meaningfully change when you prompt it in a different language, or when you present information to the model in a different manner?
+
+**gpt-5.6-luna** at temperature 1.0 is prompted to pick one fruit out of ten, at random. An arm is one combination of prompt language and a response format. There is seventeen arms in total, each sampled 2 000 times, for 34 000 rows. Each split is one question.
 
 | Split | Languages | Response schema | List order |
 | --- | --- | --- | --- |
 | `001a` | en, pl, ja | English schema | fixed |
 | `001b` | en, pl, ja | English schema | a second fixed order |
 | `001c` | en, pl, ja | English schema | shuffled per sample |
-| `001d` | en, pl, ja | English schema, native schema, none | shuffled per sample |
+| `001d` | en, pl, ja | English schema, native schema, no schema | shuffled per sample |
 
-`001a` is the baseline distribution. `001b` re-asks it in all three languages under a different fixed order, which separates a preference for a fruit from a preference for a position. `001c` reshuffles the list for every sample, which removes position as a confound within a language. `001d` asks each language under the English schema, under that language's own schema, and under no schema at all, leaving the response schema as the only variable. English contributes two arms rather than three, because its native schema is the English schema. Every `001d` prompt adds a "one fruit name only" instruction, because the schemaless arm has nothing else constraining it.
+`001a` is the baseline distribution. `001b` re-asks it in all three languages under a different fixed order, which separates a preference for a fruit from a preference for a position. `001c` reshuffles the list for every sample, which removes position as a confound within a language. `001d` asks each language under the English schema, under that language's own schema, and under no schema at all, leaving the response schema as the only variable. English contributes two arms rather than three, because its native schema is the English schema. Every `001d` prompt adds a "one fruit name only" instruction, because the no-schema arm has nothing else constraining it.
 
 A native schema's name is ASCII, because the provider constrains it: the Japanese one is written in romaji, and the Polish one drops its diacritic.
 
@@ -64,7 +66,7 @@ A shuffle draws from a per-sample seed picked at random by the run. Every arm of
 
 | Column | Type | Meaning |
 | --- | --- | --- |
-| `raw_json` | string | Verbatim model output; free text on the schemaless arm |
+| `raw_json` | string | Verbatim model output; free text on the no-schema arm |
 | `answer` | string | The answer field read off the parsed response |
 | `canonical` | string | Category the answer normalizes to; null when invalid |
 | `is_valid` | boolean | Whether the answer named something on the list |
@@ -81,7 +83,7 @@ A shuffle draws from a per-sample seed picked at random by the run. Every arm of
 | `response_id` | string | Provider-side id of the completion |
 | `service_tier` | string | Service tier the call was served on |
 | `provider_created_at` | timestamp[us, UTC] | Creation time the provider reported |
-| `response_schema` | string | JSON Schema sent for this arm; null for free text |
+| `response_schema` | string | JSON Schema sent for this arm; null for no-schema |
 | `request_envelope` | string | Request body |
 | `response_envelope` | string | Verbatim response body |
 
@@ -108,7 +110,7 @@ A shuffle draws from a per-sample seed picked at random by the run. Every arm of
 
 ## Provenance and limitations
 
-- `canonical` on the free-text arm is assigned by `normalize`, which matches offline first and falls back to an LLM for what it cannot resolve.
+- `canonical` on the no-schema arm is assigned by `normalize`, which matches offline first and falls back to an LLM for what it cannot resolve.
 - A code run appends to a split, without any replacement of already existing data, nothing is deduplicated.
 - No personal data and no human subjects, every row is a model's output to a prompt in `prompts/`.
 

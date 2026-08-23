@@ -24,7 +24,15 @@ _CARD_IN_REPO = "README.md"
 _COMMIT_MESSAGE = "Publish normalized responses"
 _LICENSE = "cc-by-4.0"
 _PRETTY_NAME = "LLMango: visualizing AI behaviour"
-_TAGS = ("llm", "multilingual", "structured-outputs", "randomness", "evaluation")
+_TAGS = (
+    "llm",
+    "multilingual",
+    "structured-outputs",
+    "evaluation",
+    "genai",
+    "openai",
+    "randomness",
+)
 
 
 @dataclass(frozen=True)
