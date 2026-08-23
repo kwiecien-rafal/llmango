@@ -36,6 +36,7 @@ data/*/manifests/*.partial
 site/dist/
 site/node_modules/
 site/.astro/
+site/.wrangler/
 
 # OS / editor cruft
 .DS_Store
