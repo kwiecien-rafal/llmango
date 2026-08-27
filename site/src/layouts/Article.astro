@@ -5,13 +5,14 @@ interface PageMeta {
   title: string;
   description?: string;
   type?: "website" | "article";
+  published?: string;
 }
 
 /** An .astro page passes these directly; an .mdx page passes them as frontmatter. */
 type Props = PageMeta & { frontmatter?: PageMeta };
 
 const meta: PageMeta = Astro.props.frontmatter ?? Astro.props;
-const { title, description, type = "website" } = meta;
+const { title, description, type = "website", published } = meta;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const path = Astro.url.pathname.replace(/\/$/, "") || "/";
 const current = (href: string) => (path === href ? "page" : undefined);
@@ -28,6 +29,7 @@ const preview = new URL("/og.png", Astro.site);
 
     <meta property="og:site_name" content="LLMango" />
     <meta property="og:type" content={type} />
+    {published && type === "article" && <meta property="article:published_time" content={published} />}
     <meta property="og:title" content={title} />
     {description && <meta property="og:description" content={description} />}
     <meta property="og:url" content={canonical.href} />
@@ -54,6 +56,13 @@ const preview = new URL("/og.png", Astro.site);
         <a href="/e001_fruit" aria-current={current("/e001_fruit")}>001: fruit</a>
       </header>
       <main>
+        {
+          published && (
+            <p class="published">
+              <time datetime={published}>{published}</time>
+            </p>
+          )
+        }
         <slot />
       </main>
       <footer class="site">
