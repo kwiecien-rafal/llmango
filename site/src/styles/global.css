@@ -164,7 +164,7 @@ h1.hero img {
   height: auto;
 }
 
-.published {
+.byline {
   margin: 0 0 1.75rem;
   font-size: 0.85rem;
   color: var(--ink-secondary);
