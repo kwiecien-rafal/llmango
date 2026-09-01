@@ -164,6 +164,12 @@ h1.hero img {
   height: auto;
 }
 
+.byline {
+  margin: 0 0 1.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+}
+
 h2 {
   font-size: 1.35rem;
 }
@@ -607,4 +613,19 @@ section.footnotes li p {
 a[data-footnote-backref] {
   margin-left: 0.4em;
   text-decoration: none;
+}
+
+section.updates {
+  border-top: 1px solid var(--rule);
+  margin-top: 3rem;
+  color: var(--ink-secondary);
+  font-size: 0.95rem;
+}
+
+section.updates ul {
+  padding-left: 1.2rem;
+}
+
+section.updates time {
+  color: var(--ink);
 }

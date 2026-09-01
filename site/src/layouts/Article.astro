@@ -1,21 +1,32 @@
 ---
 import "../styles/global.css";
+import { AUTHORS, type AuthorId } from "../data/authors";
+
+/** A substantive change made after publication, newest first. */
+type Update = { date: string; note: string };
 
 interface PageMeta {
   title: string;
   description?: string;
   type?: "website" | "article";
+  published?: string;
+  authors?: AuthorId[];
+  updates?: Update[];
 }
 
 /** An .astro page passes these directly; an .mdx page passes them as frontmatter. */
 type Props = PageMeta & { frontmatter?: PageMeta };
 
 const meta: PageMeta = Astro.props.frontmatter ?? Astro.props;
-const { title, description, type = "website" } = meta;
+const { title, description, type = "website", published } = meta;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const path = Astro.url.pathname.replace(/\/$/, "") || "/";
 const current = (href: string) => (path === href ? "page" : undefined);
 const preview = new URL("/og.png", Astro.site);
+const authors = (meta.authors ?? []).map((id) => AUTHORS[id]);
+const updates = meta.updates ?? [];
+const updated = updates[0]?.date;
+const separator = (index: number) => (index === 0 ? "" : index === authors.length - 1 ? " and " : ", ");
 ---
 
 <html lang="en">
@@ -24,10 +35,14 @@ const preview = new URL("/og.png", Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     {description && <meta name="description" content={description} />}
+    {authors.map((author) => <meta name="author" content={author.name} />)}
     <link rel="canonical" href={canonical.href} />
 
     <meta property="og:site_name" content="LLMango" />
     <meta property="og:type" content={type} />
+    {published && type === "article" && <meta property="article:published_time" content={published} />}
+    {updated && type === "article" && <meta property="article:modified_time" content={updated} />}
+    {type === "article" && authors.map((author) => <meta property="article:author" content={author.url} />)}
     <meta property="og:title" content={title} />
     {description && <meta property="og:description" content={description} />}
     <meta property="og:url" content={canonical.href} />
@@ -40,6 +55,25 @@ const preview = new URL("/og.png", Astro.site);
     <meta name="twitter:title" content={title} />
     {description && <meta name="twitter:description" content={description} />}
     <meta name="twitter:image" content={preview.href} />
+
+    {
+      type === "article" && (
+        <script
+          type="application/ld+json"
+          set:html={JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Article",
+            headline: title,
+            description,
+            url: canonical.href,
+            image: preview.href,
+            datePublished: published,
+            dateModified: updated,
+            author: authors.map(({ name, url, sameAs }) => ({ "@type": "Person", name, url, sameAs })),
+          })}
+        />
+      )
+    }
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
@@ -54,7 +88,32 @@ const preview = new URL("/og.png", Astro.site);
         <a href="/e001_fruit" aria-current={current("/e001_fruit")}>001: fruit</a>
       </header>
       <main>
+        {
+          (authors.length > 0 || published) && (
+            <p class="byline">
+              {authors.map((author, index) => separator(index) + author.name)}
+              {authors.length > 0 && published && " · "}
+              {published && <time datetime={published}>published {published}</time>}
+              {published && updated && " · "}
+              {updated && <time datetime={updated}>updated {updated}</time>}
+            </p>
+          )
+        }
         <slot />
+        {
+          updates.length > 0 && (
+            <section class="updates">
+              <h2>updates</h2>
+              <ul>
+                {updates.map(({ date, note }) => (
+                  <li>
+                    <time datetime={date}>{date}</time> {note}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
       </main>
       <footer class="site">
         <span class="brand">
