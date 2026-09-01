@@ -614,3 +614,18 @@ a[data-footnote-backref] {
   margin-left: 0.4em;
   text-decoration: none;
 }
+
+section.updates {
+  border-top: 1px solid var(--rule);
+  margin-top: 3rem;
+  color: var(--ink-secondary);
+  font-size: 0.95rem;
+}
+
+section.updates ul {
+  padding-left: 1.2rem;
+}
+
+section.updates time {
+  color: var(--ink);
+}
