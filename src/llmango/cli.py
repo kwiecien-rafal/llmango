@@ -131,7 +131,7 @@ def _report_plan(plan: "RunPlan") -> None:
     else:
         typer.echo(
             f"  price:       no entry for {question.model}; add it to "
-            f"src/llmango/pricing.json before running."
+            "src/llmango/pricing.json before running."
         )
     typer.echo(f"  arms:        {len(question.arms)}")
     for arm in question.arms:

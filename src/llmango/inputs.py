@@ -75,7 +75,7 @@ def validate_placeholders(
     if undeclared := sorted(wanted - declared):
         raise ValueError(
             f"{label} uses undeclared prompt input(s): {', '.join(undeclared)}. "
-            f"Declare them under 'inputs' in question.yaml."
+            "Declare them under 'inputs' in question.yaml."
         )
     if unused := sorted(declared - wanted):
         raise ValueError(

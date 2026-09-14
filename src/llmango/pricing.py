@@ -56,7 +56,7 @@ def guard_run(
     if price is None:
         raise ValueError(
             f"No price for model '{model}'. Add it to {PRICING_FILE.name}, prices "
-            f"per 1M tokens, before generating."
+            "per 1M tokens, before generating."
         )
     guard_cost(calls, force)
 
@@ -68,7 +68,7 @@ def load_pricing() -> PricingTable:
     if not PRICING_FILE.is_file():
         raise FileNotFoundError(
             f"No pricing file at {PRICING_FILE}. Create it with the models you plan "
-            f"to run, prices per 1M tokens, before generating."
+            "to run, prices per 1M tokens, before generating."
         )
 
     return PricingTable.model_validate_json(PRICING_FILE.read_text(encoding="utf-8"))

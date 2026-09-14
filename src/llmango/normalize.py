@@ -199,7 +199,7 @@ def _require_all_resolved(
     raise ValueError(
         f"{len(failed)} of {len(unresolved)} answers came back unparsed and were "
         f"not written: {preview}. Everything else is in the map, so a rerun "
-        f"retries only these."
+        "retries only these."
     )
 
 

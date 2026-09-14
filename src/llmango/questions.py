@@ -44,7 +44,7 @@ class LanguageAsk(BaseModel):
         if repeated:
             raise ValueError(
                 f"Language {self.language} asks under {', '.join(repeated)} more "
-                f"than once; each schema it is asked under is listed once."
+                "than once; each schema it is asked under is listed once."
             )
         return self
 

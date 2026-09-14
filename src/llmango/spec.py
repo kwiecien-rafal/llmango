@@ -31,7 +31,7 @@ def answer_field(schema: type[BaseModel]) -> str:
         raise ValueError(
             f"Answer schema {schema.__name__} declares {len(fields)} fields "
             f"({', '.join(fields) or 'none'}); it must declare exactly one, and "
-            f"that field is the answer."
+            "that field is the answer."
         )
 
     return fields[0]
