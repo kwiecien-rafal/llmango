@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from llmango.questions import Arm
     from llmango.runner import RunOutcome, RunPlan
 
-app = typer.Typer(help="Probe how LLM behavior shifts across languages.")
+app = typer.Typer(help="Probe how LLM behaviour shifts across languages.")
 
 QuestionArgument = Annotated[str, typer.Argument(help="Question id (001a, 001b, ...).")]
 
