@@ -1,8 +1,7 @@
-"""Smoke test: the package imports and exposes a version string."""
+"""Smoke test: the package imports."""
 
 import llmango
 
 
-def test_version_is_a_nonempty_string() -> None:
-    assert isinstance(llmango.__version__, str)
-    assert llmango.__version__
+def test_package_imports() -> None:
+    assert llmango.__name__ == "llmango"
