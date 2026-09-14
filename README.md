@@ -52,7 +52,7 @@ run  ->  normalize  ->  aggregate  ->  analyze
 
 <mark>*Can an LLM's response meaningfully change when you prompt it in a different language, or when you present information to the model in a different manner?*</mark>
 
-The experiment was ran with one model, **OpenAI's gpt-5.6-luna**. It's divided into four questions:
+The experiment was run with one model, **OpenAI's gpt-5.6-luna**. It's divided into four questions:
 
 | ID | Question |
 | --- | --- |
